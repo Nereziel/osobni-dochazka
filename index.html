@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="cs">
+<html lang="cs" data-theme="system">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -7,658 +7,792 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Docházka">
-  <meta name="format-detection" content="telephone=no">
-  <title>Osobní docházka · Cloud &amp; PWA</title>
+  <title>Osobní docházka · Windows 11 Enterprise Cloud</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./apple-touch-icon.png">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <div id="app" class="app-layout">
-    <!-- Postranní panel pro desktop / prohlížeč -->
-    <aside class="sidebar" aria-label="Postranní panel">
-      <div class="sidebar-brand">
-        <div class="brand-logo" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9"></circle>
-            <polyline points="12 7 12 12 15.5 14"></polyline>
-          </svg>
+  <!-- Windows 11 Acrylic Window Frame -->
+  <div id="app" class="win11-window">
+
+    <!-- DESKTOP SIDEBAR NAVIGATION (Windows 11 Navigation Rail) -->
+    <aside class="win11-sidebar" aria-label="Hlavní nabídka">
+      <div class="sidebar-top">
+        <div class="sidebar-brand">
+          <div class="brand-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="18" rx="3" ry="3"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="2" y1="10" x2="22" y2="10"/>
+              <path d="M12 14v4"/>
+              <path d="M10 16h4"/>
+            </svg>
+          </div>
+          <div class="brand-info">
+            <span class="brand-name">Docházka 11</span>
+            <span class="brand-badge">Enterprise Cloud</span>
+          </div>
         </div>
-        <div>
-          <div class="brand-title">Docházka</div>
-          <div class="brand-subtitle">Osobní &amp; Cloud PWA</div>
+
+        <!-- Profilová karta v sidebaru -->
+        <div id="sidebarUserCard" class="user-profile-tile">
+          <div id="sidebarAvatar" class="avatar-ring">?</div>
+          <div class="user-profile-details">
+            <strong id="sidebarUserName">Nepřihlášen</strong>
+            <span id="sidebarUserStatus" class="status-indicator-pill local">
+              <span class="dot"></span>
+              <span id="sidebarStatusText">Lokální režim</span>
+            </span>
+          </div>
+          <button id="sidebarAuthBtn" class="win-btn-subtle icon-only-btn" type="button" title="Správa profilu a přihlášení">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+          </button>
         </div>
+
+        <!-- Navigační odkazy (WinUI 3 Navigation View) -->
+        <nav class="win11-nav">
+          <button class="nav-item active" data-view="dashboard" type="button">
+            <span class="nav-pill" aria-hidden="true"></span>
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+            <span class="nav-label">Přehled &amp; Dnes</span>
+          </button>
+          <button class="nav-item" data-view="calendar" type="button">
+            <span class="nav-pill" aria-hidden="true"></span>
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span class="nav-label">Kalendář směn</span>
+          </button>
+          <button class="nav-item" data-view="timesheet" type="button">
+            <span class="nav-pill" aria-hidden="true"></span>
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+            <span class="nav-label">Měsíční výkaz docházky</span>
+          </button>
+          <button class="nav-item" data-view="settings" type="button">
+            <span class="nav-pill" aria-hidden="true"></span>
+            <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span class="nav-label">Nastavení &amp; Databáze</span>
+          </button>
+        </nav>
       </div>
 
-      <button id="sidebarUserBtn" class="user-card-btn" type="button" title="Správa účtu a přihlášení">
-        <div id="sidebarAvatar" class="user-avatar">P</div>
-        <div class="user-meta">
-          <strong id="sidebarUserName">Nepřihlášen</strong>
-          <span id="sidebarSyncStatus" class="sync-pill local">Lokální režim</span>
+      <div class="sidebar-bottom">
+        <!-- Widget aktuálního plánu -->
+        <div class="sidebar-plan-card">
+          <div class="plan-header">
+            <span>Můj rozvrh</span>
+            <span id="sidebarPlanDays" class="plan-days-badge">Po–Pá</span>
+          </div>
+          <div id="sidebarPlanHours" class="plan-hours">06:30 – 15:30</div>
+          <div id="sidebarPlanTarget" class="plan-target">Denní fond: 8:30</div>
         </div>
-        <span class="user-chevron" aria-hidden="true">›</span>
-      </button>
 
-      <nav class="sidebar-nav" aria-label="Hlavní navigace">
-        <button class="nav-button active" data-view="today" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
-          <span>Dnešní přehled</span>
-        </button>
-        <button class="nav-button" data-view="calendar" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          <span>Kalendář směn</span>
-        </button>
-        <button class="nav-button" data-view="overview" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          <span>Přehled &amp; Výkaz</span>
-        </button>
-        <button class="nav-button" data-view="settings" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          <span>Nastavení &amp; DB</span>
-        </button>
-      </nav>
-
-      <div class="sidebar-schedule-box">
-        <div class="sidebar-box-label">Můj rozvrh</div>
-        <div id="sidebarScheduleHours" class="sidebar-box-value">06:30 – 15:30</div>
-        <div id="sidebarScheduleDays" class="sidebar-box-sub">Po–Pá · Fond 8:30</div>
-      </div>
-
-      <div class="sidebar-footer">
-        <button id="sidebarSyncNowBtn" class="ghost-button small-btn" type="button" title="Synchronizovat s databází">
-          <span>↻ Synchronizovat</span>
-        </button>
-        <button id="sidebarInstallBtn" class="ghost-button small-btn" type="button" title="Návod na instalaci aplikace">
-          <span>⌂ Instalace PWA</span>
-        </button>
+        <div class="sidebar-footer-actions">
+          <button id="sidebarSyncBtn" class="win-btn-subtle" type="button" title="Synchronizovat se Supabase">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Sync</span>
+          </button>
+          <button id="sidebarThemeToggleBtn" class="win-btn-subtle" type="button" title="Přepnout tmavý / světlý motiv">
+            <svg id="themeIconSun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </button>
+          <button id="sidebarHelpBtn" class="win-btn-subtle" type="button" title="Nápověda k PWA instalaci">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </button>
+        </div>
       </div>
     </aside>
 
-    <!-- Hlavní obsahová část -->
-    <div class="app-shell">
-      <header class="app-header no-print">
-        <div class="header-left">
-          <div id="headerGreeting" class="header-greeting">Osobní docházka</div>
-          <h1 id="headerTitle">Dnešní přehled</h1>
+    <!-- HLAVNÍ OBSAHOVÁ ČÁST -->
+    <div class="win11-main-wrapper">
+
+      <!-- HORNÍ LIŠTA (Titlebar / App Header) -->
+      <header class="win11-header no-print">
+        <div class="header-breadcrumb">
+          <div id="headerGreeting" class="header-eyebrow">Dobré odpoledne</div>
+          <h1 id="headerViewTitle" class="header-title">Dnešní přehled</h1>
         </div>
-        <div class="header-actions">
-          <button id="syncBadgeBtn" class="sync-header-btn" type="button" title="Stav cloudu a synchronizace">
-            <span id="syncDot" class="sync-dot local"></span>
-            <span id="syncHeaderText">Lokální</span>
+
+        <div class="header-right">
+          <!-- Živý stav cloudu -->
+          <div id="cloudStatusBadge" class="cloud-status-widget local">
+            <span class="status-pulse-dot"></span>
+            <span id="cloudStatusLabel">Lokální režim</span>
+            <button id="headerSyncBtn" class="icon-tiny-btn" type="button" title="Synchronizovat">↻</button>
+          </div>
+
+          <!-- Přihlašovací tlačítko / Uživatelská pilulka -->
+          <button id="headerUserBtn" class="win-user-pill" type="button" title="Uživatelský účet">
+            <span id="headerAvatar" class="mini-avatar">?</span>
+            <span id="headerUserName" class="header-user-text">Přihlásit se</span>
           </button>
-          <button id="headerUserBtn" class="user-pill-btn" type="button" title="Přihlášení a profil">
-            <span id="headerUserAvatar" class="mini-avatar">P</span>
-            <span id="headerUserName" class="header-user-name">Profil</span>
+
+          <!-- PWA Instalace ikona -->
+          <button id="headerInstallBtn" class="win-btn-standard icon-btn" type="button" title="Instalace na plochu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           </button>
-          <button id="installHelpBtn" class="icon-button" type="button" aria-label="Instalace aplikace" title="Instalace aplikace">⌂</button>
         </div>
       </header>
 
-      <main id="mainContent" class="main-content">
-        <!-- ==================== POHLED 1: DNES ==================== -->
-        <section id="viewToday" class="view active" aria-labelledby="todayTitle">
-          <div class="dashboard-grid">
-            <div class="dashboard-col-main">
-              <!-- Živý indikátor probíhající směny -->
-              <div id="activeShiftBanner" class="active-shift-banner hidden">
-                <div class="active-shift-left">
-                  <span class="live-dot-pulse" aria-hidden="true"></span>
-                  <div>
-                    <strong id="activeShiftTimer">00:00:00</strong>
-                    <small id="activeShiftStartHint">Směna probíhá od 06:30</small>
-                  </div>
-                </div>
-                <button id="endShiftNowBtn" class="primary-button compact" type="button">Ukončit směnu (Odchod teď)</button>
-              </div>
+      <!-- HLAVNÍ PLÁTNO (Workspace) -->
+      <main id="mainWorkspace" class="win11-content-area">
 
-              <article class="hero-card">
-                <div class="hero-top">
+        <!-- ================================================================
+             VIEW 1: DASHBOARD (Dnes & Tento týden & Měsíční souhrn)
+             ================================================================ -->
+        <section id="viewDashboard" class="win11-view active">
+          <!-- Live Active Shift Stopwatch Banner -->
+          <div id="activeShiftBanner" class="win-active-shift-card hidden">
+            <div class="shift-live-indicator">
+              <span class="pulse-indicator"></span>
+              <div class="shift-live-text">
+                <span class="shift-live-tag">SMĚNA PROBÍHÁ</span>
+                <strong id="activeShiftTimer" class="shift-live-clock">00:00:00</strong>
+              </div>
+            </div>
+            <div class="shift-live-meta">
+              <span id="activeShiftStartHint">Příchod v 06:30</span>
+              <span id="activeShiftTargetHint">Denní cíl: 8:30</span>
+            </div>
+            <div class="shift-live-actions">
+              <button id="shiftEndNowBtn" class="win-btn-accent" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                <span>Ukončit směnu (Odchod teď)</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="dashboard-grid-layout">
+            <!-- LEVÝ VELKÝ PANEL: Dnešní stav a rychlé akce -->
+            <div class="dash-col-primary">
+
+              <!-- HERO KARTA: Dnešní saldo a stav dne -->
+              <article class="win-card hero-metric-card">
+                <div class="card-header-row">
                   <div>
-                    <div id="todayDate" class="hero-date"></div>
-                    <div class="badge-row">
-                      <span id="todayTypeBadge" class="badge">Práce</span>
-                      <span id="todayTimeBadge" class="badge subtle-badge">Bez času</span>
+                    <span id="todayDateLabel" class="hero-date-text">Pátek, 23. října 2026</span>
+                    <div class="hero-badges-row">
+                      <span id="todayTypeBadge" class="win-badge accent">Práce (směna)</span>
+                      <span id="todayHolidayBadge" class="win-badge warning hidden">Svátek</span>
+                      <span id="todayShiftTimes" class="win-badge neutral">06:30 – 15:30</span>
                     </div>
                   </div>
-                  <button id="editTodayBtn" class="secondary-button compact" type="button">Upravit den</button>
+                  <button id="editTodayBtn" class="win-btn-standard" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                    <span>Upravit den</span>
+                  </button>
                 </div>
 
-                <div class="hero-balance">
-                  <span class="label">Dnešní saldo</span>
-                  <strong id="todayBalance" class="balance-value">0:00</strong>
-                  <span id="todayBalanceHint" class="muted">Zatím bez záznamu</span>
+                <!-- Saldo a ukazatel plnění fondu -->
+                <div class="hero-gauge-section">
+                  <div class="gauge-balance-container">
+                    <span class="gauge-label">Dnešní saldo</span>
+                    <div id="todayBalanceVal" class="gauge-number-val">0:00</div>
+                    <span id="todayBalanceSub" class="gauge-sub-hint">Zatím bez odpracovaného času</span>
+                  </div>
+
+                  <div class="fund-progress-container">
+                    <div class="progress-info-row">
+                      <span>Plnění denního fondu</span>
+                      <strong id="todayProgressText">0 %</strong>
+                    </div>
+                    <div class="win-progress-track">
+                      <div id="todayProgressBar" class="win-progress-bar" style="width: 0%;"></div>
+                    </div>
+                    <div class="progress-sub-info">
+                      <span id="todayProgressSub">Zbývá 8:30 do splnění cíle</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div class="progress-wrap" aria-label="Plnění dnešního fondu">
-                  <div class="progress-labels">
-                    <span id="todayProgressLabel">Plnění denního fondu</span>
-                    <strong id="todayProgressPercent">0 %</strong>
+                <!-- 4 klíčové metriky dne -->
+                <div class="hero-metric-tiles">
+                  <div class="metric-tile">
+                    <span class="tile-label">Odpracováno</span>
+                    <strong id="todayWorkedVal" class="tile-value">0:00</strong>
+                    <span class="tile-sub">čistý čas</span>
                   </div>
-                  <div class="progress-track">
-                    <div id="todayProgressBar" class="progress-fill" style="width: 0%"></div>
+                  <div class="metric-tile">
+                    <span class="tile-label">Omluveno</span>
+                    <strong id="todayCreditedVal" class="tile-value">0:00</strong>
+                    <span class="tile-sub">absence / náhrada</span>
                   </div>
-                </div>
-
-                <div class="metric-grid four-col">
-                  <div class="metric">
-                    <span>Odpracováno</span>
-                    <strong id="todayWorked">0:00</strong>
+                  <div class="metric-tile">
+                    <span class="tile-label">Přestávka</span>
+                    <strong id="todayBreakVal" class="tile-value">0 min</strong>
+                    <span class="tile-sub">odečteno</span>
                   </div>
-                  <div class="metric">
-                    <span>Omluveno</span>
-                    <strong id="todayCredited">0:00</strong>
-                  </div>
-                  <div class="metric">
-                    <span>Přestávka</span>
-                    <strong id="todayBreak">0:00</strong>
-                  </div>
-                  <div class="metric">
-                    <span>Fond dne</span>
-                    <strong id="todayTarget">8:30</strong>
+                  <div class="metric-tile">
+                    <span class="tile-label">Fond dne</span>
+                    <strong id="todayTargetVal" class="tile-value">8:30</strong>
+                    <span class="tile-sub">předepsáno</span>
                   </div>
                 </div>
               </article>
 
-              <section class="quick-card">
-                <div class="section-heading">
-                  <div>
-                    <h2 id="todayTitle">Rychlý zápis dneška</h2>
-                    <p id="quickHint">Zapiš příchod, odchod nebo jedním klikem běžnou směnu podle rozvrhu.</p>
-                  </div>
+              <!-- RYCHLÝ ZÁPIS SMĚNY (Quick Command Bar) -->
+              <section class="win-card quick-command-card">
+                <div class="card-section-title">
+                  <h2>Rychlý zápis příchodu a odchodu</h2>
+                  <p>Jedním kliknutím zaeviduj reálný čas nebo doplň standardní rozvrh.</p>
                 </div>
-                <div class="quick-actions">
-                  <button id="arrivalNowBtn" class="primary-button action-with-sub" type="button">
-                    <strong>Příchod teď</strong>
-                    <small id="arrivalNowSub">Zapsat aktuální čas</small>
+
+                <div class="quick-primary-grid">
+                  <button id="dashArrivalNowBtn" class="win-btn-accent quick-tile-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+                    <div>
+                      <strong>Příchod teď</strong>
+                      <small id="dashArrivalHint">Uloží aktuální čas</small>
+                    </div>
                   </button>
-                  <button id="departureNowBtn" class="secondary-button action-with-sub" type="button">
-                    <strong>Odchod teď</strong>
-                    <small id="departureNowSub">Ukončit dnešní směnu</small>
+
+                  <button id="dashDepartureNowBtn" class="win-btn-standard quick-tile-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+                    <div>
+                      <strong>Odchod teď</strong>
+                      <small id="dashDepartureHint">Ukončí dnešní směnu</small>
+                    </div>
                   </button>
-                  <button id="normalHoursBtn" class="secondary-button action-with-sub" type="button">
-                    <strong>Běžná pracovní doba</strong>
-                    <small id="normalHoursSub">06:30 – 15:30</small>
+
+                  <button id="dashNormalHoursBtn" class="win-btn-standard quick-tile-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/><polyline points="9 11 12 14 22 4"/></svg>
+                    <div>
+                      <strong>Běžná pracovní doba</strong>
+                      <small id="dashNormalHoursHint">06:30 – 15:30</small>
+                    </div>
                   </button>
-                  <button id="quickVacationBtn" class="secondary-button action-with-sub" type="button">
-                    <strong>Dovolená / Volno</strong>
-                    <small>Celodenní absence</small>
+
+                  <button id="dashVacationBtn" class="win-btn-standard quick-tile-btn" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                    <div>
+                      <strong>Dovolená (celý den)</strong>
+                      <small>Omluvené volno</small>
+                    </div>
                   </button>
                 </div>
-                <div class="quick-presets-row" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
-                  <button id="quickHoBtn" class="ghost-button small-btn" type="button">🏠 Home office</button>
-                  <button id="quickDocBtn" class="ghost-button small-btn" type="button">🩺 Lékař (celý den)</button>
-                  <button id="quickTripBtn" class="ghost-button small-btn" type="button">🚗 Služební cesta</button>
+
+                <!-- Rychlé předvolby režimu -->
+                <div class="quick-presets-strip">
+                  <span class="preset-label">Rychlé předvolby:</span>
+                  <button id="dashPresetHoBtn" class="win-btn-subtle chip-btn" type="button">🏠 Home office</button>
+                  <button id="dashPresetDocBtn" class="win-btn-subtle chip-btn" type="button">🩺 Lékař (celodenní)</button>
+                  <button id="dashPresetTripBtn" class="win-btn-subtle chip-btn" type="button">🚗 Služební cesta</button>
+                  <button id="dashPresetCompBtn" class="win-btn-subtle chip-btn" type="button">⏱️ Náhradní volno</button>
                 </div>
               </section>
             </div>
 
-            <div class="dashboard-col-side">
-              <section class="card week-strip-card">
-                <div class="section-heading">
-                  <div>
-                    <h2>Aktuální týden</h2>
-                    <p id="weekStripSubtitle">Kliknutím na den otevřeš jeho úpravu.</p>
-                  </div>
-                </div>
-                <div id="weekStripGrid" class="week-strip-grid"></div>
-              </section>
+            <!-- PRAVÝ PANEL: Týdenní pás a Měsíční KPI statistiky -->
+            <div class="dash-col-secondary">
 
-              <section class="card month-snapshot">
-                <div class="section-heading">
+              <!-- TENTO TÝDEN (7-denní interaktivní pás) -->
+              <article class="win-card week-interactive-card">
+                <div class="card-header-row">
                   <div>
-                    <h2>Tento měsíc</h2>
-                    <p id="monthSnapshotLabel"></p>
+                    <h3>Tento týden</h3>
+                    <p id="weekRangeLabel" class="muted">Po–Ne rozvrh směn</p>
                   </div>
-                  <button id="goToOverviewBtn" class="text-button" type="button">Celý výkaz ›</button>
+                  <span class="card-hint-badge">Kliknutím upravíš</span>
                 </div>
-                <div class="summary-grid">
-                  <div class="summary-card">
-                    <span>Odpracováno</span>
-                    <strong id="snapWorked">0:00</strong>
-                    <small id="snapFundSub" class="card-sub">z fondu 0:00</small>
+                <div id="dashboardWeekStrip" class="win-week-strip"></div>
+              </article>
+
+              <!-- TENTO MĚSÍC V ČÍSLECH -->
+              <article class="win-card month-kpi-card">
+                <div class="card-header-row">
+                  <div>
+                    <h3>Tento měsíc</h3>
+                    <p id="monthKpiNameLabel" class="muted">Říjen 2026</p>
                   </div>
-                  <div class="summary-card">
-                    <span>Saldo evidovaných dnů</span>
-                    <strong id="snapBalance">0:00</strong>
-                    <small class="card-sub">přesčasy / nedoplatky</small>
+                  <button id="dashGoToTimesheetBtn" class="win-btn-subtle" type="button">
+                    <span>Otevřít výkaz</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+                  </button>
+                </div>
+
+                <div class="kpi-cards-grid">
+                  <div class="kpi-card">
+                    <span class="kpi-title">Měsíční saldo</span>
+                    <strong id="kpiMonthBalance" class="kpi-value">0:00</strong>
+                    <span id="kpiMonthBalanceSub" class="kpi-sub">vyrovnané saldo</span>
                   </div>
-                  <div class="summary-card">
-                    <span>Omluveno celkem</span>
-                    <strong id="snapCredited">0:00</strong>
-                    <small id="snapVacationSub" class="card-sub">dovolená, lékař, nemoc</small>
+
+                  <div class="kpi-card">
+                    <span class="kpi-title">Odpracováno</span>
+                    <strong id="kpiMonthWorked" class="kpi-value">0:00</strong>
+                    <span id="kpiMonthWorkedSub" class="kpi-sub">z fondu 0:00</span>
                   </div>
-                  <div class="summary-card">
-                    <span>Nevyplněné dny</span>
-                    <strong id="snapMissing">0</strong>
-                    <small class="card-sub">minulé pracovní dny</small>
+
+                  <div class="kpi-card">
+                    <span class="kpi-title">Omluvená doba</span>
+                    <strong id="kpiMonthCredited" class="kpi-value">0:00</strong>
+                    <span class="kpi-sub">dovolené, lékař, nemoc</span>
+                  </div>
+
+                  <div class="kpi-card">
+                    <span class="kpi-title">Nevyplněné dny</span>
+                    <strong id="kpiMonthMissing" class="kpi-value warning">0</strong>
+                    <span class="kpi-sub">minulé pracovní dny</span>
                   </div>
                 </div>
-              </section>
+              </article>
             </div>
           </div>
         </section>
 
-        <!-- ==================== POHLED 2: KALENDÁŘ ==================== -->
-        <section id="viewCalendar" class="view" aria-labelledby="calendarTitle">
-          <div class="calendar-toolbar">
-            <button id="prevMonthBtn" class="icon-button" type="button" aria-label="Předchozí měsíc">‹</button>
-            <div class="toolbar-center">
-              <button id="calendarTitle" class="month-title-button" type="button" title="Kliknutím skočíš na aktuální měsíc"></button>
-              <span id="calendarScheduleHint" class="toolbar-sub"></span>
+        <!-- ================================================================
+             VIEW 2: KALENDÁŘ SMĚN (Enterprise Month Calendar)
+             ================================================================ -->
+        <section id="viewCalendar" class="win11-view">
+          <div class="win-toolbar-bar">
+            <div class="toolbar-nav-group">
+              <button id="calPrevMonthBtn" class="win-btn-standard icon-btn" type="button" aria-label="Předchozí měsíc">‹</button>
+              <button id="calMonthTitleBtn" class="win-btn-subtle title-btn" type="button" title="Kliknutím vybereš měsíc">
+                <span id="calCurrentMonthTitle">Říjen 2026</span>
+                <span class="title-sub-pill">Měsíce</span>
+              </button>
+              <button id="calNextMonthBtn" class="win-btn-standard icon-btn" type="button" aria-label="Další měsíc">›</button>
             </div>
-            <button id="nextMonthBtn" class="icon-button" type="button" aria-label="Další měsíc">›</button>
+
+            <div class="toolbar-actions-group">
+              <span id="calScheduleHint" class="schedule-summary-pill">Rozvrh: Po–Pá · 06:30–15:30</span>
+              <button id="calFillMissingBtn" class="win-btn-standard" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Doplnit běžnou dobu do prázdných dnů</span>
+              </button>
+            </div>
           </div>
 
-          <div class="calendar-layout">
-            <div class="calendar-main-col">
-              <div class="calendar-card">
-                <div class="weekdays" aria-hidden="true">
-                  <span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span>
-                </div>
-                <div id="calendarGrid" class="calendar-grid"></div>
+          <div class="calendar-workspace-layout">
+            <!-- Velká kalendářní mřížka -->
+            <div class="win-card calendar-card-shell">
+              <div class="calendar-weekdays-header" aria-hidden="true">
+                <span>Pondělí</span><span>Úterý</span><span>Středa</span><span>Čtvrtek</span><span>Pátek</span><span>Sobota</span><span>Neděle</span>
               </div>
-              <div class="legend">
-                <span><i class="dot work"></i>Práce / Směna</span>
-                <span><i class="dot home"></i>Home office / Cesta</span>
-                <span><i class="dot leave"></i>Dovolená / Volno</span>
-                <span><i class="dot doctor"></i>Lékař / Nemoc</span>
-                <span><i class="dot weekend-work"></i>Pracovní víkend</span>
-                <span><i class="dot missing"></i>Chybí vyplnit</span>
+              <div id="calendarGrid" class="calendar-cells-grid"></div>
+
+              <div class="calendar-legend-bar">
+                <span><i class="dot work"></i> Běžná směna</span>
+                <span><i class="dot home"></i> Home office</span>
+                <span><i class="dot trip"></i> Služební cesta</span>
+                <span><i class="dot leave"></i> Dovolená / Volno</span>
+                <span><i class="dot doctor"></i> Lékař / Nemoc</span>
+                <span><i class="dot weekend-work"></i> Směna o víkendu</span>
+                <span><i class="dot missing"></i> Nevyplněno</span>
               </div>
             </div>
 
-            <aside class="calendar-side-col">
-              <div class="card calendar-side-card">
-                <div class="section-heading">
-                  <div>
-                    <h3>Rychlé akce měsíce</h3>
-                    <p id="calendarSideSummary">Souhrn vybraného měsíce.</p>
-                  </div>
+            <!-- Pravý boční panel kalendáře -->
+            <aside class="calendar-side-panel">
+              <article class="win-card cal-summary-tile">
+                <h3>Souhrn měsíce</h3>
+                <div class="cal-summary-row">
+                  <div><span>Fond</span><strong id="calSideFund">0:00</strong></div>
+                  <div><span>Odpracováno</span><strong id="calSideWorked">0:00</strong></div>
+                  <div><span>Saldo</span><strong id="calSideBalance">0:00</strong></div>
                 </div>
-                <div class="mini-stats-row">
-                  <div><span>Odpracováno</span><strong id="calStatWorked">0:00</strong></div>
-                  <div><span>Fond</span><strong id="calStatFund">0:00</strong></div>
-                  <div><span>Saldo</span><strong id="calStatBalance">0:00</strong></div>
-                </div>
-                <div class="stacked-actions">
-                  <button id="fillMissingMonthBtn" class="secondary-button" type="button">Doplnit běžnou dobu do nevyplněných dnů</button>
-                  <button id="openTodayFromCalBtn" class="ghost-button" type="button">Upravit dnešní den</button>
-                </div>
-              </div>
+              </article>
 
-              <div class="card recent-list-card">
-                <div class="section-heading">
-                  <div>
-                    <h3>Záznamy v měsíci</h3>
-                    <p>Klikni na den pro rychlou úpravu.</p>
-                  </div>
+              <article class="win-card cal-events-tile">
+                <div class="card-header-row">
+                  <h3>Záznamy v měsíci</h3>
+                  <span id="calRecordsCountBadge" class="win-badge neutral">0 dnů</span>
                 </div>
-                <div id="calendarMonthList" class="day-list-scroll"></div>
-              </div>
+                <div id="calMonthRecordsList" class="cal-records-scroll"></div>
+              </article>
             </aside>
           </div>
         </section>
 
-        <!-- ==================== POHLED 3: PŘEHLED A VÝKAZ ==================== -->
-        <section id="viewOverview" class="view" aria-labelledby="overviewTitle">
-          <div class="calendar-toolbar no-print">
-            <button id="overviewPrevBtn" class="icon-button" type="button" aria-label="Předchozí měsíc">‹</button>
-            <div class="toolbar-center">
-              <h2 id="overviewTitle" class="month-title"></h2>
-              <span id="overviewUserSubtitle" class="toolbar-sub"></span>
-            </div>
-            <button id="overviewNextBtn" class="icon-button" type="button" aria-label="Další měsíc">›</button>
-          </div>
-
-          <div class="overview-actions-bar no-print">
-            <button id="fillMissingOverviewBtn" class="secondary-button compact" type="button">✓ Doplnit chybějící dny</button>
-            <button id="exportCsvBtn" class="secondary-button compact" type="button">⬇ Export CSV (Excel)</button>
-            <button id="printSheetBtn" class="secondary-button compact" type="button">🖨 Tisk / PDF výkaz</button>
-          </div>
-
-          <div class="overview-stack">
-            <div class="overview-top-grid">
-              <article class="overview-highlight">
-                <span>Saldo evidovaných dnů</span>
-                <strong id="overviewBalance">0:00</strong>
-                <small id="overviewMissingText"></small>
-                <div class="progress-wrap compact-progress">
-                  <div class="progress-labels">
-                    <span>Splnění měsíčního fondu</span>
-                    <strong id="overviewProgressPct">0 %</strong>
-                  </div>
-                  <div class="progress-track">
-                    <div id="overviewProgressBar" class="progress-fill" style="width:0%"></div>
-                  </div>
-                </div>
-              </article>
-
-              <div class="summary-grid three-col">
-                <div class="summary-card">
-                  <span>Fond měsíce</span>
-                  <strong id="overviewFund">0:00</strong>
-                  <small id="overviewWorkdaysCount" class="card-sub">0 pracovních dnů</small>
-                </div>
-                <div class="summary-card">
-                  <span>Odpracováno</span>
-                  <strong id="overviewWorked">0:00</strong>
-                  <small id="overviewWeekendWorked" class="card-sub">vč. víkendů</small>
-                </div>
-                <div class="summary-card">
-                  <span>Omluveno / Absence</span>
-                  <strong id="overviewCredited">0:00</strong>
-                  <small class="card-sub">započtené náhrady</small>
-                </div>
-                <div class="summary-card">
-                  <span>Evidováno dnů</span>
-                  <strong id="overviewRecorded">0</strong>
-                  <small class="card-sub">uložených záznamů</small>
-                </div>
-                <div class="summary-card">
-                  <span>Dovolená (tento rok)</span>
-                  <strong id="overviewVacationRemaining">20 dnů</strong>
-                  <small id="overviewVacationUsed" class="card-sub">vyčerpáno 0 z 20 dnů</small>
-                </div>
-                <div class="summary-card">
-                  <span>Přestávky v měsíci</span>
-                  <strong id="overviewBreaks">0:00</strong>
-                  <small class="card-sub">odečtený čas obědů</small>
-                </div>
-              </div>
+        <!-- ================================================================
+             VIEW 3: MĚSÍČNÍ VÝKAZ DOCHÁZKY (Timesheet & Tisk / PDF)
+             ================================================================ -->
+        <section id="viewTimesheet" class="win11-view">
+          <div class="win-toolbar-bar no-print">
+            <div class="toolbar-nav-group">
+              <button id="tsPrevMonthBtn" class="win-btn-standard icon-btn" type="button" aria-label="Předchozí měsíc">‹</button>
+              <button id="tsMonthTitleBtn" class="win-btn-subtle title-btn" type="button" title="Kliknutím vybereš měsíc">
+                <span id="tsMonthTitle">Říjen 2026</span>
+                <span class="title-sub-pill">Měsíce</span>
+              </button>
+              <button id="tsNextMonthBtn" class="win-btn-standard icon-btn" type="button" aria-label="Další měsíc">›</button>
             </div>
 
-            <div class="overview-split-grid">
-              <article class="breakdown-card no-print">
-                <h3>Rozpad absence a režimů v měsíci</h3>
-                <div id="absenceBreakdown" class="breakdown-list"></div>
-              </article>
+            <div class="toolbar-actions-group">
+              <button id="tsFillMissingBtn" class="win-btn-standard" type="button">✓ Doplnit chybějící dny</button>
+              <button id="tsExportCsvBtn" class="win-btn-standard" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Export do CSV (Excel)</span>
+              </button>
+              <button id="tsPrintBtn" class="win-btn-accent" type="button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                <span>Tisk / PDF výkaz</span>
+              </button>
+            </div>
+          </div>
 
-              <article class="breakdown-card">
-                <div class="sheet-table-header">
-                  <div>
-                    <h3>Měsíční výkaz docházky</h3>
-                    <p id="printReportMeta" class="muted">Detailní přehled všech dnů v měsíci.</p>
-                  </div>
-                </div>
-                <div class="table-responsive">
-                  <table class="attendance-table">
-                    <thead>
-                      <tr>
-                        <th>Datum</th>
-                        <th>Den</th>
-                        <th>Režim</th>
-                        <th>Příchod–Odchod</th>
-                        <th>Přest.</th>
-                        <th>Odprac.</th>
-                        <th>Saldo</th>
-                        <th>Poznámka</th>
-                      </tr>
-                    </thead>
-                    <tbody id="overviewTableBody"></tbody>
-                  </table>
-                </div>
-              </article>
+          <!-- Hlavička pro tisk oficiálního výkazu -->
+          <div class="official-print-header">
+            <h2>MĚSÍČNÍ VÝKAZ ODPACOVANÉ DOBY</h2>
+            <div class="print-meta-grid">
+              <div><strong>Jméno zaměstnance:</strong> <span id="printEmployeeName">Jan Novák</span></div>
+              <div><strong>Období:</strong> <span id="printMonthPeriod">Říjen 2026</span></div>
+              <div><strong>Plánovaný fond:</strong> <span id="printFundTotal">170:00</span></div>
+              <div><strong>Skutečně odpracováno:</strong> <span id="printWorkedTotal">172:30</span></div>
+            </div>
+          </div>
+
+          <!-- Horní KPI dlaždice výkazu -->
+          <div class="timesheet-kpi-grid no-print">
+            <div class="win-card ts-kpi-tile highlight">
+              <span class="ts-kpi-label">Celkové saldo měsíce</span>
+              <strong id="tsBalanceTotal" class="ts-kpi-val">0:00</strong>
+              <small id="tsBalanceStatus" class="muted">vyrovnané</small>
+            </div>
+            <div class="win-card ts-kpi-tile">
+              <span class="ts-kpi-label">Fond měsíce</span>
+              <strong id="tsFundTotal" class="ts-kpi-val">0:00</strong>
+              <small id="tsWorkdaysCount" class="muted">0 pracovních dnů</small>
+            </div>
+            <div class="win-card ts-kpi-tile">
+              <span class="ts-kpi-label">Odpracováno celkem</span>
+              <strong id="tsWorkedTotal" class="ts-kpi-val">0:00</strong>
+              <small id="tsWeekendWorkedInfo" class="muted">0:00 víkendy</small>
+            </div>
+            <div class="win-card ts-kpi-tile">
+              <span class="ts-kpi-label">Omluvená doba</span>
+              <strong id="tsCreditedTotal" class="ts-kpi-val">0:00</strong>
+              <small class="muted">dovolené, lékař, nemoc</small>
+            </div>
+            <div class="win-card ts-kpi-tile">
+              <span class="ts-kpi-label">Dovolená (tento rok)</span>
+              <strong id="tsVacationRemaining" class="ts-kpi-val">20 dnů</strong>
+              <small id="tsVacationUsed" class="muted">vyčerpáno 0 z 20 dnů</small>
+            </div>
+            <div class="win-card ts-kpi-tile">
+              <span class="ts-kpi-label">Celkem přestávky</span>
+              <strong id="tsBreaksTotal" class="ts-kpi-val">0:00</strong>
+              <small class="muted">odečtené obědy</small>
+            </div>
+          </div>
+
+          <!-- Kompletní tabulka docházky -->
+          <div class="win-card timesheet-table-card">
+            <div class="table-responsive-wrap">
+              <table class="win11-datagrid">
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Den</th>
+                    <th>Režim / Typ</th>
+                    <th>Příchod</th>
+                    <th>Odchod</th>
+                    <th>Přestávka</th>
+                    <th>Odpracováno</th>
+                    <th>Omluveno</th>
+                    <th>Saldo</th>
+                    <th>Poznámka</th>
+                  </tr>
+                </thead>
+                <tbody id="timesheetTableBody"></tbody>
+                <tfoot id="timesheetTableFoot"></tfoot>
+              </table>
             </div>
           </div>
         </section>
 
-        <!-- ==================== POHLED 4: NASTAVENÍ A DATABÁZE ==================== -->
-        <section id="viewSettings" class="view" aria-labelledby="settingsTitle">
-          <div class="settings-grid-layout">
-            <form id="settingsForm" class="settings-stack">
-              <!-- Karta 1: Běžná pracovní doba -->
-              <article class="settings-card">
-                <div class="card-badge-head">
+        <!-- ================================================================
+             VIEW 4: NASTAVENÍ A DATABÁZE (WinUI 3 Settings)
+             ================================================================ -->
+        <section id="viewSettings" class="win11-view">
+          <div class="settings-two-columns">
+
+            <!-- LEVÝ SLOUPEC: PRACOVNÍ DOBA, VÍKENDY A SVÁTKY -->
+            <div class="settings-col">
+              <form id="scheduleSettingsForm" class="win-card settings-group-card">
+                <div class="settings-group-header">
+                  <div class="icon-wrap">⏱️</div>
                   <div>
-                    <h2 id="settingsTitle">Běžná pracovní doba</h2>
-                    <p class="muted">Výchozí časy pro tvé pracovní dny. Uloží se do zařízení i do tvého profilu v databázi.</p>
+                    <h3>Běžná pracovní doba a fond</h3>
+                    <p>Základní parametry tvých pracovních dnů. Ukládají se do tvého osobního profilu v databázi.</p>
                   </div>
                 </div>
-                <div class="form-grid two-col">
-                  <label>
+
+                <div class="settings-form-grid">
+                  <label class="win-field">
                     <span>Běžný příchod</span>
-                    <input id="settingStart" type="time" required>
+                    <input id="setWorkStart" type="time" required>
                   </label>
-                  <label>
+                  <label class="win-field">
                     <span>Běžný odchod</span>
-                    <input id="settingEnd" type="time" required>
+                    <input id="setWorkEnd" type="time" required>
                   </label>
-                  <label>
+                  <label class="win-field">
                     <span>Denní pracovní fond</span>
-                    <input id="settingTarget" type="time" required>
+                    <input id="setDailyTarget" type="time" required>
                   </label>
-                  <label>
+                  <label class="win-field">
                     <span>Délka přestávky</span>
-                    <div class="input-with-suffix">
-                      <input id="settingBreak" type="number" min="0" max="240" step="5" required>
+                    <div class="win-input-suffix">
+                      <input id="setBreakMinutes" type="number" min="0" max="240" step="5" required>
                       <span>min</span>
                     </div>
                   </label>
-                  <label>
+                  <label class="win-field">
                     <span>Odečíst přestávku po</span>
-                    <div class="input-with-suffix">
-                      <input id="settingBreakAfter" type="number" min="0" max="1440" step="15" required>
+                    <div class="win-input-suffix">
+                      <input id="setBreakAfterMinutes" type="number" min="0" max="1440" step="15" required>
                       <span>min</span>
                     </div>
                   </label>
-                  <label>
+                  <label class="win-field">
                     <span>Roční nárok na dovolenou</span>
-                    <div class="input-with-suffix">
-                      <input id="settingVacationAllowance" type="number" min="0" max="60" step="0.5" required>
+                    <div class="win-input-suffix">
+                      <input id="setVacationAllowance" type="number" min="0" max="60" step="0.5" required>
                       <span>dnů</span>
                     </div>
                   </label>
                 </div>
-                <div class="helper-row">
-                  <button id="calcTargetFromHoursBtn" class="text-button" type="button">↻ Spočítat denní fond automaticky z příchodu, odchodu a přestávky</button>
+
+                <div class="field-helper-action">
+                  <button id="calcTargetAutoBtn" class="win-btn-subtle" type="button">
+                    ↻ Spočítat denní fond z příchodu, odchodu a přestávky
+                  </button>
                 </div>
-                <label class="toggle-row">
-                  <input id="settingAutoFill" type="checkbox">
-                  <span>
-                    <strong>Automaticky předvyplňovat pracovní dobu</strong>
-                    <small>Při otevření nového pracovního dne se rovnou doplní běžný příchod a odchod.</small>
-                  </span>
-                </label>
-              </article>
 
-              <!-- Karta 2: Práce o víkendu a pracovní dny -->
-              <article class="settings-card">
-                <h2>Pracovní dny a víkendy</h2>
-                <p class="muted">Nastav si, které dny v týdnu běžně pracuješ a zda pracuješ i o víkendech nebo svátcích.</p>
+                <div class="win-toggle-control">
+                  <label class="switch-label">
+                    <input id="setAutoFill" type="checkbox" checked>
+                    <span class="switch-slider"></span>
+                    <div class="switch-text">
+                      <strong>Automaticky předvyplňovat pracovní dobu</strong>
+                      <small>Při otevření dne se rovnou doplní obvyklý příchod a odchod.</small>
+                    </div>
+                  </label>
+                </div>
 
-                <label>
+                <!-- VÍKENDOVÝ ROZVRH -->
+                <div class="settings-subgroup-divider">
+                  <h4>Pracovní dny v týdnu a víkendy</h4>
+                  <p>Nastav, které dny v týdnu máš pracovat a jak se mají chovat víkendy.</p>
+                </div>
+
+                <div class="win-field">
                   <span>Režim práce o víkendu</span>
-                  <select id="settingWeekendMode">
-                    <option value="none">Nepracuji o víkendu (pouze Po–Pá)</option>
+                  <select id="setWeekendMode" class="win-select">
+                    <option value="none">Pouze všední dny (Po–Pá)</option>
                     <option value="saturday">Pracuji i v sobotu (Po–So)</option>
                     <option value="sunday">Pracuji i v neděli (Po–Pá + Ne)</option>
                     <option value="both">Pracuji celý víkend (Po–Ne)</option>
-                    <option value="custom">Vlastní výběr dnů v týdnu</option>
+                    <option value="custom">Vlastní výběr dnů</option>
                   </select>
-                </label>
+                </div>
 
-                <div class="weekday-picker-wrap">
-                  <span class="field-label">Aktivní pracovní dny v týdnu (započítané do fondu)</span>
-                  <div class="weekday-toggles" id="settingWeekdaysGroup">
-                    <label class="day-chip"><input type="checkbox" value="1" checked><span>Po</span></label>
-                    <label class="day-chip"><input type="checkbox" value="2" checked><span>Út</span></label>
-                    <label class="day-chip"><input type="checkbox" value="3" checked><span>St</span></label>
-                    <label class="day-chip"><input type="checkbox" value="4" checked><span>Čt</span></label>
-                    <label class="day-chip"><input type="checkbox" value="5" checked><span>Pá</span></label>
-                    <label class="day-chip weekend-chip"><input type="checkbox" value="6"><span>So</span></label>
-                    <label class="day-chip weekend-chip"><input type="checkbox" value="0"><span>Ne</span></label>
+                <div class="weekday-chips-group">
+                  <span class="field-sub-label">Aktivní dny započítané do fondu:</span>
+                  <div id="weekdaysCheckboxes" class="chips-row">
+                    <label class="chip-item"><input type="checkbox" value="1" checked><span>Po</span></label>
+                    <label class="chip-item"><input type="checkbox" value="2" checked><span>Út</span></label>
+                    <label class="chip-item"><input type="checkbox" value="3" checked><span>St</span></label>
+                    <label class="chip-item"><input type="checkbox" value="4" checked><span>Čt</span></label>
+                    <label class="chip-item"><input type="checkbox" value="5" checked><span>Pá</span></label>
+                    <label class="chip-item weekend"><input type="checkbox" value="6"><span>So</span></label>
+                    <label class="chip-item weekend"><input type="checkbox" value="0"><span>Ne</span></label>
                   </div>
                 </div>
 
-                <label class="toggle-row">
-                  <input id="settingWeekendCustomHours" type="checkbox">
-                  <span>
-                    <strong>Odlišná pracovní doba o víkendu</strong>
-                    <small>Umožní nastavit jiný příchod, odchod a denní fond pro sobotu a neděli.</small>
-                  </span>
-                </label>
+                <div class="win-toggle-control">
+                  <label class="switch-label">
+                    <input id="setWeekendCustomHours" type="checkbox">
+                    <span class="switch-slider"></span>
+                    <div class="switch-text">
+                      <strong>Odlišná pracovní doba o víkendu</strong>
+                      <small>Umožní nastavit jiný čas i fond pro sobotní/nedělní směny.</small>
+                    </div>
+                  </label>
+                </div>
 
-                <div id="weekendCustomFields" class="subcard hidden" style="margin-top: 12px;">
-                  <h3>Pracovní doba o víkendu (So / Ne)</h3>
-                  <div class="form-grid three-col">
-                    <label>
+                <div id="weekendCustomInputsArea" class="custom-weekend-panel hidden">
+                  <div class="settings-form-grid three-col">
+                    <label class="win-field">
                       <span>Víkendový příchod</span>
-                      <input id="settingWeekendStart" type="time">
+                      <input id="setWeekendStart" type="time" value="07:00">
                     </label>
-                    <label>
+                    <label class="win-field">
                       <span>Víkendový odchod</span>
-                      <input id="settingWeekendEnd" type="time">
+                      <input id="setWeekendEnd" type="time" value="15:30">
                     </label>
-                    <label>
+                    <label class="win-field">
                       <span>Víkendový fond</span>
-                      <input id="settingWeekendTarget" type="time">
+                      <input id="setWeekendTarget" type="time" value="08:00">
                     </label>
                   </div>
                 </div>
 
-                <label class="toggle-row">
-                  <input id="settingWorkOnHolidays" type="checkbox">
-                  <span>
-                    <strong>Pracuji i ve státní svátky</strong>
-                    <small>Pokud je zapnuto, státní svátky mají běžný denní fond místo automatického volna.</small>
-                  </span>
-                </label>
+                <div class="win-toggle-control">
+                  <label class="switch-label">
+                    <input id="setWorkOnHolidays" type="checkbox">
+                    <span class="switch-slider"></span>
+                    <div class="switch-text">
+                      <strong>Pracuji i ve státní svátky</strong>
+                      <small>Svátek se bude počítat jako běžný pracovní den s předepsaným fondem.</small>
+                    </div>
+                  </label>
+                </div>
+
+                <div class="settings-save-row">
+                  <button class="win-btn-accent" type="submit">Uložit nastavení pracovní doby</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- PRAVÝ SLOUPEC: ÚČET, SUPABASE CLOUD A ZÁLOHY -->
+            <div class="settings-col">
+
+              <!-- UŽIVATEL A PŘIHLÁŠENÍ (SAMOSTATNÝ PŘIHLÁŠENÝ PROFIL) -->
+              <article class="win-card settings-group-card highlight-card">
+                <div class="settings-group-header">
+                  <div class="icon-wrap user">👤</div>
+                  <div>
+                    <h3>Můj účet &amp; Profil</h3>
+                    <p id="accountStatusSubtitle">Přihlaš se svým jménem a PINem.</p>
+                  </div>
+                </div>
+
+                <div class="account-profile-view">
+                  <div id="accountAvatar" class="avatar-large">?</div>
+                  <div class="account-text-info">
+                    <strong id="accountFullName">Nepřihlášený uživatel</strong>
+                    <span id="accountUsername" class="muted">Lokální režim prohlížeče</span>
+                    <span id="accountSyncBadge" class="status-indicator-pill local">Lokální úložiště</span>
+                  </div>
+                </div>
+
+                <div class="account-actions-row">
+                  <button id="openLoginModalBtn" class="win-btn-accent" type="button">Přihlásit se</button>
+                  <button id="openRegisterModalBtn" class="win-btn-standard" type="button">Zaregistrovat nový účet</button>
+                  <button id="logoutUserBtn" class="win-btn-subtle danger-btn hidden" type="button">Odhlásit</button>
+                </div>
               </article>
 
-              <button class="primary-button save-settings" type="submit">Uložit nastavení pracovní doby</button>
-            </form>
-
-            <!-- Pravý sloupec v Nastavení: Účet, Supabase DB, Vzhled a Záloha -->
-            <div class="settings-stack">
-              <!-- Karta 3: Uživatel a jednoduchý login -->
-              <article class="settings-card highlight-border">
-                <div class="card-badge-head">
+              <!-- SUPABASE CLOUD DATABÁZE -->
+              <article class="win-card settings-group-card">
+                <div class="settings-group-header">
+                  <div class="icon-wrap cloud">⚡</div>
                   <div>
-                    <h2>Uživatel a přihlášení</h2>
-                    <p class="muted">Přihlas se svým jménem a PINem (nebo e-mailem), aby se tvá pracovní doba a docházka ukládala k tvému účtu.</p>
-                  </div>
-                  <span id="settingsUserBadge" class="badge">Lokální profil</span>
-                </div>
-
-                <div class="profile-summary-box">
-                  <div id="settingsAvatar" class="user-avatar large">P</div>
-                  <div class="profile-summary-info">
-                    <strong id="settingsProfileName">Nepřihlášený uživatel</strong>
-                    <span id="settingsProfileSub" class="muted">Data jsou uložena v tomto prohlížeči</span>
+                    <h3>Supabase Cloud Databáze</h3>
+                    <p>Centrální úložiště pro synchronizaci docházky mezi mobilem a počítačem.</p>
                   </div>
                 </div>
 
-                <div class="stacked-actions two-btn-row">
-                  <button id="openAuthDialogBtn" class="primary-button" type="button">Přihlásit / Změnit účet</button>
-                  <button id="logoutBtn" class="secondary-button hidden" type="button">Odhlásit se</button>
-                </div>
-              </article>
-
-              <!-- Karta 4: Supabase Cloud Databáze -->
-              <article class="settings-card">
-                <div class="card-badge-head">
-                  <div>
-                    <h2>Supabase Cloud Databáze</h2>
-                    <p id="supabaseCardDesc" class="muted">Synchronizace docházky a pracovní doby mezi mobilem a počítačem.</p>
+                <div id="supabaseAutoDetectedBanner" class="win-infobar success hidden">
+                  <div class="infobar-icon">✓</div>
+                  <div class="infobar-body">
+                    <strong>Automaticky připojeno přes GitHub Secrets</strong>
+                    <p>Aplikace používá sdílenou databázi nastavenou v repozitáři GitHub Pages. Není potřeba nic vyplňovat.</p>
                   </div>
-                  <span id="supabaseStatusBadge" class="badge subtle-badge">Nepřipojeno</span>
                 </div>
 
-                <div id="supabaseAutoConnectedBox" class="subcard hidden" style="margin-bottom: 12px;">
-                  <strong style="display:block; margin-bottom:4px;">✓ Databáze je automaticky připojená (GitHub Secrets)</strong>
-                  <span class="muted" style="font-size:12.5px;">Aplikace používá společnou Supabase databázi nastavenou v repozitáři. Stačí se přihlásit svým jménem a PINem.</span>
-                </div>
-
-                <div id="supabaseManualForm" class="form-grid">
-                  <label>
+                <div id="supabaseManualConfigBox" class="supabase-manual-box">
+                  <label class="win-field">
                     <span>Supabase Project URL</span>
-                    <input id="supabaseUrlInput" type="url" placeholder="https://xyzcompany.supabase.co" autocomplete="off">
+                    <input id="setSbUrl" type="url" placeholder="https://abcdef.supabase.co" autocomplete="off">
                   </label>
-                  <label>
-                    <span>Supabase Anon / Public Key</span>
-                    <input id="supabaseKeyInput" type="password" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." autocomplete="off">
+                  <label class="win-field">
+                    <span>Supabase Anon Public Key</span>
+                    <input id="setSbKey" type="password" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." autocomplete="off">
                   </label>
+                  <div class="manual-save-row">
+                    <button id="saveManualSbBtn" class="win-btn-accent" type="button">Uložit a otestovat připojení</button>
+                  </div>
                 </div>
 
-                <div class="stacked-actions">
-                  <button id="saveSupabaseBtn" class="primary-button" type="button">Uložit a otestovat připojení</button>
-                  <div class="two-btn-row">
-                    <button id="syncNowBtn" class="secondary-button" type="button">↻ Synchronizovat nyní</button>
-                    <button id="openSchemaDialogBtn" class="secondary-button" type="button">🗄 SQL Návrh databáze</button>
-                  </div>
-                  <div id="supabaseManualActions" class="two-btn-row">
-                    <button id="shareConfigLinkBtn" class="ghost-button small-btn" type="button">🔗 Zkopírovat odkaz pro mobil s DB klíčem</button>
-                    <button id="disconnectSupabaseBtn" class="ghost-button small-btn danger-text" type="button">Odpojit databázi</button>
-                  </div>
+                <div class="cloud-tools-buttons">
+                  <button id="forceSyncCloudBtn" class="win-btn-standard" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    <span>Synchronizovat data nyní</span>
+                  </button>
+                  <button id="openSqlViewerBtn" class="win-btn-standard" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                    <span>Zobrazit SQL návrh databáze</span>
+                  </button>
                 </div>
               </article>
 
-              <!-- Karta 5: Vzhled a zálohování -->
-              <article class="settings-card">
-                <h2>Vzhled a lokální záloha</h2>
-                <div class="form-grid">
-                  <label>
-                    <span>Barevný motiv aplikace</span>
-                    <select id="settingTheme">
-                      <option value="system">Podle systému (automaticky)</option>
-                      <option value="light">Světlý motiv</option>
-                      <option value="dark">Tmavý motiv</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="stacked-actions">
-                  <div class="two-btn-row">
-                    <button id="exportBtn" class="secondary-button" type="button">⬇ Exportovat JSON</button>
-                    <button id="importBtn" class="secondary-button" type="button">⬆ Importovat JSON</button>
+              <!-- VZHLED A ZÁLOHOVÁNÍ DAT -->
+              <article class="win-card settings-group-card">
+                <div class="settings-group-header">
+                  <div class="icon-wrap">🎨</div>
+                  <div>
+                    <h3>Vzhled a lokální záloha</h3>
+                    <p>Přizpůsobení motivu a export offline zálohy.</p>
                   </div>
-                  <button id="resetBtn" class="danger-button" type="button">Vymazat lokální data v zařízení</button>
+                </div>
+
+                <div class="win-field">
+                  <span>Barevný motiv aplikace</span>
+                  <select id="setThemeMode" class="win-select">
+                    <option value="system">Podle Windows / telefonu (automaticky)</option>
+                    <option value="light">Světlý motiv (Mica Light)</option>
+                    <option value="dark">Tmavý motiv (Mica Dark)</option>
+                  </select>
+                </div>
+
+                <div class="backup-actions-grid">
+                  <button id="exportJsonBtn" class="win-btn-standard" type="button">⬇ Exportovat JSON zálohu</button>
+                  <button id="importJsonBtn" class="win-btn-standard" type="button">⬆ Importovat JSON zálohu</button>
+                  <button id="resetLocalDbBtn" class="win-btn-subtle danger-btn" type="button">Vymazat lokální data v prohlížeči</button>
                 </div>
               </article>
+
             </div>
           </div>
         </section>
+
       </main>
 
-      <!-- Spodní navigace pro mobilní telefony -->
-      <nav class="bottom-nav no-print" aria-label="Mobilní navigace">
-        <button class="nav-button active" data-view="today" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+      <!-- MOBILNÍ SPODNÍ NAVIGAČNÍ LIŠTA -->
+      <nav class="win-mobile-nav no-print" aria-label="Mobilní navigace">
+        <button class="m-nav-btn active" data-view="dashboard" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
           <small>Dnes</small>
         </button>
-        <button class="nav-button" data-view="calendar" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <button class="m-nav-btn" data-view="calendar" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           <small>Kalendář</small>
         </button>
-        <button class="nav-button" data-view="overview" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-          <small>Přehled</small>
+        <button class="m-nav-btn" data-view="timesheet" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <small>Výkaz</small>
         </button>
-        <button class="nav-button" data-view="settings" type="button">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <button class="m-nav-btn" data-view="settings" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <small>Nastavení</small>
         </button>
       </nav>
     </div>
   </div>
 
-  <!-- ==================== DIALOG: DETAIL A ÚPRAVA DNE ==================== -->
-  <dialog id="dayDialog" class="sheet-dialog">
-    <form id="dayForm" method="dialog" class="sheet">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <header class="sheet-header">
+  <!-- ====================================================================
+       DIALOG: DETAIL A EDITACE DNE (WinUI Content Dialog / Sheet)
+       ==================================================================== -->
+  <dialog id="dayEditDialog" class="win11-dialog">
+    <form id="dayEditForm" method="dialog" class="win11-dialog-surface">
+      <div class="dialog-drag-handle" aria-hidden="true"></div>
+      <header class="dialog-header">
         <div>
-          <div id="dayDialogEyebrow" class="eyebrow">Detail dne</div>
-          <h2 id="dayDialogTitle"></h2>
+          <span id="dayDialogDateSub" class="dialog-subtitle">Pracovní den</span>
+          <h2 id="dayDialogTitle">23. října 2026</h2>
         </div>
-        <button id="closeDayBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+        <button id="closeDayDialogBtn" class="win-btn-subtle icon-only" type="button" aria-label="Zavřít">×</button>
       </header>
 
-      <input id="dayDate" type="hidden">
+      <input id="editDayDate" type="hidden">
 
-      <div class="field-stack">
-        <label>
-          <span>Režim / Typ dne</span>
-          <select id="dayType">
+      <div class="dialog-body-scroll">
+        <!-- Režim dne -->
+        <label class="win-field">
+          <span>Typ směny / Absence</span>
+          <select id="editDayType" class="win-select">
             <option value="work">Práce (běžná směna)</option>
             <option value="homeOffice">Home office (práce z domova)</option>
             <option value="businessTrip">Služební cesta</option>
@@ -667,187 +801,309 @@
             <option value="doctor">Lékař / Propustka</option>
             <option value="sick">Nemoc / Neschopenka</option>
             <option value="compTime">Náhradní volno</option>
-            <option value="holiday">Svátek / Volný den bez fondu</option>
+            <option value="holiday">Svátek / Volno bez fondu</option>
             <option value="other">Jiné omluvené volno</option>
           </select>
         </label>
 
-        <div id="workFields" class="subcard">
-          <div class="subcard-title-row">
-            <h3>Pracovní doba</h3>
-            <button id="applyDefaultsBtn" class="text-button" type="button">Doplnit mou běžnou dobu</button>
+        <!-- Pracovní doba sekce -->
+        <div id="editWorkSection" class="dialog-subcard">
+          <div class="subcard-header-flex">
+            <h4>Pracovní doba</h4>
+            <button id="editApplyDefaultHoursBtn" class="win-btn-subtle compact-btn" type="button">Použít běžný rozvrh</button>
           </div>
-          <div class="form-grid two-col">
-            <label><span>Příchod</span><input id="dayStart" type="time"></label>
-            <label><span>Odchod</span><input id="dayEnd" type="time"></label>
+          <div class="dialog-form-row">
+            <label class="win-field">
+              <span>Příchod</span>
+              <input id="editDayStart" type="time">
+            </label>
+            <label class="win-field">
+              <span>Odchod</span>
+              <input id="editDayEnd" type="time">
+            </label>
           </div>
-          <div class="break-row">
+
+          <div class="break-toggle-row">
             <div>
-              <span class="field-label">Přestávka na jídlo a oddech</span>
-              <strong id="autoBreakText">Automaticky 30 min</strong>
+              <span class="field-sub-label">Přestávka na oběd</span>
+              <strong id="editAutoBreakText">Automaticky 30 min</strong>
             </div>
-            <label class="mini-toggle"><input id="manualBreakToggle" type="checkbox"><span>Vlastní přestávka</span></label>
+            <label class="win-mini-toggle">
+              <input id="editManualBreakToggle" type="checkbox">
+              <span>Vlastní</span>
+            </label>
           </div>
-          <label id="manualBreakWrap" class="hidden">
-            <span>Vlastní délka přestávky</span>
-            <div class="input-with-suffix"><input id="dayBreak" type="number" min="0" max="240" step="5"><span>min</span></div>
+
+          <label id="editManualBreakWrap" class="win-field hidden" style="margin-top: 8px;">
+            <span>Délka přestávky</span>
+            <div class="win-input-suffix">
+              <input id="editDayBreak" type="number" min="0" max="240" step="5">
+              <span>min</span>
+            </div>
           </label>
         </div>
 
-        <div id="doctorFields" class="subcard hidden">
-          <h3>Návštěva lékaře</h3>
-          <label class="toggle-row compact-toggle">
-            <input id="doctorFullDay" type="checkbox">
-            <span><strong>Celý den u lékaře</strong><small>Započítá se celý denní fond jako omluvená absence.</small></span>
-          </label>
-          <div id="doctorTimeFields" class="form-grid two-col">
-            <label><span>Odchod k lékaři</span><input id="doctorStart" type="time"></label>
-            <label><span>Návrat / Konec</span><input id="doctorEnd" type="time"></label>
+        <!-- Lékař pole -->
+        <div id="editDoctorSection" class="dialog-subcard hidden">
+          <h4>Návštěva lékaře</h4>
+          <div class="win-toggle-control" style="margin-bottom: 8px;">
+            <label class="switch-label">
+              <input id="editDoctorFullDay" type="checkbox">
+              <span class="switch-slider"></span>
+              <div class="switch-text">
+                <strong>Celý den u lékaře</strong>
+                <small>Započítá se celý denní fond jako omluvená doba.</small>
+              </div>
+            </label>
+          </div>
+          <div id="editDoctorTimesRow" class="dialog-form-row">
+            <label class="win-field">
+              <span>Čas u lékaře od</span>
+              <input id="editDoctorStart" type="time">
+            </label>
+            <label class="win-field">
+              <span>Čas do</span>
+              <input id="editDoctorEnd" type="time">
+            </label>
           </div>
         </div>
 
-        <div id="otherFields" class="subcard hidden">
-          <h3>Omluvený čas</h3>
-          <label>
-            <span>Započítat omluvenou dobu</span>
-            <div class="input-with-suffix"><input id="otherMinutes" type="number" min="0" max="1440" step="5"><span>min</span></div>
+        <!-- Jiná omluvená doba -->
+        <div id="editOtherSection" class="dialog-subcard hidden">
+          <h4>Omluvený čas</h4>
+          <label class="win-field">
+            <span>Počet minut k započtení</span>
+            <div class="win-input-suffix">
+              <input id="editOtherMinutes" type="number" min="0" max="1440" step="5">
+              <span>min</span>
+            </div>
           </label>
         </div>
 
-        <label>
+        <!-- Poznámka -->
+        <label class="win-field">
           <span>Poznámka ke dni</span>
-          <textarea id="dayNote" rows="2" placeholder="Např. projekt, přesčas, pohotovost, poznámka k lékaři..."></textarea>
+          <textarea id="editDayNote" rows="2" placeholder="Např. projekt, pohotovost, přesčas..."></textarea>
         </label>
 
-        <div class="day-preview">
-          <div><span>Odpracováno</span><strong id="previewWorked">0:00</strong></div>
-          <div><span>Omluveno</span><strong id="previewCredited">0:00</strong></div>
-          <div><span>Fond dne</span><strong id="previewTarget">0:00</strong></div>
-          <div><span>Saldo dne</span><strong id="previewBalance">0:00</strong></div>
+        <!-- Live souhrn výsledku dne -->
+        <div class="dialog-preview-grid">
+          <div><span>Odpracováno</span><strong id="prevWorked">0:00</strong></div>
+          <div><span>Omluveno</span><strong id="prevCredited">0:00</strong></div>
+          <div><span>Fond dne</span><strong id="prevTarget">8:30</strong></div>
+          <div><span>Saldo</span><strong id="prevBalance">0:00</strong></div>
         </div>
       </div>
 
-      <div class="sheet-actions">
-        <button id="deleteDayBtn" class="danger-button" type="button">Smazat záznam</button>
-        <button class="primary-button" value="save" type="submit">Uložit den</button>
-      </div>
+      <footer class="dialog-footer">
+        <button id="deleteDayRecordBtn" class="win-btn-subtle danger-btn" type="button">Smazat záznam</button>
+        <div class="dialog-actions-right">
+          <button id="cancelDayDialogBtn" class="win-btn-standard" type="button">Zrušit</button>
+          <button class="win-btn-accent" value="save" type="submit">Uložit den</button>
+        </div>
+      </footer>
     </form>
   </dialog>
 
-  <!-- ==================== DIALOG: JEDNODUCHÝ LOGIN & PROFIL ==================== -->
-  <dialog id="authDialog" class="sheet-dialog">
-    <div class="sheet compact-sheet">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <header class="sheet-header">
+  <!-- ====================================================================
+       DIALOG A: PŘIHLÁŠENÍ EXISTUJÍCÍHO UŽIVATELE (LOGIN)
+       ==================================================================== -->
+  <dialog id="loginModal" class="win11-dialog">
+    <div class="win11-dialog-surface compact">
+      <header class="dialog-header">
         <div>
-          <div class="eyebrow">Osobní účet · Supabase Cloud</div>
-          <h2>Přihlášení uživatele</h2>
+          <span class="dialog-subtitle">Osobní účet</span>
+          <h2>Přihlášení do docházky</h2>
         </div>
-        <button id="closeAuthBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+        <button id="closeLoginModalBtn" class="win-btn-subtle icon-only" type="button">×</button>
       </header>
 
-      <form id="simpleAuthForm" class="field-stack">
-        <p class="muted" style="margin: 0;">
-          Zadej své <strong>uživatelské jméno</strong> a <strong>PIN / heslo</strong>. Pokud účet v databázi ještě neexistuje, automaticky se vytvoří a uloží tvé nastavení pracovní doby, víkendů i docházku.
+      <form id="loginUserForm" class="dialog-body-scroll">
+        <p class="dialog-info-text">
+          Zadej své <strong>uživatelské jméno</strong> a <strong>PIN / heslo</strong>. Aplikace načte tvůj rozvrh a docházku ze společné databáze.
         </p>
-        <div class="form-grid two-col">
-          <label>
-            <span>Uživatelské jméno (login) *</span>
-            <input id="authUsername" type="text" placeholder="např. martin" required autocomplete="username">
-          </label>
-          <label>
-            <span>Celé jméno (na výkaz)</span>
-            <input id="authDisplayName" type="text" placeholder="např. Martin Novák" autocomplete="name">
-          </label>
-        </div>
-        <label>
+
+        <label class="win-field">
+          <span>Uživatelské jméno (login) *</span>
+          <input id="loginUsername" type="text" placeholder="např. martin" required autocomplete="username">
+        </label>
+
+        <label class="win-field">
           <span>Osobní PIN nebo heslo *</span>
-          <input id="authPin" type="password" placeholder="Zadej svůj PIN nebo heslo" required autocomplete="current-password">
+          <input id="loginPin" type="password" placeholder="••••" required autocomplete="current-password">
         </label>
-        <label class="toggle-row compact-toggle">
-          <input id="authMergeLocal" type="checkbox" checked>
-          <span>
-            <strong>Sloučit dosavadní lokální záznamy s účtem</strong>
-            <small>Při přihlášení nahraje dny z tohoto zařízení do tvého profilu v databázi.</small>
-          </span>
-        </label>
-        <div class="stacked-actions">
-          <button class="primary-button" type="submit">Přihlásit se / Vytvořit profil</button>
+
+        <div class="dialog-footer-block">
+          <button class="win-btn-accent full-width-btn" type="submit">Přihlásit se</button>
+          <div class="modal-switch-link">
+            <span>Nemáš ještě svůj profil?</span>
+            <button id="switchToRegisterBtn" class="text-link-btn" type="button">Vytvořit nový účet</button>
+          </div>
         </div>
       </form>
     </div>
   </dialog>
 
-  <!-- ==================== DIALOG: SQL NÁVRH DATABÁZE SUPABASE ==================== -->
-  <dialog id="schemaDialog" class="sheet-dialog">
-    <div class="sheet">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <header class="sheet-header">
+  <!-- ====================================================================
+       DIALOG B: REGISTRACE NOVÉHO ÚČTU (REGISTER)
+       ==================================================================== -->
+  <dialog id="registerModal" class="win11-dialog">
+    <div class="win11-dialog-surface compact">
+      <header class="dialog-header">
         <div>
-          <div class="eyebrow">Supabase PostgreSQL</div>
-          <h2>Návrh databáze a nasazení</h2>
+          <span class="dialog-subtitle">Nový profil</span>
+          <h2>Registrace uživatele</h2>
         </div>
-        <button id="closeSchemaBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+        <button id="closeRegisterModalBtn" class="win-btn-subtle icon-only" type="button">×</button>
       </header>
 
-      <div class="field-stack">
-        <div class="subcard">
-          <h3>Jak databáze funguje?</h3>
-          <ul class="schema-list">
-            <li><strong><code>attendance_profiles</code></strong> – ukládá uživatele (<code>user_key</code>, <code>username</code>, <code>display_name</code>, <code>pin_hash</code>), běžnou pracovní dobu (<code>work_start</code>, <code>work_end</code>, <code>daily_target_minutes</code>, přestávky) a nastavení práce o víkendech (<code>work_days</code>, <code>weekend_mode</code>, vlastní časy o víkendu a svátky).</li>
-            <li><strong><code>attendance_days</code></strong> – ukládá denní záznamy docházky pro každého uživatele (<code>user_key</code> + <code>date</code>), typ směny/absence, časy příchodu a odchodu, přestávku, lékaře, poznámku i spočtené minuty.</li>
-            <li><strong><code>v_monthly_attendance_summary</code></strong> – automatický SQL pohled (VIEW) pro okamžitý přehled odpracovaných hodin, salda a čerpané dovolené po měsících.</li>
+      <form id="registerUserForm" class="dialog-body-scroll">
+        <p class="dialog-info-text">
+          Vytvoř si nový osobní profil ve společné databázi. Budeš mít vlastní evidenci docházky i nastavení směn.
+        </p>
+
+        <div class="dialog-form-row">
+          <label class="win-field">
+            <span>Uživatelské jméno (login bez mezer) *</span>
+            <input id="regUsername" type="text" placeholder="např. jiri.novak" required autocomplete="username">
+          </label>
+          <label class="win-field">
+            <span>Celé jméno (na výkaz docházky) *</span>
+            <input id="regDisplayName" type="text" placeholder="např. Jiří Novák" required autocomplete="name">
+          </label>
+        </div>
+
+        <div class="dialog-form-row">
+          <label class="win-field">
+            <span>Zvol si PIN nebo heslo *</span>
+            <input id="regPin" type="password" placeholder="Zadej PIN/heslo" required autocomplete="new-password">
+          </label>
+          <label class="win-field">
+            <span>Potvrzení PINu / hesla *</span>
+            <input id="regPinConfirm" type="password" placeholder="Zopakuj PIN/heslo" required autocomplete="new-password">
+          </label>
+        </div>
+
+        <div class="win-toggle-control" style="margin: 6px 0 12px;">
+          <label class="switch-label">
+            <input id="regMergeLocalDays" type="checkbox" checked>
+            <span class="switch-slider"></span>
+            <div class="switch-text">
+              <strong>Nahrát dosavadní záznamy z tohoto zařízení do nového účtu</strong>
+            </div>
+          </label>
+        </div>
+
+        <div class="dialog-footer-block">
+          <button class="win-btn-accent full-width-btn" type="submit">Vytvořit účet v databázi</button>
+          <div class="modal-switch-link">
+            <span>Už máš účet?</span>
+            <button id="switchToLoginBtn" class="text-link-btn" type="button">Přihlásit se k existujícímu účtu</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- ====================================================================
+       DIALOG C: SQL NÁVRH DATABÁZE PRO SUPABASE
+       ==================================================================== -->
+  <dialog id="sqlSchemaDialog" class="win11-dialog">
+    <div class="win11-dialog-surface">
+      <header class="dialog-header">
+        <div>
+          <span class="dialog-subtitle">PostgreSQL &amp; Row Level Security</span>
+          <h2>Návrh Supabase databáze</h2>
+        </div>
+        <button id="closeSqlDialogBtn" class="win-btn-subtle icon-only" type="button">×</button>
+      </header>
+
+      <div class="dialog-body-scroll">
+        <div class="dialog-subcard">
+          <h4>Struktura společné databáze:</h4>
+          <ul class="schema-bullets">
+            <li><strong><code>attendance_profiles</code></strong> – Profily zaměstnanců, běžná pracovní doba, nastavení víkendů, roční dovolená a zahashovaný PIN.</li>
+            <li><strong><code>attendance_days</code></strong> – Záznamy jednotlivých dnů docházky pro každého uživatele zvlášť.</li>
+            <li><strong>Row Level Security (RLS)</strong> – Zabezpečení na úrovni databáze: nikdo nemůže číst ani upravovat záznamy jiného kolegy bez znalosti PINu.</li>
           </ul>
         </div>
 
-        <div class="subcard">
-          <div class="subcard-title-row">
-            <h3>SQL skript pro Supabase SQL Editor</h3>
-            <div class="inline-btns">
-              <button id="copySqlBtn" class="secondary-button compact" type="button">📋 Zkopírovat SQL</button>
-              <a href="./supabase-schema.sql" download="supabase-schema.sql" class="secondary-button compact link-btn">⬇ Stáhnout .sql</a>
-            </div>
+        <div class="code-viewer-wrap">
+          <div class="code-viewer-bar">
+            <span>supabase-schema.sql</span>
+            <button id="copySqlCodeBtn" class="win-btn-standard compact-btn" type="button">📋 Zkopírovat SQL</button>
           </div>
-          <pre id="sqlCodeBlock" class="code-preview"></pre>
+          <pre id="sqlTextContainer" class="code-preview"></pre>
         </div>
       </div>
+
+      <footer class="dialog-footer" style="justify-content: flex-end;">
+        <button id="closeSqlFooterBtn" class="win-btn-accent" type="button">Zavřít</button>
+      </footer>
     </div>
   </dialog>
 
-  <!-- ==================== DIALOG: NÁVOD NA INSTALACI PWA ==================== -->
-  <dialog id="helpDialog" class="sheet-dialog">
-    <div class="sheet compact-sheet">
-      <div class="sheet-handle" aria-hidden="true"></div>
-      <header class="sheet-header">
+  <!-- ====================================================================
+       DIALOG D: PWA INSTALACE NÁVOD
+       ==================================================================== -->
+  <dialog id="pwaHelpDialog" class="win11-dialog">
+    <div class="win11-dialog-surface compact">
+      <header class="dialog-header">
         <div>
-          <div class="eyebrow">Mobil i Počítač · GitHub Pages</div>
-          <h2>Jak aplikaci nainstalovat</h2>
+          <span class="dialog-subtitle">Mobil &amp; Počítač</span>
+          <h2>Jak aplikaci nainstalovat na plochu</h2>
         </div>
-        <button id="closeHelpBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+        <button id="closePwaHelpBtn" class="win-btn-subtle icon-only" type="button">×</button>
       </header>
-      <div class="field-stack">
-        <div class="subcard">
-          <h3>📱 iPhone / iPad (Safari)</h3>
-          <ol class="install-steps">
-            <li>Otevři tuto stránku v prohlížeči <strong>Safari</strong>.</li>
-            <li>Klepni dole na tlačítko <strong>Sdílet</strong>.</li>
-            <li>Zvol <strong>Přidat na plochu</strong>.</li>
-          </ol>
+
+      <div class="dialog-body-scroll">
+        <div class="dialog-subcard">
+          <h4>📱 iPhone / iPad (Safari)</h4>
+          <p>1. V Safari klepni na tlačítko <strong>Sdílet</strong> (čtvereček se šipkou nahoru).<br>2. Zvol <strong>Přidat na plochu</strong>.</p>
         </div>
-        <div class="subcard">
-          <h3>🤖 Android (Chrome) &amp; 💻 Počítač (Chrome / Edge)</h3>
-          <ol class="install-steps">
-            <li>Klepni na ikonu <strong>Instalovat aplikaci</strong> v adresním řádku nebo v menu prohlížeče.</li>
-            <li>Aplikace funguje plně offline a při připojení k Supabase automaticky synchronizuje docházku mezi mobilem a prohlížečem.</li>
-          </ol>
+        <div class="dialog-subcard">
+          <h4>💻 Počítač (Edge / Chrome) &amp; Android</h4>
+          <p>V adresním řádku klikni na ikonu <strong>Instalovat aplikaci</strong>. Aplikace se otevře v samostatném okně bez lišt prohlížeče a funguje i offline.</p>
         </div>
       </div>
     </div>
   </dialog>
 
-  <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <!-- Skrytý input pro import souboru zálohy -->
+  <input id="jsonImportInput" type="file" accept="application/json,.json" hidden>
 
+  <!-- ====================================================================
+       DIALOG E: WINDOWS 11 MĚSÍČNÍ ROZCESTNÍK (MONTH & YEAR PICKER)
+       ==================================================================== -->
+  <dialog id="monthPickerModal" class="win11-dialog">
+    <div class="win11-dialog-surface compact">
+      <header class="dialog-header">
+        <div class="year-selector-row">
+          <button id="pickerPrevYearBtn" class="win-btn-standard icon-btn" type="button" aria-label="Předchozí rok">‹</button>
+          <strong id="pickerYearDisplay" class="picker-year-title">2026</strong>
+          <button id="pickerNextYearBtn" class="win-btn-standard icon-btn" type="button" aria-label="Další rok">›</button>
+        </div>
+        <button id="closeMonthPickerBtn" class="win-btn-subtle icon-only" type="button">×</button>
+      </header>
+
+      <div class="month-grid-picker" id="monthPickerGrid">
+        <!-- 12 měsíců generovaných v JS -->
+      </div>
+
+      <footer class="dialog-footer" style="justify-content: space-between;">
+        <button id="pickerTodayMonthBtn" class="win-btn-subtle" type="button">Přejít na dnešní měsíc</button>
+        <button id="pickerCloseFooterBtn" class="win-btn-standard" type="button">Zavřít</button>
+      </footer>
+    </div>
+  </dialog>
+
+  <!-- WinUI InfoBar / Toast notifikace -->
+  <div id="win11Toast" class="win11-toast" role="status" aria-live="polite">
+    <span id="toastIcon" class="toast-status-icon">ℹ️</span>
+    <span id="toastMessage">Zpráva systému</span>
+  </div>
+
+  <!-- Konfigurace z GitHub Secrets a aplikační kód -->
   <script src="./config.js"></script>
   <script src="./app.js" defer></script>
 </body>

@@ -3,18 +3,18 @@
 
   // ============================================================================
   // KONFIGURACE SPOLEČNÉ SUPABASE DATABÁZE
-  // Při nasazení na GitHub Pages přes GitHub Actions se klíče automaticky načtou
-  // z GitHub Secrets (SUPABASE_URL a SUPABASE_ANON_KEY) do souboru config.js.
+  // Načítá se automaticky z GitHub Secrets (SUPABASE_URL a SUPABASE_ANON_KEY)
+  // přes config.js, nebo lokálně z paměti prohlížeče.
   // ============================================================================
   const DEFAULT_SUPABASE_CONFIG = {
     url: window.DOCHAZKA_CONFIG?.supabaseUrl || '',
     anonKey: window.DOCHAZKA_CONFIG?.supabaseAnonKey || ''
   };
 
-  const DB_NAME = 'osobni-dochazka';
-  const DB_VERSION = 2;
-  const LS_SUPABASE_KEY = 'dochazka_supabase_config_v1';
-  const LS_USER_KEY = 'dochazka_active_user_v1';
+  const DB_NAME = 'dochazka-win11-db';
+  const DB_VERSION = 3;
+  const LS_SUPABASE_KEY = 'dochazka_supabase_config_v2';
+  const LS_USER_KEY = 'dochazka_active_user_v2';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -38,30 +38,35 @@
   };
 
   const TYPE_LABELS = {
-    work: 'Práce',
+    work: 'Práce (směna)',
     homeOffice: 'Home office',
     businessTrip: 'Služební cesta',
     vacation: 'Dovolená',
     halfVacation: '½ dovolené',
-    doctor: 'Lékař',
+    doctor: 'Lékař / Propustka',
     sick: 'Nemoc',
-    holiday: 'Svátek / volno',
+    holiday: 'Svátek / Volno',
     compTime: 'Náhradní volno',
     other: 'Jiné volno'
   };
 
   const SHORT_TYPE_LABELS = {
-    work: 'Práce',
+    work: 'Směna',
     homeOffice: 'HO',
     businessTrip: 'Cesta',
     vacation: 'Dovol.',
     halfVacation: '½ dov.',
     doctor: 'Lékař',
     sick: 'Nemoc',
-    holiday: 'Volno',
+    holiday: 'Svátek',
     compTime: 'Náhr.',
     other: 'Jiné'
   };
+
+  const MONTH_NAMES_CS = [
+    'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
+    'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'
+  ];
 
   const SQL_SCHEMA_TEXT = `-- ============================================================================
 -- OSOBNÍ DOCHÁZKA PWA – DATABÁZE PRO SUPABASE (PostgreSQL)
@@ -161,10 +166,12 @@ create policy "Secure access to own attendance days"
   let settings = structuredClone(DEFAULT_SETTINGS);
   let records = new Map();
   let calendarMonth = startOfMonth(new Date());
-  let overviewMonth = startOfMonth(new Date());
+  let timesheetMonth = startOfMonth(new Date());
+  let pickerSelectedYear = new Date().getFullYear();
+  let pickerTarget = 'calendar'; // 'calendar' | 'timesheet'
   let editingOriginal = null;
-  let toastTimer;
-  let activeShiftInterval = null;
+  let toastTimer = null;
+  let activeShiftTimerInterval = null;
 
   let supabaseConfig = loadSupabaseConfig();
   let currentUser = loadCurrentUser();
@@ -228,10 +235,10 @@ create policy "Secure access to own attendance days"
   }
 
   function formatClock(date = new Date()) { return `${pad(date.getHours())}:${pad(date.getMinutes())}`; }
-  function fmtDay(date) { return new Intl.DateTimeFormat('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' }).format(date); }
+  function fmtDayFull(date) { return new Intl.DateTimeFormat('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(date); }
   function fmtDayShort(date) { return new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'long', year: 'numeric' }).format(date); }
   function fmtWeekdayShort(date) { return new Intl.DateTimeFormat('cs-CZ', { weekday: 'short' }).format(date); }
-  function fmtMonth(date) { return new Intl.DateTimeFormat('cs-CZ', { month: 'long', year: 'numeric' }).format(date); }
+  function fmtMonthTitle(date) { return new Intl.DateTimeFormat('cs-CZ', { month: 'long', year: 'numeric' }).format(date); }
 
   // ============================================================================
   // ČESKÉ STÁTNÍ SVÁTKY (VČETNĚ VELIKONOC)
@@ -280,7 +287,7 @@ create policy "Secure access to own attendance days"
   function isPublicHoliday(key) { return !!holidayName(key); }
 
   // ============================================================================
-  // ROZVRH PRACOVNÍ DOBY, VÍKENDŮ A VÝPOČET METRIK DNE
+  // PRACOVNÍ ROZVRH A VÝPOČTY METRIK
   // ============================================================================
   function activeWorkDays() {
     if (Array.isArray(settings.workDays) && settings.workDays.length > 0) {
@@ -379,24 +386,9 @@ create policy "Secure access to own attendance days"
   function defaultDay(key) {
     const scheduled = isScheduledWorkday(key);
     const hours = defaultHoursForDate(key);
-    if (!scheduled) {
-      return {
-        date: key,
-        type: isPublicHoliday(key) ? 'holiday' : 'work',
-        start: settings.autoFill ? hours.start : '',
-        end: settings.autoFill ? hours.end : '',
-        manualBreak: false,
-        breakMinutes: settings.breakMinutes,
-        doctorFullDay: false,
-        doctorStart: '',
-        doctorEnd: '',
-        otherMinutes: 0,
-        note: ''
-      };
-    }
     return {
       date: key,
-      type: 'work',
+      type: scheduled ? 'work' : (isPublicHoliday(key) ? 'holiday' : 'work'),
       start: settings.autoFill ? hours.start : '',
       end: settings.autoFill ? hours.end : '',
       manualBreak: false,
@@ -410,7 +402,7 @@ create policy "Secure access to own attendance days"
   }
 
   // ============================================================================
-  // LOKÁLNÍ INDEXEDDB ÚLOŽIŠTĚ
+  // INDEXEDDB LOKÁLNÍ ÚLOŽIŠTĚ
   // ============================================================================
   function openDb() {
     return new Promise((resolve, reject) => {
@@ -464,7 +456,7 @@ create policy "Secure access to own attendance days"
     renderAll();
     if (!skipCloud && isCloudReady()) {
       pushDayToSupabase(day).catch(err => {
-        console.warn('Cloud sync dne selhal:', err);
+        console.warn('Cloud sync selhal:', err);
         setSyncState('error');
       });
     }
@@ -476,7 +468,7 @@ create policy "Secure access to own attendance days"
     renderAll();
     if (!skipCloud && isCloudReady()) {
       deleteDayFromSupabase(key).catch(err => {
-        console.warn('Smazání dne v cloudu selhalo:', err);
+        console.warn('Smazání v cloudu selhalo:', err);
         setSyncState('error');
       });
     }
@@ -494,7 +486,7 @@ create policy "Secure access to own attendance days"
   }
 
   // ============================================================================
-  // SUPABASE CLOUD & JEDNODUCHÝ LOGIN (JMÉNO + PIN/HESLO)
+  // SUPABASE CLOUD SYNC & AUTHENTICATION
   // ============================================================================
   function loadSupabaseConfig() {
     try {
@@ -535,6 +527,14 @@ create policy "Secure access to own attendance days"
     }
   }
 
+  function isBuiltInSupabase() {
+    return Boolean(DEFAULT_SUPABASE_CONFIG.url && DEFAULT_SUPABASE_CONFIG.anonKey);
+  }
+
+  function isSupabaseConfigured() {
+    return Boolean(supabaseConfig.url && supabaseConfig.anonKey);
+  }
+
   function loadCurrentUser() {
     try {
       return JSON.parse(localStorage.getItem(LS_USER_KEY) || 'null');
@@ -547,14 +547,6 @@ create policy "Secure access to own attendance days"
     currentUser = user;
     if (user) localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
     else localStorage.removeItem(LS_USER_KEY);
-  }
-
-  function isBuiltInSupabase() {
-    return Boolean(DEFAULT_SUPABASE_CONFIG.url && DEFAULT_SUPABASE_CONFIG.anonKey);
-  }
-
-  function isSupabaseConfigured() {
-    return Boolean(supabaseConfig.url && supabaseConfig.anonKey);
   }
 
   function isCloudReady() {
@@ -736,86 +728,101 @@ create policy "Secure access to own attendance days"
     setSyncState('online');
   }
 
-  async function testSupabaseConnection() {
-    if (!isSupabaseConfigured()) throw new Error('Vyplň Supabase Project URL i Anon Key.');
-    await sbFetch('/rest/v1/attendance_profiles?select=user_key&limit=1', { method: 'GET' });
-    return true;
-  }
-
-  async function loginWithSimpleProfile(usernameInput, displayNameInput, pinInput, mergeLocal) {
+  // ============================================================================
+  // SAMOSTATNÉ PŘIHLÁŠENÍ & REGISTRACE
+  // ============================================================================
+  async function performLogin(usernameInput, pinInput) {
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
-    if (!cleanUser) throw new Error('Zadej platné uživatelské jméno (písmena/čísla).');
+    if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
 
     const userKey = `user:${cleanUser}`;
     const pinHash = await hashPin(pinInput, cleanUser);
-    const displayName = (displayNameInput || '').trim() || usernameInput.trim();
-    const previousUserKey = currentUser?.userKey;
+    const candidateUser = { userKey, username: cleanUser, pinHash };
 
     if (isSupabaseConfigured()) {
       setSyncState('syncing');
-      const candidateUser = {
-        userKey,
-        username: cleanUser,
-        displayName,
-        pinHash
-      };
-      const existingRows = await sbFetch(
-        `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(userKey)}&select=*`,
-        { authUser: candidateUser }
-      );
-      const existing = existingRows?.[0] || null;
+      try {
+        const rows = await sbFetch(
+          `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(userKey)}&select=*`,
+          { authUser: candidateUser }
+        );
+        const profile = rows?.[0];
+        if (!profile) {
+          throw new Error(`Uživatel "${cleanUser}" nebyl nalezen nebo byl zadán chybný PIN.`);
+        }
 
-      if (existing) {
         saveCurrentUser({
           userKey,
           username: cleanUser,
-          displayName: existing.display_name || displayName,
+          displayName: profile.display_name || cleanUser,
           pinHash
         });
-        applySettingsFromProfileRow(existing);
+        applySettingsFromProfileRow(profile);
         await saveSettings(true);
         applyTheme();
-      } else {
-        // Zkusíme založit nový profil; pokud už user_key existuje s jiným PINem, databáze vrátí 409 / 403
-        try {
-          const row = profileRowFromSettings(candidateUser);
-          await sbFetch('/rest/v1/attendance_profiles', {
-            method: 'POST',
-            headers: { Prefer: 'return=minimal' },
-            body: JSON.stringify(row),
-            authUser: candidateUser
-          });
-          saveCurrentUser(candidateUser);
-        } catch (err) {
-          setSyncState('error');
-          if (err.status === 409 || err.status === 403 || /duplicate|unique|policy/i.test(err.message)) {
-            throw new Error(`Uživatel "${cleanUser}" již existuje a zadaný PIN / heslo nesouhlasí.`);
-          }
-          throw err;
-        }
+        await syncWithSupabase(false);
+        return `Vítej zpět, ${currentUser.displayName}!`;
+      } catch (err) {
+        setSyncState('error');
+        throw err;
       }
-
-      // Pokud se přihlásil jiný uživatel a nechce sloučit cizí lokální data, vyčistíme lokální dny před stažením
-      if (!mergeLocal || (previousUserKey && previousUserKey !== userKey)) {
-        const tx = db.transaction(['days'], 'readwrite');
-        tx.objectStore('days').clear();
-        await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
-        records.clear();
-      }
-
-      await syncWithSupabase(mergeLocal);
-      return existing ? 'Profil načten ze Supabase' : 'Nový profil vytvořen v Supabase';
     } else {
+      // Lokální profil bez cloudu
       saveCurrentUser({
         userKey,
         username: cleanUser,
-        displayName,
+        displayName: cleanUser,
         pinHash
       });
       setSyncState('local');
       renderAll();
-      return 'Uživatel přihlášen (lokální režim)';
+      return `Přihlášen lokální profil ${cleanUser}.`;
+    }
+  }
+
+  async function performRegister(usernameInput, displayNameInput, pinInput, pinConfirmInput, mergeLocal) {
+    const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+    if (!cleanUser) throw new Error('Zadej platné uživatelské jméno (písmena, číslice).');
+    if (!displayNameInput.trim()) throw new Error('Zadej celé jméno na výkaz.');
+    if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
+    if (pinInput !== pinConfirmInput) throw new Error('Zadaná hesla/PINy se neshodují.');
+
+    const userKey = `user:${cleanUser}`;
+    const pinHash = await hashPin(pinInput, cleanUser);
+    const candidateUser = {
+      userKey,
+      username: cleanUser,
+      displayName: displayNameInput.trim(),
+      pinHash
+    };
+
+    if (isSupabaseConfigured()) {
+      setSyncState('syncing');
+      try {
+        const row = profileRowFromSettings(candidateUser);
+        await sbFetch('/rest/v1/attendance_profiles', {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify(row),
+          authUser: candidateUser
+        });
+
+        saveCurrentUser(candidateUser);
+        await syncWithSupabase(mergeLocal);
+        return `Účet "${cleanUser}" byl úspěšně vytvořen!`;
+      } catch (err) {
+        setSyncState('error');
+        if (err.status === 409 || /duplicate|unique/i.test(err.message)) {
+          throw new Error(`Uživatelské jméno "${cleanUser}" je již obsazeno. Zvol jiné.`);
+        }
+        throw err;
+      }
+    } else {
+      saveCurrentUser(candidateUser);
+      setSyncState('local');
+      renderAll();
+      return `Lokální účet "${cleanUser}" vytvořen.`;
     }
   }
 
@@ -826,11 +833,10 @@ create policy "Secure access to own attendance days"
     }
     setSyncState('syncing');
     try {
-      // 1. Načteme profil ze Supabase
       const profRows = await sbFetch(
         `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*`
       );
-      if (profRows && profRows[0]) {
+      if (profRows?.[0]) {
         applySettingsFromProfileRow(profRows[0]);
         if (profRows[0].display_name) {
           currentUser.displayName = profRows[0].display_name;
@@ -838,17 +844,13 @@ create policy "Secure access to own attendance days"
         }
         await saveSettings(true);
         applyTheme();
-      } else {
-        await pushProfileToSupabase();
       }
 
-      // 2. Načteme dny uživatele ze Supabase
       const remoteRows = await sbFetch(
         `/rest/v1/attendance_days?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*&order=date.asc`
       );
       const remoteMap = new Map((remoteRows || []).map(r => [r.date, localDayFromSupabaseRow(r)]));
 
-      // 3. Zjistíme, které lokální dny nahrát do cloudu
       const toUpload = [];
       if (pushLocalDays) {
         for (const [dateKey, localDay] of records.entries()) {
@@ -875,13 +877,10 @@ create policy "Secure access to own attendance days"
         });
       }
 
-      // 4. Uložíme sloučená data do lokální IndexedDB
       const tx = db.transaction(['days'], 'readwrite');
       const store = tx.objectStore('days');
       store.clear();
-      for (const day of remoteMap.values()) {
-        store.put(day);
-      }
+      for (const day of remoteMap.values()) store.put(day);
       await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
@@ -891,23 +890,23 @@ create policy "Secure access to own attendance days"
       setSyncState('online');
       renderAll();
     } catch (err) {
-      console.error('Chyba synchronizace se Supabase:', err);
+      console.error('Chyba synchronizace:', err);
       setSyncState('error');
       throw err;
     }
   }
 
   // ============================================================================
-  // STATISTIKY A VÝPOČTY MĚSÍCE / ROKU
+  // STATISTIKY
   // ============================================================================
   function yearVacationUsed(year) {
-    let usedDays = 0;
+    let used = 0;
     for (const [key, day] of records.entries()) {
       if (!key.startsWith(`${year}-`)) continue;
-      if (day.type === 'vacation') usedDays += 1;
-      else if (day.type === 'halfVacation') usedDays += 0.5;
+      if (day.type === 'vacation') used += 1;
+      else if (day.type === 'halfVacation') used += 0.5;
     }
-    return usedDays;
+    return used;
   }
 
   function monthStats(monthDate) {
@@ -916,17 +915,6 @@ create policy "Secure access to own attendance days"
     const today = todayKey();
     let fund = 0, worked = 0, credited = 0, balance = 0, recorded = 0, missing = 0;
     let scheduledWorkdays = 0, weekendWorked = 0, totalBreaks = 0;
-    const breakdown = {
-      work: 0,
-      homeOffice: 0,
-      businessTrip: 0,
-      vacation: 0,
-      halfVacation: 0,
-      doctor: 0,
-      sick: 0,
-      compTime: 0,
-      other: 0
-    };
 
     for (let d = 1; d <= daysInMonth; d++) {
       const dateObj = new Date(year, month, d, 12);
@@ -944,15 +932,11 @@ create policy "Secure access to own attendance days"
         totalBreaks += m.breakMinutes;
         recorded++;
         if (isWeekendDate(dateObj)) weekendWorked += m.worked;
-        if ( ['work', 'homeOffice', 'businessTrip'].includes(rec.type) ) {
-          breakdown[rec.type] += m.worked;
-        } else if (breakdown[rec.type] !== undefined) {
-          breakdown[rec.type] += m.credited;
-        }
       } else if (baseTarget > 0 && key < today) {
         missing++;
       }
     }
+
     return {
       fund,
       worked,
@@ -962,19 +946,18 @@ create policy "Secure access to own attendance days"
       missing,
       scheduledWorkdays,
       weekendWorked,
-      totalBreaks,
-      breakdown
+      totalBreaks
     };
   }
 
   // ============================================================================
-  // VYKRESLOVÁNÍ UI
+  // VYKRESLENÍ UI
   // ============================================================================
   function applyTheme() {
     if (settings.theme === 'light' || settings.theme === 'dark') {
       document.documentElement.dataset.theme = settings.theme;
     } else {
-      delete document.documentElement.dataset.theme;
+      document.documentElement.dataset.theme = 'system';
     }
   }
 
@@ -990,81 +973,9 @@ create policy "Secure access to own attendance days"
     const mapNames = { 1: 'Po', 2: 'Út', 3: 'St', 4: 'Čt', 5: 'Pá', 6: 'So', 0: 'Ne' };
     const ordered = [1, 2, 3, 4, 5, 6, 0].filter(d => days.includes(d));
     if (ordered.join(',') === '1,2,3,4,5') return 'Po–Pá';
-    if (ordered.join(',') === '1,2,3,4,5,6') return 'Po–So (vč. sobot)';
-    if (ordered.join(',') === '1,2,3,4,5,6,0') return 'Po–Ne (vč. víkendů)';
-    return ordered.map(d => mapNames[d]).join(', ') || 'Bez pevného rozvrhu';
-  }
-
-  function renderAuthAndSyncUI() {
-    const name = currentUser ? (currentUser.displayName || currentUser.username) : 'Nepřihlášen';
-    const initial = (name[0] || 'P').toUpperCase();
-
-    $('#sidebarAvatar').textContent = initial;
-    $('#headerUserAvatar').textContent = initial;
-    $('#settingsAvatar').textContent = initial;
-
-    $('#sidebarUserName').textContent = name;
-    $('#headerUserName').textContent = currentUser ? name : 'Přihlásit';
-    $('#settingsProfileName').textContent = currentUser ? `${name} (@${currentUser.username})` : 'Nepřihlášený uživatel';
-
-    const dot = $('#syncDot');
-    const headerText = $('#syncHeaderText');
-    const sideSync = $('#sidebarSyncStatus');
-    const sbBadge = $('#supabaseStatusBadge');
-    const userBadge = $('#settingsUserBadge');
-
-    dot.className = 'sync-dot';
-    sideSync.className = 'sync-pill';
-
-    if (isCloudReady()) {
-      if (syncState === 'syncing') {
-        dot.classList.add('syncing');
-        headerText.textContent = 'Synchronizuji…';
-        sideSync.textContent = 'Synchronizuji…';
-      } else if (syncState === 'error') {
-        dot.classList.add('error');
-        headerText.textContent = 'Offline / Chyba';
-        sideSync.textContent = 'Chyba spojení (uloženo lokálně)';
-      } else {
-        dot.classList.add('online');
-        sideSync.classList.add('online');
-        headerText.textContent = 'Supabase Online';
-        sideSync.textContent = 'Supabase synchronizováno';
-      }
-      sbBadge.textContent = 'Připojeno';
-      sbBadge.classList.remove('subtle-badge');
-      userBadge.textContent = 'Cloud účet';
-      $('#settingsProfileSub').textContent = `Synchronizováno se Supabase databází (${supabaseConfig.url.replace(/^https?:\/\//, '')})`;
-    } else if (isSupabaseConfigured()) {
-      dot.classList.add('online');
-      sideSync.classList.add('online');
-      headerText.textContent = 'Supabase Připojeno';
-      sideSync.textContent = 'DB připojena – přihlas se';
-      sbBadge.textContent = 'Připojeno';
-      sbBadge.classList.remove('subtle-badge');
-      userBadge.textContent = 'Nepřihlášen';
-      $('#settingsProfileSub').textContent = 'Supabase databáze je připojená – přihlas se svým jménem a PINem.';
-    } else {
-      dot.classList.add('local');
-      headerText.textContent = 'Lokální';
-      sideSync.textContent = currentUser ? 'Lokální profil' : 'Lokální režim';
-      sbBadge.textContent = 'Nepřipojeno';
-      sbBadge.classList.add('subtle-badge');
-      userBadge.textContent = currentUser ? 'Lokální profil' : 'Bez účtu';
-      $('#settingsProfileSub').textContent = 'Data jsou uložena lokálně v tomto prohlížeči / telefonu.';
-    }
-
-    const builtIn = isBuiltInSupabase();
-    $('#supabaseAutoConnectedBox')?.classList.toggle('hidden', !builtIn);
-    $('#supabaseManualForm')?.classList.toggle('hidden', builtIn);
-    $('#saveSupabaseBtn')?.classList.toggle('hidden', builtIn);
-    $('#supabaseManualActions')?.classList.toggle('hidden', builtIn);
-
-    $('#logoutBtn').classList.toggle('hidden', !currentUser);
-
-    // Sidebar rozvrh
-    $('#sidebarScheduleHours').textContent = `${settings.workStart} – ${settings.workEnd}`;
-    $('#sidebarScheduleDays').textContent = `${formatScheduleDaysSummary()} · Fond ${formatDuration(settings.dailyTargetMinutes)}`;
+    if (ordered.join(',') === '1,2,3,4,5,6') return 'Po–So';
+    if (ordered.join(',') === '1,2,3,4,5,6,0') return 'Po–Ne';
+    return ordered.map(d => mapNames[d]).join(', ') || 'Bez rozvrhu';
   }
 
   function updateGreeting() {
@@ -1081,7 +992,7 @@ create policy "Secure access to own attendance days"
     el.textContent = name ? `${greet}, ${name}` : greet;
   }
 
-  function updateActiveShiftWidget() {
+  function updateActiveShiftTimer() {
     const banner = $('#activeShiftBanner');
     const timer = $('#activeShiftTimer');
     const hint = $('#activeShiftStartHint');
@@ -1089,6 +1000,7 @@ create policy "Secure access to own attendance days"
 
     const key = todayKey();
     const rec = records.get(key);
+
     if (rec && allowsWork(rec.type) && rec.start && !rec.end) {
       banner.classList.remove('hidden');
       if (hint) hint.textContent = `Směna (${TYPE_LABELS[rec.type] || 'Práce'}) probíhá od ${rec.start}`;
@@ -1108,71 +1020,148 @@ create policy "Secure access to own attendance days"
     }
   }
 
-  function renderToday() {
+  function renderAuthAndSyncUI() {
+    const name = currentUser ? (currentUser.displayName || currentUser.username) : 'Nepřihlášen';
+    const initials = currentUser
+      ? (currentUser.displayName || currentUser.username).split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2)
+      : '?';
+
+    $('#sidebarAvatar').textContent = initials;
+    $('#headerAvatar').textContent = initials;
+    $('#accountAvatar').textContent = initials;
+
+    $('#sidebarUserName').textContent = name;
+    $('#headerUserName').textContent = currentUser ? name : 'Přihlásit se';
+    $('#accountFullName').textContent = currentUser ? currentUser.displayName : 'Nepřihlášený uživatel';
+    $('#accountUsername').textContent = currentUser ? `@${currentUser.username}` : 'Lokální data v tomto zařízení';
+
+    const cloudWidget = $('#cloudStatusBadge');
+    const cloudLabel = $('#cloudStatusLabel');
+    const sideStatusPill = $('#sidebarUserStatus');
+    const sideStatusText = $('#sidebarStatusText');
+    const accSyncBadge = $('#accountSyncBadge');
+
+    cloudWidget.className = 'cloud-status-widget';
+    sideStatusPill.className = 'status-indicator-pill';
+    accSyncBadge.className = 'status-indicator-pill';
+
+    if (isCloudReady()) {
+      if (syncState === 'syncing') {
+        cloudWidget.classList.add('syncing');
+        cloudLabel.textContent = 'Synchronizuji…';
+        sideStatusText.textContent = 'Synchronizuji…';
+        accSyncBadge.textContent = 'Synchronizace probíhá';
+      } else if (syncState === 'error') {
+        cloudWidget.classList.add('error');
+        cloudLabel.textContent = 'Chyba spojení';
+        sideStatusText.textContent = 'Chyba spojení';
+        accSyncBadge.textContent = 'Chyba spojení se Supabase';
+      } else {
+        cloudWidget.classList.add('online');
+        sideStatusPill.classList.add('online');
+        accSyncBadge.classList.add('online');
+        cloudLabel.textContent = 'Supabase Online';
+        sideStatusText.textContent = 'Cloud aktivní';
+        accSyncBadge.textContent = 'Supabase synchronizováno';
+      }
+    } else if (isSupabaseConfigured()) {
+      cloudLabel.textContent = 'DB připravena';
+      sideStatusText.textContent = 'Přihlas se';
+      accSyncBadge.textContent = 'Databáze připravena – přihlas se';
+    } else {
+      cloudLabel.textContent = 'Lokální režim';
+      sideStatusText.textContent = 'Lokální';
+      accSyncBadge.textContent = 'Pouze lokální úložiště';
+    }
+
+    const builtIn = isBuiltInSupabase();
+    $('#supabaseAutoDetectedBanner')?.classList.toggle('hidden', !builtIn);
+    $('#supabaseManualConfigBox')?.classList.toggle('hidden', builtIn);
+
+    $('#openLoginModalBtn')?.classList.toggle('hidden', !!currentUser);
+    $('#openRegisterModalBtn')?.classList.toggle('hidden', !!currentUser);
+    $('#logoutUserBtn')?.classList.toggle('hidden', !currentUser);
+
+    // Sidebar rozvrh
+    $('#sidebarPlanDays').textContent = formatScheduleDaysSummary();
+    $('#sidebarPlanHours').textContent = `${settings.workStart} – ${settings.workEnd}`;
+    $('#sidebarPlanTarget').textContent = `Denní fond: ${formatDuration(settings.dailyTargetMinutes)}`;
+  }
+
+  function renderTodayDashboard() {
     const now = new Date();
     const key = localDateKey(now);
     const rec = records.get(key);
     const hours = defaultHoursForDate(key);
-
-    $('#todayDate').textContent = fmtDay(now);
-    const badge = $('#todayTypeBadge');
-    const timeBadge = $('#todayTimeBadge');
     const holiday = holidayName(key);
 
-    badge.textContent = rec
+    $('#todayDateLabel').textContent = fmtDayFull(now);
+    $('#todayTypeBadge').textContent = rec
       ? TYPE_LABELS[rec.type]
       : (holiday || (isScheduledWorkday(now) ? 'Pracovní den' : (isWeekendDate(now) ? 'Víkend' : 'Volno')));
 
-    if (rec && (rec.start || rec.end)) {
-      timeBadge.textContent = `${rec.start || '?'} – ${rec.end || 'dosud'}`;
-    } else if (rec) {
-      timeBadge.textContent = TYPE_LABELS[rec.type];
+    const holidayBadge = $('#todayHolidayBadge');
+    if (holiday) {
+      holidayBadge.textContent = holiday;
+      holidayBadge.classList.remove('hidden');
     } else {
-      timeBadge.textContent = `Rozvrh ${hours.start}–${hours.end}`;
+      holidayBadge.classList.add('hidden');
+    }
+
+    if (rec && (rec.start || rec.end)) {
+      $('#todayShiftTimes').textContent = `${rec.start || '?'} – ${rec.end || 'dosud'}`;
+    } else {
+      $('#todayShiftTimes').textContent = `${hours.start} – ${hours.end}`;
     }
 
     const target = rec ? targetForDay(rec) : baseTargetForDate(key);
     const metrics = rec ? dayMetrics(rec) : { worked: 0, credited: 0, balance: 0, target, breakMinutes: 0 };
 
-    $('#todayWorked').textContent = formatDuration(metrics.worked);
-    $('#todayCredited').textContent = formatDuration(metrics.credited);
-    $('#todayBreak').textContent = `${metrics.breakMinutes} min`;
-    $('#todayTarget').textContent = formatDuration(target);
-    $('#todayBalance').textContent = rec ? formatDuration(metrics.balance, true) : '0:00';
-    setBalanceClass($('#todayBalance'), rec ? metrics.balance : 0);
+    $('#todayWorkedVal').textContent = formatDuration(metrics.worked);
+    $('#todayCreditedVal').textContent = formatDuration(metrics.credited);
+    $('#todayBreakVal').textContent = `${metrics.breakMinutes} min`;
+    $('#todayTargetVal').textContent = formatDuration(target);
 
-    $('#todayBalanceHint').textContent = rec
-      ? `${TYPE_LABELS[rec.type]}${rec.note ? ` · ${rec.note}` : ''}`
-      : (holiday || (isScheduledWorkday(now) ? 'Dnešek zatím není zapsaný' : 'Volný den mimo běžný fond'));
+    $('#todayBalanceVal').textContent = rec ? formatDuration(metrics.balance, true) : '0:00';
+    setBalanceClass($('#todayBalanceVal'), rec ? metrics.balance : 0);
 
-    // Progress bar dnešního fondu
-    const pct = target > 0 ? clamp(Math.round(((metrics.worked + metrics.credited) / target) * 100), 0, 100) : (metrics.worked > 0 ? 100 : 0);
-    $('#todayProgressPercent').textContent = `${pct} %`;
+    if (rec) {
+      const diff = metrics.balance;
+      $('#todayBalanceSub').textContent = diff > 0 ? `Přesčas +${formatDuration(diff)}` : diff < 0 ? `Chybí ${formatDuration(Math.abs(diff))}` : 'Přesně podle fondu';
+    } else {
+      $('#todayBalanceSub').textContent = isScheduledWorkday(now) ? 'Směna dosud nebyla zaznamenána' : 'Dnes není plánovaná směna';
+    }
+
+    const totalCounted = metrics.worked + metrics.credited;
+    const pct = target > 0 ? clamp(Math.round((totalCounted / target) * 100), 0, 100) : (totalCounted > 0 ? 100 : 0);
+    $('#todayProgressText').textContent = `${pct} %`;
     $('#todayProgressBar').style.width = `${pct}%`;
 
-    // Podtitulky u rychlých tlačítek
-    $('#normalHoursSub').textContent = `${hours.start} – ${hours.end} (fond ${formatDuration(hours.target)})`;
+    const remaining = Math.max(0, target - totalCounted);
+    $('#todayProgressSub').textContent = remaining > 0 ? `Zbývá ${formatDuration(remaining)} do splnění fondu` : 'Denní cíl splněn!';
 
-    // Týdenní pás (Po–Ne aktuálního týdne)
+    $('#dashNormalHoursHint').textContent = `${hours.start} – ${hours.end} (fond ${formatDuration(hours.target)})`;
+
     renderWeekStrip(now);
     updateGreeting();
-    updateActiveShiftWidget();
+    updateActiveShiftTimer();
 
-    // Měsíční souhrn na kartě Dnes
-    const stat = monthStats(startOfMonth(now));
-    $('#monthSnapshotLabel').textContent = fmtMonth(now);
-    $('#snapWorked').textContent = formatDuration(stat.worked);
-    $('#snapFundSub').textContent = `z fondu ${formatDuration(stat.fund)}`;
-    $('#snapCredited').textContent = formatDuration(stat.credited);
-    $('#snapBalance').textContent = formatDuration(stat.balance, true);
-    setBalanceClass($('#snapBalance'), stat.balance);
-    $('#snapMissing').textContent = String(stat.missing);
+    // Měsíční KPI na Dashboardu
+    const st = monthStats(startOfMonth(now));
+    $('#monthKpiNameLabel').textContent = fmtMonthTitle(now);
+    $('#kpiMonthBalance').textContent = formatDuration(st.balance, true);
+    setBalanceClass($('#kpiMonthBalance'), st.balance);
+    $('#kpiMonthBalanceSub').textContent = st.balance > 0 ? 'přesčasy' : st.balance < 0 ? 'nedoplatek fondu' : 'vyrovnáno';
+    $('#kpiMonthWorked').textContent = formatDuration(st.worked);
+    $('#kpiMonthWorkedSub').textContent = `z fondu ${formatDuration(st.fund)}`;
+    $('#kpiMonthCredited').textContent = formatDuration(st.credited);
+    $('#kpiMonthMissing').textContent = String(st.missing);
   }
 
   function renderWeekStrip(refDate) {
-    const grid = $('#weekStripGrid');
-    if (!grid) return;
-    grid.innerHTML = '';
+    const strip = $('#dashboardWeekStrip');
+    if (!strip) return;
+    strip.innerHTML = '';
     const mondayOffset = (refDate.getDay() + 6) % 7;
     const monday = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate() - mondayOffset, 12);
     const today = todayKey();
@@ -1185,24 +1174,23 @@ create policy "Secure access to own attendance days"
       const m = rec ? dayMetrics(rec) : null;
       const status = statusClassForDay(key, rec);
 
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'week-day-btn';
-      if (key === today) btn.classList.add('today');
-      if (!isScheduledWorkday(d) && !rec) btn.classList.add('weekend-off');
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'week-day-card';
+      if (key === today) card.classList.add('today');
 
       const hoursText = rec
         ? (m.worked > 0 ? formatDuration(m.worked) : SHORT_TYPE_LABELS[rec.type] || '—')
         : (isScheduledWorkday(d) ? '—' : 'Volno');
 
-      btn.innerHTML = `
+      card.innerHTML = `
         <span class="week-day-name">${fmtWeekdayShort(d)}</span>
-        <span class="week-day-num">${d.getDate()}</span>
-        <i class="day-status ${status}"></i>
+        <span class="week-day-number">${d.getDate()}</span>
+        <span class="cal-dot ${status}"></span>
         <span class="week-day-hours">${hoursText}</span>
       `;
-      btn.addEventListener('click', () => openDayEditor(key));
-      grid.appendChild(btn);
+      card.addEventListener('click', () => openDayEditor(key));
+      strip.appendChild(card);
     }
   }
 
@@ -1210,7 +1198,8 @@ create policy "Secure access to own attendance days"
     const date = parseDateKey(key);
     if (rec) {
       if (rec.type === 'doctor' || rec.type === 'sick') return 'doctor';
-      if (rec.type === 'homeOffice' || rec.type === 'businessTrip') return 'home';
+      if (rec.type === 'homeOffice') return 'home';
+      if (rec.type === 'businessTrip') return 'trip';
       if (['vacation', 'halfVacation', 'holiday', 'compTime', 'other'].includes(rec.type)) return 'leave';
       if (isWeekendDate(date)) return 'weekend-work';
       return 'work';
@@ -1220,9 +1209,12 @@ create policy "Secure access to own attendance days"
     return '';
   }
 
+  // ============================================================================
+  // KALENDÁŘ SMĚN
+  // ============================================================================
   function renderCalendar() {
-    $('#calendarTitle').textContent = fmtMonth(calendarMonth);
-    $('#calendarScheduleHint').textContent = `Rozvrh: ${formatScheduleDaysSummary()} · ${settings.workStart}–${settings.workEnd}`;
+    $('#calCurrentMonthTitle').textContent = fmtMonthTitle(calendarMonth);
+    $('#calScheduleHint').textContent = `Rozvrh: ${formatScheduleDaysSummary()} · ${settings.workStart}–${settings.workEnd}`;
 
     const grid = $('#calendarGrid');
     grid.innerHTML = '';
@@ -1237,84 +1229,83 @@ create policy "Secure access to own attendance days"
       date.setDate(start.getDate() + i);
       const key = localDateKey(date);
       const rec = records.get(key);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'day-cell';
-      if (!isSameMonth(date, calendarMonth)) btn.classList.add('outside');
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'cal-day-cell';
+      if (!isSameMonth(date, calendarMonth)) cell.classList.add('outside');
       if (isWeekendDate(date)) {
-        btn.classList.add('weekend');
-        if (isScheduledWorkday(date)) btn.classList.add('scheduled-weekend');
+        cell.classList.add('weekend');
+        if (isScheduledWorkday(date)) cell.classList.add('scheduled-weekend');
       }
-      if (key === today) btn.classList.add('today');
+      if (key === today) cell.classList.add('today');
 
       const status = statusClassForDay(key, rec);
       const m = rec ? dayMetrics(rec) : null;
       const h = holidayName(key);
 
-      let metaLabel = '';
-      let subTime = '';
+      let timeText = '';
+      let tagText = '';
       if (rec) {
         if (m.worked > 0) {
-          metaLabel = formatDuration(m.worked);
-          subTime = rec.start && rec.end ? `${rec.start}–${rec.end}` : SHORT_TYPE_LABELS[rec.type];
+          timeText = rec.start && rec.end ? `${rec.start}–${rec.end}` : formatDuration(m.worked);
+          tagText = formatDuration(m.worked);
         } else {
-          metaLabel = SHORT_TYPE_LABELS[rec.type] || TYPE_LABELS[rec.type];
-          subTime = m.credited > 0 ? formatDuration(m.credited) : '';
+          timeText = SHORT_TYPE_LABELS[rec.type];
+          tagText = m.credited > 0 ? formatDuration(m.credited) : '';
         }
       } else if (h) {
-        metaLabel = 'Svátek';
-      } else if (isScheduledWorkday(date) && isSameMonth(date, calendarMonth)) {
-        metaLabel = key < today ? 'Chybí' : '';
+        timeText = 'Svátek';
+      } else if (isScheduledWorkday(date) && isSameMonth(date, calendarMonth) && key < today) {
+        timeText = 'Chybí';
       }
 
-      btn.innerHTML = `
-        <div class="day-top-row">
-          <span class="day-number">${date.getDate()}</span>
-          <i class="day-status ${status}"></i>
+      cell.innerHTML = `
+        <div class="cal-day-top">
+          <span class="cal-day-num">${date.getDate()}</span>
+          <span class="cal-dot ${status}"></span>
         </div>
-        <span class="day-meta">${metaLabel}</span>
-        <span class="day-sub-time">${subTime}</span>
+        <div class="cal-day-bottom">
+          <span class="cal-time-range">${timeText}</span>
+          ${tagText ? `<span class="cal-tag-pill">${tagText}</span>` : ''}
+        </div>
       `;
-      btn.title = rec ? `${TYPE_LABELS[rec.type]}${rec.note ? ` – ${rec.note}` : ''}` : (h || '');
-      btn.addEventListener('click', () => openDayEditor(key));
-      grid.appendChild(btn);
+      cell.title = rec ? `${TYPE_LABELS[rec.type]}${rec.note ? ` (${rec.note})` : ''}` : (h || '');
+      cell.addEventListener('click', () => openDayEditor(key));
+      grid.appendChild(cell);
     }
 
-    // Pravý postranní panel v Kalendáři
+    // Boční panel v kalendáři
     const st = monthStats(calendarMonth);
-    $('#calStatWorked').textContent = formatDuration(st.worked);
-    $('#calStatFund').textContent = formatDuration(st.fund);
-    $('#calStatBalance').textContent = formatDuration(st.balance, true);
-    setBalanceClass($('#calStatBalance'), st.balance);
-    $('#calendarSideSummary').textContent = st.missing > 0
-      ? `V tomto měsíci chybí vyplnit ${st.missing} pracovních dnů.`
-      : `Evidováno ${st.recorded} dnů v měsíci.`;
+    $('#calSideFund').textContent = formatDuration(st.fund);
+    $('#calSideWorked').textContent = formatDuration(st.worked);
+    $('#calSideBalance').textContent = formatDuration(st.balance, true);
+    setBalanceClass($('#calSideBalance'), st.balance);
 
-    const listEl = $('#calendarMonthList');
+    const listEl = $('#calMonthRecordsList');
     listEl.innerHTML = '';
-    const year = calendarMonth.getFullYear();
-    const month = calendarMonth.getMonth();
-    const prefix = `${year}-${pad(month + 1)}-`;
+    const prefix = `${calendarMonth.getFullYear()}-${pad(calendarMonth.getMonth() + 1)}-`;
     const monthRecords = [...records.values()]
       .filter(r => r.date.startsWith(prefix))
       .sort((a, b) => b.date.localeCompare(a.date));
 
+    $('#calRecordsCountBadge').textContent = `${monthRecords.length} dnů`;
+
     if (monthRecords.length === 0) {
-      listEl.innerHTML = `<p class="muted" style="margin: 4px 0; font-size: 12.5px;">V tomto měsíci zatím nejsou žádné uložené dny.</p>`;
+      listEl.innerHTML = `<p class="muted" style="margin: 8px 0; font-size: 13px;">V tomto měsíci zatím nejsou uložené záznamy.</p>`;
     } else {
       for (const rec of monthRecords) {
         const d = parseDateKey(rec.date);
         const m = dayMetrics(rec);
         const item = document.createElement('button');
         item.type = 'button';
-        item.className = 'day-list-item';
-        const timeStr = rec.start && rec.end ? `${rec.start}–${rec.end}` : TYPE_LABELS[rec.type];
+        item.className = 'cal-record-item';
+        const hoursStr = rec.start && rec.end ? `${rec.start}–${rec.end}` : TYPE_LABELS[rec.type];
         item.innerHTML = `
-          <div class="day-list-left">
-            <strong>${d.getDate()}. ${d.getMonth() + 1}. (${fmtWeekdayShort(d)}) · ${TYPE_LABELS[rec.type]}</strong>
-            <small>${timeStr}${rec.note ? ` · ${rec.note}` : ''}</small>
+          <div class="cal-rec-left">
+            <strong>${d.getDate()}. ${d.getMonth() + 1}. · ${TYPE_LABELS[rec.type]}</strong>
+            <small>${hoursStr}${rec.note ? ` · ${rec.note}` : ''}</small>
           </div>
-          <div class="day-list-right">
+          <div class="cal-rec-right">
             <strong>${formatDuration(m.worked || m.credited)}</strong>
             <small class="${m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : ''}">${formatDuration(m.balance, true)}</small>
           </div>
@@ -1325,220 +1316,271 @@ create policy "Secure access to own attendance days"
     }
   }
 
-  function renderOverview() {
-    $('#overviewTitle').textContent = fmtMonth(overviewMonth);
-    const userLabel = currentUser ? (currentUser.displayName || currentUser.username) : 'Lokální uživatel';
-    $('#overviewUserSubtitle').textContent = `${userLabel} · Rozvrh ${formatScheduleDaysSummary()} (${settings.workStart}–${settings.workEnd})`;
-
-    const s = monthStats(overviewMonth);
-    $('#overviewBalance').textContent = formatDuration(s.balance, true);
-    setBalanceClass($('#overviewBalance'), s.balance);
-    $('#overviewFund').textContent = formatDuration(s.fund);
-    $('#overviewWorkdaysCount').textContent = `${s.scheduledWorkdays} plánovaných pracovních dnů`;
-    $('#overviewWorked').textContent = formatDuration(s.worked);
-    $('#overviewWeekendWorked').textContent = s.weekendWorked > 0
-      ? `z toho víkendy ${formatDuration(s.weekendWorked)}`
-      : 'žádné víkendové směny';
-    $('#overviewCredited').textContent = formatDuration(s.credited);
-    $('#overviewRecorded').textContent = String(s.recorded);
-    $('#overviewBreaks').textContent = formatDuration(s.totalBreaks);
-
-    const pct = s.fund > 0 ? clamp(Math.round(((s.worked + s.credited) / s.fund) * 100), 0, 100) : 100;
-    $('#overviewProgressPct').textContent = `${pct} %`;
-    $('#overviewProgressBar').style.width = `${pct}%`;
-
-    // Dovolená za vybraný rok
-    const year = overviewMonth.getFullYear();
-    const usedVac = yearVacationUsed(year);
-    const allowVac = Number(settings.vacationAllowanceDays) || 20;
-    const remVac = Math.max(0, allowVac - usedVac);
-    $('#overviewVacationRemaining').textContent = `${remVac.toLocaleString('cs-CZ')} dnů`;
-    $('#overviewVacationUsed').textContent = `vyčerpáno ${usedVac.toLocaleString('cs-CZ')} z ${allowVac.toLocaleString('cs-CZ')} dnů (${year})`;
-
-    $('#overviewMissingText').textContent = s.missing
-      ? `Chybí vyplnit ${s.missing} minul${s.missing === 1 ? 'ý pracovní den' : s.missing < 5 ? 'é pracovní dny' : 'ých pracovních dnů'}.`
-      : 'Všechny minulé pracovní dny jsou řádně evidované.';
-
-    const labels = [
-      ['work', 'Běžná práce (směny)'],
-      ['homeOffice', 'Home office'],
-      ['businessTrip', 'Služební cesty'],
-      ['vacation', 'Dovolená'],
-      ['halfVacation', '½ dovolené'],
-      ['doctor', 'Lékař / Propustka'],
-      ['sick', 'Nemoc / Neschopenka'],
-      ['compTime', 'Náhradní volno'],
-      ['other', 'Jiné omluvené volno']
-    ];
-    $('#absenceBreakdown').innerHTML = labels
-      .map(([k, label]) => `<div class="breakdown-row"><span>${label}</span><strong>${formatDuration(s.breakdown[k] || 0)}</strong></div>`)
-      .join('');
-
-    // Kompletní tabulka měsíčního výkazu
-    renderMonthlyTable(overviewMonth, userLabel);
+  // ============================================================================
+  // WINDOWS 11 MONTH & YEAR PICKER (ZOBRAZENÍ MĚSÍCŮ PŘI KLIKNUTÍ)
+  // ============================================================================
+  function openMonthPicker(targetView) {
+    pickerTarget = targetView;
+    const currentRef = targetView === 'timesheet' ? timesheetMonth : calendarMonth;
+    pickerSelectedYear = currentRef.getFullYear();
+    renderMonthPickerGrid();
+    $('#monthPickerModal').showModal();
   }
 
-  function renderMonthlyTable(monthDate, userLabel) {
-    const tbody = $('#overviewTableBody');
-    if (!tbody) return;
-    tbody.innerHTML = '';
+  function renderMonthPickerGrid() {
+    $('#pickerYearDisplay').textContent = String(pickerSelectedYear);
+    const grid = $('#monthPickerGrid');
+    grid.innerHTML = '';
 
-    const year = monthDate.getFullYear();
-    const month = monthDate.getMonth();
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    $('#printReportMeta').textContent = `Zaměstnanec / Uživatel: ${userLabel} · Období: ${fmtMonth(monthDate)}`;
+    const currentRef = pickerTarget === 'timesheet' ? timesheetMonth : calendarMonth;
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+
+    for (let m = 0; m < 12; m++) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'month-picker-cell';
+      btn.textContent = MONTH_NAMES_CS[m];
+
+      if (pickerSelectedYear === currentRef.getFullYear() && m === currentRef.getMonth()) {
+        btn.classList.add('selected');
+      }
+      if (pickerSelectedYear === curYear && m === curMonth) {
+        btn.classList.add('current-month');
+      }
+
+      btn.addEventListener('click', () => {
+        const targetDate = new Date(pickerSelectedYear, m, 1, 12);
+        if (pickerTarget === 'timesheet') {
+          timesheetMonth = targetDate;
+          renderTimesheet();
+        } else {
+          calendarMonth = targetDate;
+          renderCalendar();
+        }
+        $('#monthPickerModal').close();
+      });
+
+      grid.appendChild(btn);
+    }
+  }
+
+  // ============================================================================
+  // MĚSÍČNÍ VÝKAZ DOCHÁZKY (TIMESHEET & TISK)
+  // ============================================================================
+  function renderTimesheet() {
+    $('#tsMonthTitle').textContent = fmtMonthTitle(timesheetMonth);
+    const userLabel = currentUser ? (currentUser.displayName || currentUser.username) : 'Lokální uživatel';
+
+    // Data pro tisk
+    $('#printEmployeeName').textContent = userLabel;
+    $('#printMonthPeriod').textContent = fmtMonthTitle(timesheetMonth);
+
+    const s = monthStats(timesheetMonth);
+    $('#tsBalanceTotal').textContent = formatDuration(s.balance, true);
+    setBalanceClass($('#tsBalanceTotal'), s.balance);
+    $('#tsBalanceStatus').textContent = s.balance > 0 ? 'nadpracováno' : s.balance < 0 ? 'nedoplatek' : 'vyrovnáno';
+
+    $('#tsFundTotal').textContent = formatDuration(s.fund);
+    $('#tsWorkdaysCount').textContent = `${s.scheduledWorkdays} pracovních dnů`;
+
+    $('#tsWorkedTotal').textContent = formatDuration(s.worked);
+    $('#tsWeekendWorkedInfo').textContent = s.weekendWorked > 0 ? `z toho víkendy ${formatDuration(s.weekendWorked)}` : 'bez víkendů';
+
+    $('#tsCreditedTotal').textContent = formatDuration(s.credited);
+    $('#tsBreaksTotal').textContent = formatDuration(s.totalBreaks);
+
+    const year = timesheetMonth.getFullYear();
+    const usedVac = yearVacationUsed(year);
+    const allowance = Number(settings.vacationAllowanceDays) || 20;
+    const remainingVac = Math.max(0, allowance - usedVac);
+    $('#tsVacationRemaining').textContent = `${remainingVac.toLocaleString('cs-CZ')} dnů`;
+    $('#tsVacationUsed').textContent = `vyčerpáno ${usedVac.toLocaleString('cs-CZ')} z ${allowance} dnů (${year})`;
+
+    $('#printFundTotal').textContent = formatDuration(s.fund);
+    $('#printWorkedTotal').textContent = formatDuration(s.worked + s.credited);
+
+    // Tabulka
+    const tbody = $('#timesheetTableBody');
+    tbody.innerHTML = '';
+    const daysInMonth = new Date(year, timesheetMonth.getMonth() + 1, 0).getDate();
 
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateObj = new Date(year, month, d, 12);
+      const dateObj = new Date(year, timesheetMonth.getMonth(), d, 12);
       const key = localDateKey(dateObj);
       const rec = records.get(key);
-      const holiday = holidayName(key);
       const m = rec ? dayMetrics(rec) : null;
+      const h = holidayName(key);
 
       const tr = document.createElement('tr');
-      if (isWeekendDate(dateObj)) tr.classList.add('row-weekend');
+      if (isWeekendDate(dateObj)) tr.classList.add('weekend-row');
 
-      const typeText = rec ? TYPE_LABELS[rec.type] : (holiday ? `Svátek (${holiday})` : (isWeekendDate(dateObj) ? 'Víkend' : '—'));
-      const timeRange = rec && (rec.start || rec.end) ? `${rec.start || '?'}–${rec.end || '?'}` : '—';
-      const breakText = rec && m.breakMinutes > 0 ? `${m.breakMinutes}m` : '—';
-      const workedText = rec ? formatDuration(m.worked + m.credited) : '—';
-      const balText = rec ? formatDuration(m.balance, true) : '—';
-      const balClass = rec ? (m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : '') : '';
+      const typeLabel = rec ? TYPE_LABELS[rec.type] : (h ? `Svátek (${h})` : (isWeekendDate(dateObj) ? 'Víkend' : '—'));
+      const workedText = rec ? formatDuration(m.worked) : '—';
+      const creditedText = rec && m.credited > 0 ? formatDuration(m.credited) : '—';
+      const balanceText = rec ? formatDuration(m.balance, true) : '—';
+      const balanceClass = rec ? (m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : '') : '';
 
       tr.innerHTML = `
-        <td><strong>${d}.${month + 1}.</strong></td>
+        <td><strong>${d}.${timesheetMonth.getMonth() + 1}.</strong></td>
         <td>${fmtWeekdayShort(dateObj)}</td>
-        <td>${typeText}</td>
-        <td>${timeRange}</td>
-        <td>${breakText}</td>
+        <td>${typeLabel}</td>
+        <td>${rec?.start || '—'}</td>
+        <td>${rec?.end || '—'}</td>
+        <td>${rec && m.breakMinutes > 0 ? `${m.breakMinutes}m` : '—'}</td>
         <td><strong>${workedText}</strong></td>
-        <td class="${balClass}"><strong>${balText}</strong></td>
-        <td class="note-cell">${rec?.note || ''}</td>
+        <td>${creditedText}</td>
+        <td class="${balanceClass}"><strong>${balanceText}</strong></td>
+        <td>${rec?.note || ''}</td>
       `;
       tr.addEventListener('click', () => openDayEditor(key));
       tbody.appendChild(tr);
     }
+
+    // Součtový řádek (tfoot)
+    const tfoot = $('#timesheetTableFoot');
+    tfoot.innerHTML = `
+      <tr>
+        <td colspan="6"><strong>CELKEM ZA MĚSÍC</strong></td>
+        <td><strong>${formatDuration(s.worked)}</strong></td>
+        <td><strong>${formatDuration(s.credited)}</strong></td>
+        <td class="${s.balance > 0 ? 'positive' : s.balance < 0 ? 'negative' : ''}"><strong>${formatDuration(s.balance, true)}</strong></td>
+        <td>Fond: ${formatDuration(s.fund)}</td>
+      </tr>
+    `;
   }
 
+  // ============================================================================
+  // NASTAVENÍ FORMULÁŘ
+  // ============================================================================
   function renderSettings() {
-    $('#settingStart').value = settings.workStart;
-    $('#settingEnd').value = settings.workEnd;
-    $('#settingTarget').value = minutesToTime(settings.dailyTargetMinutes);
-    $('#settingBreak').value = settings.breakMinutes;
-    $('#settingBreakAfter').value = settings.breakAfterMinutes;
-    $('#settingVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
-    $('#settingAutoFill').checked = !!settings.autoFill;
-    $('#settingTheme').value = settings.theme;
+    $('#setWorkStart').value = settings.workStart;
+    $('#setWorkEnd').value = settings.workEnd;
+    $('#setDailyTarget').value = minutesToTime(settings.dailyTargetMinutes);
+    $('#setBreakMinutes').value = settings.breakMinutes;
+    $('#setBreakAfterMinutes').value = settings.breakAfterMinutes;
+    $('#setVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
+    $('#setAutoFill').checked = !!settings.autoFill;
+    $('#setThemeMode').value = settings.theme;
 
-    // Víkendy a dny v týdnu
-    $('#settingWeekendMode').value = settings.weekendMode || 'none';
+    // Víkendy
+    $('#setWeekendMode').value = settings.weekendMode || 'none';
     const days = activeWorkDays();
-    $$('#settingWeekdaysGroup input[type="checkbox"]').forEach(cb => {
+    $$('#weekdaysCheckboxes input[type="checkbox"]').forEach(cb => {
       cb.checked = days.includes(Number(cb.value));
     });
 
-    $('#settingWeekendCustomHours').checked = !!settings.weekendCustomHours;
-    $('#weekendCustomFields').classList.toggle('hidden', !settings.weekendCustomHours);
-    $('#settingWeekendStart').value = settings.weekendStart || '07:00';
-    $('#settingWeekendEnd').value = settings.weekendEnd || '15:30';
-    $('#settingWeekendTarget').value = minutesToTime(settings.weekendTargetMinutes ?? 480);
-    $('#settingWorkOnHolidays').checked = !!settings.workOnHolidays;
+    $('#setWeekendCustomHours').checked = !!settings.weekendCustomHours;
+    $('#weekendCustomInputsArea').classList.toggle('hidden', !settings.weekendCustomHours);
+    $('#setWeekendStart').value = settings.weekendStart || '07:00';
+    $('#setWeekendEnd').value = settings.weekendEnd || '15:30';
+    $('#setWeekendTarget').value = minutesToTime(settings.weekendTargetMinutes ?? 480);
+    $('#setWorkOnHolidays').checked = !!settings.workOnHolidays;
 
-    // Supabase pole
-    $('#supabaseUrlInput').value = supabaseConfig.url || '';
-    $('#supabaseKeyInput').value = supabaseConfig.anonKey || '';
+    // Supabase
+    $('#setSbUrl').value = supabaseConfig.url || '';
+    $('#setSbKey').value = supabaseConfig.anonKey || '';
 
     renderAuthAndSyncUI();
   }
 
   function renderAll() {
     renderAuthAndSyncUI();
-    renderToday();
+    renderTodayDashboard();
     renderCalendar();
-    renderOverview();
+    renderTimesheet();
     renderSettings();
   }
 
   // ============================================================================
-  // PŘEPÍNÁNÍ POHLEDŮ A EDITOR DNE
+  // NAVIGACE MEZI POHLEDY
   // ============================================================================
-  function switchView(name) {
-    $$('.view').forEach(v => v.classList.remove('active'));
-    $$('.nav-button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
-    $(`#view${name[0].toUpperCase()}${name.slice(1)}`).classList.add('active');
+  function switchView(viewName) {
+    $$('.win11-view').forEach(v => v.classList.remove('active'));
+    $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+    $$('.m-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+
+    const viewEl = $(`#view${viewName[0].toUpperCase()}${viewName.slice(1)}`);
+    if (viewEl) viewEl.classList.add('active');
+
     const titles = {
-      today: 'Dnešní přehled',
+      dashboard: 'Dnešní přehled',
       calendar: 'Kalendář směn',
-      overview: 'Přehled a výkaz',
+      timesheet: 'Měsíční výkaz docházky',
       settings: 'Nastavení a databáze'
     };
-    $('#headerTitle').textContent = titles[name] || 'Docházka';
-    if (name === 'calendar') renderCalendar();
-    if (name === 'overview') renderOverview();
-    if (name === 'settings') renderSettings();
+    $('#headerViewTitle').textContent = titles[viewName] || 'Docházka';
+
+    if (viewName === 'calendar') renderCalendar();
+    if (viewName === 'timesheet') renderTimesheet();
+    if (viewName === 'settings') renderSettings();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
+  // ============================================================================
+  // DIALOG ÚPRAVY DNE
+  // ============================================================================
   function formDayFromInputs() {
     return {
-      date: $('#dayDate').value,
-      type: $('#dayType').value,
-      start: $('#dayStart').value,
-      end: $('#dayEnd').value,
-      manualBreak: $('#manualBreakToggle').checked,
-      breakMinutes: Number($('#dayBreak').value) || 0,
-      doctorFullDay: $('#doctorFullDay').checked,
-      doctorStart: $('#doctorStart').value,
-      doctorEnd: $('#doctorEnd').value,
-      otherMinutes: Number($('#otherMinutes').value) || 0,
-      note: $('#dayNote').value.trim(),
+      date: $('#editDayDate').value,
+      type: $('#editDayType').value,
+      start: $('#editDayStart').value,
+      end: $('#editDayEnd').value,
+      manualBreak: $('#editManualBreakToggle').checked,
+      breakMinutes: Number($('#editDayBreak').value) || 0,
+      doctorFullDay: $('#editDoctorFullDay').checked,
+      doctorStart: $('#editDoctorStart').value,
+      doctorEnd: $('#editDoctorEnd').value,
+      otherMinutes: Number($('#editOtherMinutes').value) || 0,
+      note: $('#editDayNote').value.trim(),
       updatedAt: new Date().toISOString()
     };
   }
 
   function fillDayForm(day) {
-    $('#dayDate').value = day.date;
-    $('#dayType').value = day.type;
-    $('#dayStart').value = day.start || '';
-    $('#dayEnd').value = day.end || '';
-    $('#manualBreakToggle').checked = !!day.manualBreak;
-    $('#dayBreak').value = Number.isFinite(Number(day.breakMinutes)) ? Number(day.breakMinutes) : settings.breakMinutes;
-    $('#doctorFullDay').checked = !!day.doctorFullDay;
-    $('#doctorStart').value = day.doctorStart || '';
-    $('#doctorEnd').value = day.doctorEnd || '';
-    $('#otherMinutes').value = Number(day.otherMinutes) || 0;
-    $('#dayNote').value = day.note || '';
+    $('#editDayDate').value = day.date;
+    $('#editDayType').value = day.type;
+    $('#editDayStart').value = day.start || '';
+    $('#editDayEnd').value = day.end || '';
+    $('#editManualBreakToggle').checked = !!day.manualBreak;
+    $('#editDayBreak').value = Number.isFinite(Number(day.breakMinutes)) ? Number(day.breakMinutes) : settings.breakMinutes;
+    $('#editDoctorFullDay').checked = !!day.doctorFullDay;
+    $('#editDoctorStart').value = day.doctorStart || '';
+    $('#editDoctorEnd').value = day.doctorEnd || '';
+    $('#editOtherMinutes').value = Number(day.otherMinutes) || 0;
+    $('#editDayNote').value = day.note || '';
     updateDayFormVisibility();
     updateDayPreview();
   }
 
   function updateDayFormVisibility() {
-    const type = $('#dayType').value;
-    const key = $('#dayDate').value || todayKey();
+    const type = $('#editDayType').value;
+    const key = $('#editDayDate').value || todayKey();
     const hours = defaultHoursForDate(key);
-    const workAllowed = allowsWork(type) && !(type === 'doctor' && $('#doctorFullDay').checked);
+    const workAllowed = allowsWork(type) && !(type === 'doctor' && $('#editDoctorFullDay').checked);
 
-    $('#workFields').classList.toggle('hidden', !workAllowed);
-    $('#doctorFields').classList.toggle('hidden', type !== 'doctor');
-    $('#otherFields').classList.toggle('hidden', type !== 'other');
-    $('#manualBreakWrap').classList.toggle('hidden', !$('#manualBreakToggle').checked || !workAllowed);
-    $('#doctorTimeFields').classList.toggle('hidden', $('#doctorFullDay').checked || type !== 'doctor');
+    $('#editWorkSection').classList.toggle('hidden', !workAllowed);
+    $('#editDoctorSection').classList.toggle('hidden', type !== 'doctor');
+    $('#editOtherSection').classList.toggle('hidden', type !== 'other');
+    $('#editManualBreakWrap').classList.toggle('hidden', !$('#editManualBreakToggle').checked || !workAllowed);
+    $('#editDoctorTimesRow').classList.toggle('hidden', $('#editDoctorFullDay').checked || type !== 'doctor');
 
-    if (workAllowed && settings.autoFill && !$('#dayStart').value && !$('#dayEnd').value) {
-      $('#dayStart').value = hours.start;
-      $('#dayEnd').value = hours.end;
+    if (workAllowed && settings.autoFill && !$('#editDayStart').value && !$('#editDayEnd').value) {
+      $('#editDayStart').value = hours.start;
+      $('#editDayEnd').value = hours.end;
     }
   }
 
   function updateDayPreview() {
     const day = formDayFromInputs();
     const m = dayMetrics(day);
-    $('#autoBreakText').textContent = day.manualBreak ? `Vlastní ${m.breakMinutes} min` : `Automaticky ${m.breakMinutes} min`;
-    $('#previewWorked').textContent = formatDuration(m.worked);
-    $('#previewCredited').textContent = formatDuration(m.credited);
-    $('#previewTarget').textContent = formatDuration(m.target);
-    $('#previewBalance').textContent = formatDuration(m.balance, true);
-    setBalanceClass($('#previewBalance'), m.balance);
+    $('#editAutoBreakText').textContent = day.manualBreak ? `Vlastní ${m.breakMinutes} min` : `Automaticky ${m.breakMinutes} min`;
+    $('#prevWorked').textContent = formatDuration(m.worked);
+    $('#prevCredited').textContent = formatDuration(m.credited);
+    $('#prevTarget').textContent = formatDuration(m.target);
+    $('#prevBalance').textContent = formatDuration(m.balance, true);
+    setBalanceClass($('#prevBalance'), m.balance);
   }
 
   function openDayEditor(key) {
@@ -1546,30 +1588,19 @@ create policy "Secure access to own attendance days"
     const day = editingOriginal ? structuredClone(editingOriginal) : defaultDay(key);
     const date = parseDateKey(key);
     const holiday = holidayName(key);
-    $('#dayDialogEyebrow').textContent = isWeekendDate(date) ? 'Víkendový den' : 'Pracovní den';
+    $('#dayDialogDateSub').textContent = isWeekendDate(date) ? 'Víkendový den' : 'Pracovní den';
     $('#dayDialogTitle').textContent = `${fmtDayShort(date)}${holiday ? ` · ${holiday}` : ''}`;
-    $('#deleteDayBtn').classList.toggle('hidden', !editingOriginal);
+    $('#deleteDayRecordBtn').classList.toggle('hidden', !editingOriginal);
     fillDayForm(day);
-    $('#dayDialog').showModal();
+    $('#dayEditDialog').showModal();
   }
 
-  function applyDefaultHoursToEditor() {
-    const key = $('#dayDate').value || todayKey();
-    const hours = defaultHoursForDate(key);
-    $('#dayStart').value = hours.start;
-    $('#dayEnd').value = hours.end;
-    $('#manualBreakToggle').checked = false;
-    $('#dayBreak').value = settings.breakMinutes;
-    updateDayFormVisibility();
-    updateDayPreview();
-  }
-
-  async function quickToday(mutator, message = 'Dnešek uložen') {
+  async function quickToday(mutator, message = 'Uloženo') {
     const key = todayKey();
     const day = records.get(key) ? structuredClone(records.get(key)) : defaultDay(key);
     mutator(day, defaultHoursForDate(key));
     await saveDay(day);
-    toast(message);
+    toast(message, '✓');
   }
 
   async function fillMissingDaysInMonth(monthDate) {
@@ -1586,11 +1617,11 @@ create policy "Secure access to own attendance days"
     }
 
     if (missingKeys.length === 0) {
-      toast('Žádné nevyplněné pracovní dny k doplnění');
+      toast('Žádné nevyplněné pracovní dny k doplnění', 'ℹ️');
       return;
     }
 
-    if (!confirm(`Doplnit běžnou pracovní dobu do ${missingKeys.length} nevyplněných pracovních dnů v měsíci ${fmtMonth(monthDate)}?`)) {
+    if (!confirm(`Doplnit běžnou pracovní dobu do ${missingKeys.length} nevyplněných pracovních dnů v měsíci ${fmtMonthTitle(monthDate)}?`)) {
       return;
     }
 
@@ -1618,19 +1649,20 @@ create policy "Secure access to own attendance days"
     if (isCloudReady()) {
       syncWithSupabase(true).catch(console.warn);
     }
-    toast(`Doplněno ${missingKeys.length} pracovních dnů`);
+    toast(`Doplněno ${missingKeys.length} pracovních dnů`, '✓');
   }
 
-  function toast(message) {
-    const el = $('#toast');
-    el.textContent = message;
+  function toast(message, icon = 'ℹ️') {
+    const el = $('#win11Toast');
+    $('#toastIcon').textContent = icon;
+    $('#toastMessage').textContent = message;
     el.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
   }
 
   // ============================================================================
-  // EXPORT CSV, JSON ZÁLOHA A IMPORT
+  // EXPORT CSV & ZÁLOHY
   // ============================================================================
   function exportMonthlyCsv(monthDate) {
     const year = monthDate.getFullYear();
@@ -1668,14 +1700,14 @@ create policy "Secure access to own attendance days"
     a.download = `vykaz-dochazky-${year}-${pad(month + 1)}.csv`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast('CSV výkaz stažen');
+    toast('CSV výkaz stažen', '⬇');
   }
 
   async function exportBackup() {
     const days = [...records.values()].sort((a, b) => a.date.localeCompare(b.date));
     const payload = {
-      app: 'osobni-dochazka',
-      version: 2,
+      app: 'osobni-dochazka-win11',
+      version: 3,
       exportedAt: new Date().toISOString(),
       user: currentUser ? { username: currentUser.username, displayName: currentUser.displayName } : null,
       settings,
@@ -1683,28 +1715,19 @@ create policy "Secure access to own attendance days"
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const fileName = `dochazka-zaloha-${todayKey()}.json`;
-    const file = new File([blob], fileName, { type: 'application/json' });
-    try {
-      if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Záloha docházky' });
-        return;
-      }
-    } catch (e) {
-      if (e.name === 'AbortError') return;
-    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = fileName;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast('JSON záloha exportována');
+    toast('JSON záloha exportována', '💾');
   }
 
   async function importBackup(file) {
     const text = await file.text();
     const payload = JSON.parse(text);
-    if (payload.app !== 'osobni-dochazka' || !Array.isArray(payload.days)) {
+    if (!Array.isArray(payload.days)) {
       throw new Error('Soubor není platná záloha docházky.');
     }
     const tx = db.transaction(['days', 'settings'], 'readwrite');
@@ -1723,7 +1746,7 @@ create policy "Secure access to own attendance days"
   }
 
   async function resetAll() {
-    if (!confirm('Opravdu vymazat veškerou lokální docházku i nastavení v tomto zařízení?')) return;
+    if (!confirm('Opravdu vymazat veškerá lokální data docházky v tomto zařízení?')) return;
     const tx = db.transaction(['days', 'settings'], 'readwrite');
     tx.objectStore('days').clear();
     tx.objectStore('settings').clear();
@@ -1733,352 +1756,378 @@ create policy "Secure access to own attendance days"
     await saveSettings(true);
     applyTheme();
     renderAll();
-    toast('Lokální data vymazána');
+    toast('Lokální data vymazána', '🗑️');
   }
 
   // ============================================================================
-  // UDÁLOSTI A OVLÁDÁNÍ PRVKŮ
+  // EVENT BINDINGS
   // ============================================================================
-  function syncWeekdaysFromMode(mode) {
-    let days = [1, 2, 3, 4, 5];
-    if (mode === 'saturday') days = [1, 2, 3, 4, 5, 6];
-    else if (mode === 'sunday') days = [1, 2, 3, 4, 5, 0];
-    else if (mode === 'both') days = [1, 2, 3, 4, 5, 6, 0];
-    else if (mode === 'custom') return;
-    $$('#settingWeekdaysGroup input[type="checkbox"]').forEach(cb => {
-      cb.checked = days.includes(Number(cb.value));
-    });
-  }
-
-  function detectModeFromWeekdays(days) {
-    const sorted = [1, 2, 3, 4, 5, 6, 0].filter(d => days.includes(d)).join(',');
-    if (sorted === '1,2,3,4,5') return 'none';
-    if (sorted === '1,2,3,4,5,6') return 'saturday';
-    if (sorted === '1,2,3,4,5,0') return 'sunday';
-    if (sorted === '1,2,3,4,5,6,0') return 'both';
-    return 'custom';
-  }
-
-  function openAuthModal() {
-    if (currentUser) {
-      $('#authUsername').value = currentUser.username || '';
-      $('#authDisplayName').value = currentUser.displayName || '';
-    }
-    $('#authPin').value = '';
-    $('#authDialog').showModal();
-  }
-
   function bindEvents() {
-    // Navigace (mobil i desktop sidebar)
-    $$('.nav-button').forEach(btn => btn.addEventListener('click', () => switchView(btn.dataset.view)));
-    $('#goToOverviewBtn')?.addEventListener('click', () => switchView('overview'));
+    // Navigace
+    $$('.nav-item').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+    $$('.m-nav-btn').forEach(b => b.addEventListener('click', () => switchView(b.dataset.view)));
+    $('#dashGoToTimesheetBtn')?.addEventListener('click', () => switchView('timesheet'));
 
-    // Tlačítka v hlavičce a sidebaru
-    $('#editTodayBtn').addEventListener('click', () => openDayEditor(todayKey()));
-    $('#installHelpBtn').addEventListener('click', () => $('#helpDialog').showModal());
-    $('#sidebarInstallBtn').addEventListener('click', () => $('#helpDialog').showModal());
-    $('#closeHelpBtn').addEventListener('click', () => $('#helpDialog').close());
-
-    $('#sidebarUserBtn').addEventListener('click', openAuthModal);
-    $('#headerUserBtn').addEventListener('click', openAuthModal);
-    $('#openAuthDialogBtn').addEventListener('click', openAuthModal);
-    $('#closeAuthBtn').addEventListener('click', () => $('#authDialog').close());
-
-    $('#syncBadgeBtn').addEventListener('click', async () => {
-      if (!isSupabaseConfigured()) {
-        switchView('settings');
-        toast('Nejprve nastav Supabase URL a Anon Key');
-        return;
-      }
-      if (!currentUser) {
-        openAuthModal();
-        return;
-      }
-      try {
-        await syncWithSupabase(true);
-        toast('Synchronizováno se Supabase');
-      } catch (err) {
-        alert(`Synchronizace selhala: ${err.message}`);
+    // Záhlaví a profil
+    $('#headerUserBtn')?.addEventListener('click', () => {
+      if (currentUser) switchView('settings');
+      else $('#loginModal').showModal();
+    });
+    $('#sidebarAuthBtn')?.addEventListener('click', () => {
+      if (currentUser) switchView('settings');
+      else $('#loginModal').showModal();
+    });
+    $('#sidebarUserCard')?.addEventListener('click', (e) => {
+      if (e.target.closest('#sidebarAuthBtn')) return;
+      if (currentUser) switchView('settings');
+      else $('#loginModal').showModal();
+    });
+    $('#headerSyncBtn')?.addEventListener('click', () => {
+      if (isCloudReady()) {
+        syncWithSupabase(true).then(() => toast('Synchronizováno', '✓')).catch(err => alert(err.message));
+      } else {
+        $('#loginModal').showModal();
       }
     });
+    $('#sidebarSyncBtn')?.addEventListener('click', () => $('#headerSyncBtn').click());
 
-    $('#sidebarSyncNowBtn').addEventListener('click', () => $('#syncBadgeBtn').click());
+    // PWA Instalace nápověda
+    $('#headerInstallBtn')?.addEventListener('click', () => $('#pwaHelpDialog').showModal());
+    $('#sidebarHelpBtn')?.addEventListener('click', () => $('#pwaHelpDialog').showModal());
+    $('#closePwaHelpBtn')?.addEventListener('click', () => $('#pwaHelpDialog').close());
 
-    // Rychlé akce na kartě Dnes
-    $('#arrivalNowBtn').addEventListener('click', () => quickToday((day) => {
-      if (!allowsWork(day.type)) day.type = 'work';
-      day.start = formatClock();
-      day.end = '';
-      day.manualBreak = false;
-    }, 'Příchod zapsán'));
+    // Rychlé akce Dashboard
+    $('#editTodayBtn')?.addEventListener('click', () => openDayEditor(todayKey()));
+    $('#dashArrivalNowBtn')?.addEventListener('click', () => quickToday((d) => {
+      if (!allowsWork(d.type)) d.type = 'work';
+      d.start = formatClock();
+      d.end = '';
+      d.manualBreak = false;
+    }, 'Příchod zaznamenán'));
 
-    $('#departureNowBtn').addEventListener('click', () => quickToday((day, hours) => {
-      if (!allowsWork(day.type)) day.type = 'work';
-      if (!day.start) day.start = hours.start;
-      day.end = formatClock();
-      day.manualBreak = false;
-    }, 'Odchod zapsán'));
+    $('#dashDepartureNowBtn')?.addEventListener('click', () => quickToday((d, hours) => {
+      if (!allowsWork(d.type)) d.type = 'work';
+      if (!d.start) d.start = hours.start;
+      d.end = formatClock();
+      d.manualBreak = false;
+    }, 'Odchod zaznamenán'));
 
-    $('#normalHoursBtn').addEventListener('click', () => quickToday((day, hours) => {
-      day.type = 'work';
-      day.start = hours.start;
-      day.end = hours.end;
-      day.manualBreak = false;
-      day.breakMinutes = settings.breakMinutes;
-    }, 'Běžná pracovní doba uložena'));
+    $('#shiftEndNowBtn')?.addEventListener('click', () => $('#dashDepartureNowBtn').click());
 
-    $('#quickVacationBtn').addEventListener('click', () => quickToday((day) => {
-      day.type = 'vacation';
-      day.start = '';
-      day.end = '';
+    $('#dashNormalHoursBtn')?.addEventListener('click', () => quickToday((d, hours) => {
+      d.type = 'work';
+      d.start = hours.start;
+      d.end = hours.end;
+      d.manualBreak = false;
+      d.breakMinutes = settings.breakMinutes;
+    }, 'Běžná pracovní doba zapsána'));
+
+    $('#dashVacationBtn')?.addEventListener('click', () => quickToday((d) => {
+      d.type = 'vacation';
+      d.start = '';
+      d.end = '';
     }, 'Zapsána celodenní dovolená'));
 
-    $('#endShiftNowBtn')?.addEventListener('click', () => $('#departureNowBtn').click());
-
-    $('#quickHoBtn')?.addEventListener('click', () => quickToday((day, hours) => {
-      day.type = 'homeOffice';
-      day.start = hours.start;
-      day.end = hours.end;
-      day.manualBreak = false;
-      day.breakMinutes = settings.breakMinutes;
+    $('#dashPresetHoBtn')?.addEventListener('click', () => quickToday((d, hours) => {
+      d.type = 'homeOffice';
+      d.start = hours.start;
+      d.end = hours.end;
+      d.manualBreak = false;
+      d.breakMinutes = settings.breakMinutes;
     }, 'Zapsán Home office'));
 
-    $('#quickDocBtn')?.addEventListener('click', () => quickToday((day) => {
-      day.type = 'doctor';
-      day.doctorFullDay = true;
-      day.start = '';
-      day.end = '';
-    }, 'Zapsán lékař (celý den)'));
+    $('#dashPresetDocBtn')?.addEventListener('click', () => quickToday((d) => {
+      d.type = 'doctor';
+      d.doctorFullDay = true;
+      d.start = '';
+      d.end = '';
+    }, 'Zapsán lékař (celodenní)'));
 
-    $('#quickTripBtn')?.addEventListener('click', () => quickToday((day, hours) => {
-      day.type = 'businessTrip';
-      day.start = hours.start;
-      day.end = hours.end;
-      day.manualBreak = false;
-      day.breakMinutes = settings.breakMinutes;
+    $('#dashPresetTripBtn')?.addEventListener('click', () => quickToday((d, hours) => {
+      d.type = 'businessTrip';
+      d.start = hours.start;
+      d.end = hours.end;
+      d.manualBreak = false;
+      d.breakMinutes = settings.breakMinutes;
     }, 'Zapsána služební cesta'));
 
-    // Kalendář & Přehled posuny měsíců
-    $('#prevMonthBtn').addEventListener('click', () => { calendarMonth = addMonths(calendarMonth, -1); renderCalendar(); });
-    $('#nextMonthBtn').addEventListener('click', () => { calendarMonth = addMonths(calendarMonth, 1); renderCalendar(); });
-    $('#calendarTitle').addEventListener('click', () => { calendarMonth = startOfMonth(new Date()); renderCalendar(); });
-    $('#fillMissingMonthBtn').addEventListener('click', () => fillMissingDaysInMonth(calendarMonth));
-    $('#openTodayFromCalBtn').addEventListener('click', () => openDayEditor(todayKey()));
+    $('#dashPresetCompBtn')?.addEventListener('click', () => quickToday((d) => {
+      d.type = 'compTime';
+      d.start = '';
+      d.end = '';
+    }, 'Zapsáno náhradní volno'));
 
-    $('#overviewPrevBtn').addEventListener('click', () => { overviewMonth = addMonths(overviewMonth, -1); renderOverview(); });
-    $('#overviewNextBtn').addEventListener('click', () => { overviewMonth = addMonths(overviewMonth, 1); renderOverview(); });
-    $('#fillMissingOverviewBtn').addEventListener('click', () => fillMissingDaysInMonth(overviewMonth));
-    $('#exportCsvBtn').addEventListener('click', () => exportMonthlyCsv(overviewMonth));
-    $('#printSheetBtn').addEventListener('click', () => window.print());
+    // Kalendář navigace
+    $('#calPrevMonthBtn')?.addEventListener('click', () => { calendarMonth = addMonths(calendarMonth, -1); renderCalendar(); });
+    $('#calNextMonthBtn')?.addEventListener('click', () => { calendarMonth = addMonths(calendarMonth, 1); renderCalendar(); });
+    $('#calMonthTitleBtn')?.addEventListener('click', () => openMonthPicker('calendar'));
+    $('#calFillMissingBtn')?.addEventListener('click', () => fillMissingDaysInMonth(calendarMonth));
 
-    // Nastavení: výpočet fondu z příchodu a odchodu
-    $('#calcTargetFromHoursBtn').addEventListener('click', () => {
-      const dur = durationMinutes($('#settingStart').value, $('#settingEnd').value);
-      const brk = clamp(Number($('#settingBreak').value) || 0, 0, 240);
-      const net = Math.max(0, dur - brk);
-      $('#settingTarget').value = minutesToTime(net);
-      toast(`Denní fond nastaven na ${formatDuration(net)}`);
+    // Timesheet navigace
+    $('#tsPrevMonthBtn')?.addEventListener('click', () => { timesheetMonth = addMonths(timesheetMonth, -1); renderTimesheet(); });
+    $('#tsNextMonthBtn')?.addEventListener('click', () => { timesheetMonth = addMonths(timesheetMonth, 1); renderTimesheet(); });
+    $('#tsMonthTitleBtn')?.addEventListener('click', () => openMonthPicker('timesheet'));
+    $('#tsMonthTitle')?.addEventListener('click', () => openMonthPicker('timesheet'));
+    $('#tsFillMissingBtn')?.addEventListener('click', () => fillMissingDaysInMonth(timesheetMonth));
+    $('#tsExportCsvBtn')?.addEventListener('click', () => exportMonthlyCsv(timesheetMonth));
+    $('#tsPrintBtn')?.addEventListener('click', () => window.print());
+
+    // Month Picker Modal
+    $('#pickerPrevYearBtn')?.addEventListener('click', () => { pickerSelectedYear--; renderMonthPickerGrid(); });
+    $('#pickerNextYearBtn')?.addEventListener('click', () => { pickerSelectedYear++; renderMonthPickerGrid(); });
+    $('#closeMonthPickerBtn')?.addEventListener('click', () => $('#monthPickerModal').close());
+    $('#pickerCloseFooterBtn')?.addEventListener('click', () => $('#monthPickerModal').close());
+    $('#pickerTodayMonthBtn')?.addEventListener('click', () => {
+      const now = new Date();
+      if (pickerTarget === 'timesheet') {
+        timesheetMonth = startOfMonth(now);
+        renderTimesheet();
+      } else {
+        calendarMonth = startOfMonth(now);
+        renderCalendar();
+      }
+      $('#monthPickerModal').close();
     });
 
-    // Nastavení: přepínání víkendového režimu a dnů v týdnu
-    $('#settingWeekendMode').addEventListener('change', (e) => {
-      syncWeekdaysFromMode(e.target.value);
+    // PŘIHLÁŠENÍ & REGISTRACE MODALY
+    $('#openLoginModalBtn')?.addEventListener('click', () => $('#loginModal').showModal());
+    $('#closeLoginModalBtn')?.addEventListener('click', () => $('#loginModal').close());
+    $('#switchToRegisterBtn')?.addEventListener('click', () => {
+      $('#loginModal').close();
+      $('#registerModal').showModal();
     });
 
-    $$('#settingWeekdaysGroup input[type="checkbox"]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const checked = $$('#settingWeekdaysGroup input[type="checkbox"]:checked').map(el => Number(el.value));
-        $('#settingWeekendMode').value = detectModeFromWeekdays(checked);
-      });
+    $('#openRegisterModalBtn')?.addEventListener('click', () => $('#registerModal').showModal());
+    $('#closeRegisterModalBtn')?.addEventListener('click', () => $('#registerModal').close());
+    $('#switchToLoginBtn')?.addEventListener('click', () => {
+      $('#registerModal').close();
+      $('#loginModal').showModal();
     });
 
-    $('#settingWeekendCustomHours').addEventListener('change', (e) => {
-      $('#weekendCustomFields').classList.toggle('hidden', !e.target.checked);
-    });
-
-    // Uložení nastavení pracovní doby a víkendů
-    $('#settingsForm').addEventListener('submit', async (e) => {
+    $('#loginUserForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const target = timeToMinutes($('#settingTarget').value);
-      const weekendTarget = timeToMinutes($('#settingWeekendTarget').value);
-      const checkedDays = $$('#settingWeekdaysGroup input[type="checkbox"]:checked').map(el => Number(el.value));
-
-      settings = normalizeSettings({
-        ...settings,
-        id: 'settings',
-        workStart: $('#settingStart').value,
-        workEnd: $('#settingEnd').value,
-        dailyTargetMinutes: target ?? 510,
-        breakMinutes: clamp(Number($('#settingBreak').value) || 0, 0, 240),
-        breakAfterMinutes: clamp(Number($('#settingBreakAfter').value) || 0, 0, 1440),
-        vacationAllowanceDays: clamp(Number($('#settingVacationAllowance').value) || 20, 0, 60),
-        autoFill: $('#settingAutoFill').checked,
-        workDays: checkedDays.length > 0 ? checkedDays : [1, 2, 3, 4, 5],
-        weekendMode: $('#settingWeekendMode').value,
-        weekendCustomHours: $('#settingWeekendCustomHours').checked,
-        weekendStart: $('#settingWeekendStart').value || '07:00',
-        weekendEnd: $('#settingWeekendEnd').value || '15:30',
-        weekendTargetMinutes: weekendTarget ?? 480,
-        workOnHolidays: $('#settingWorkOnHolidays').checked,
-        theme: $('#settingTheme').value
-      });
-
-      await saveSettings();
-      applyTheme();
-      renderAll();
-      toast('Nastavení pracovní doby uloženo');
-    });
-
-    $('#settingTheme').addEventListener('change', async () => {
-      settings.theme = $('#settingTheme').value;
-      applyTheme();
-      await saveSettings();
-    });
-
-    // Přihlášení uživatele (Jméno + PIN)
-    $('#simpleAuthForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const username = $('#authUsername').value;
-      const displayName = $('#authDisplayName').value;
-      const pin = $('#authPin').value;
-      const mergeLocal = $('#authMergeLocal').checked;
       try {
-        const msg = await loginWithSimpleProfile(username, displayName, pin, mergeLocal);
-        $('#authDialog').close();
+        const msg = await performLogin($('#loginUsername').value, $('#loginPin').value);
+        $('#loginModal').close();
         renderAll();
-        toast(msg);
+        toast(msg, '✓');
       } catch (err) {
         alert(err.message || 'Přihlášení se nezdařilo.');
       }
     });
 
-    $('#logoutBtn').addEventListener('click', () => {
-      if (!confirm('Odhlásit aktuálního uživatele z tohoto zařízení?')) return;
+    $('#registerUserForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const msg = await performRegister(
+          $('#regUsername').value,
+          $('#regDisplayName').value,
+          $('#regPin').value,
+          $('#regPinConfirm').value,
+          $('#regMergeLocalDays').checked
+        );
+        $('#registerModal').close();
+        renderAll();
+        toast(msg, '✓');
+      } catch (err) {
+        alert(err.message || 'Registrace se nezdařila.');
+      }
+    });
+
+    $('#logoutUserBtn')?.addEventListener('click', () => {
+      if (!confirm('Odhlásit uživatele z tohoto zařízení?')) return;
       saveCurrentUser(null);
       setSyncState('local');
       renderAll();
-      toast('Uživatel odhlášen');
+      toast('Uživatel byl odhlášen', 'ℹ️');
     });
 
-    // Supabase nastavení a připojení
-    $('#saveSupabaseBtn').addEventListener('click', async () => {
-      const url = $('#supabaseUrlInput').value;
-      const key = $('#supabaseKeyInput').value;
+    // Nastavení: automatický fond z hodin
+    $('#calcTargetAutoBtn')?.addEventListener('click', () => {
+      const dur = durationMinutes($('#setWorkStart').value, $('#setWorkEnd').value);
+      const brk = clamp(Number($('#setBreakMinutes').value) || 0, 0, 240);
+      const net = Math.max(0, dur - brk);
+      $('#setDailyTarget').value = minutesToTime(net);
+      toast(`Denní fond nastaven na ${formatDuration(net)}`, '✓');
+    });
+
+    // Nastavení: víkendový režim
+    $('#setWeekendMode')?.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      let days = [1, 2, 3, 4, 5];
+      if (mode === 'saturday') days = [1, 2, 3, 4, 5, 6];
+      else if (mode === 'sunday') days = [1, 2, 3, 4, 5, 0];
+      else if (mode === 'both') days = [1, 2, 3, 4, 5, 6, 0];
+      else if (mode === 'custom') return;
+      $$('#weekdaysCheckboxes input[type="checkbox"]').forEach(cb => {
+        cb.checked = days.includes(Number(cb.value));
+      });
+    });
+
+    $$('#weekdaysCheckboxes input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const checked = $$('#weekdaysCheckboxes input[type="checkbox"]:checked').map(el => Number(el.value));
+        const sorted = [1, 2, 3, 4, 5, 6, 0].filter(d => checked.includes(d)).join(',');
+        let m = 'custom';
+        if (sorted === '1,2,3,4,5') m = 'none';
+        else if (sorted === '1,2,3,4,5,6') m = 'saturday';
+        else if (sorted === '1,2,3,4,5,0') m = 'sunday';
+        else if (sorted === '1,2,3,4,5,6,0') m = 'both';
+        $('#setWeekendMode').value = m;
+      });
+    });
+
+    $('#setWeekendCustomHours')?.addEventListener('change', (e) => {
+      $('#weekendCustomInputsArea').classList.toggle('hidden', !e.target.checked);
+    });
+
+    // Uložení nastavení
+    $('#scheduleSettingsForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const target = timeToMinutes($('#setDailyTarget').value);
+      const weekendTarget = timeToMinutes($('#setWeekendTarget').value);
+      const checkedDays = $$('#weekdaysCheckboxes input[type="checkbox"]:checked').map(el => Number(el.value));
+
+      settings = normalizeSettings({
+        ...settings,
+        id: 'settings',
+        workStart: $('#setWorkStart').value,
+        workEnd: $('#setWorkEnd').value,
+        dailyTargetMinutes: target ?? 510,
+        breakMinutes: clamp(Number($('#setBreakMinutes').value) || 0, 0, 240),
+        breakAfterMinutes: clamp(Number($('#setBreakAfterMinutes').value) || 0, 0, 1440),
+        vacationAllowanceDays: clamp(Number($('#setVacationAllowance').value) || 20, 0, 60),
+        autoFill: $('#setAutoFill').checked,
+        workDays: checkedDays.length > 0 ? checkedDays : [1, 2, 3, 4, 5],
+        weekendMode: $('#setWeekendMode').value,
+        weekendCustomHours: $('#setWeekendCustomHours').checked,
+        weekendStart: $('#setWeekendStart').value || '07:00',
+        weekendEnd: $('#setWeekendEnd').value || '15:30',
+        weekendTargetMinutes: weekendTarget ?? 480,
+        workOnHolidays: $('#setWorkOnHolidays').checked,
+        theme: $('#setThemeMode').value
+      });
+
+      await saveSettings();
+      applyTheme();
+      renderAll();
+      toast('Nastavení pracovní doby uloženo', '✓');
+    });
+
+    $('#setThemeMode')?.addEventListener('change', async (e) => {
+      settings.theme = e.target.value;
+      applyTheme();
+      await saveSettings();
+    });
+
+    $('#sidebarThemeToggleBtn')?.addEventListener('click', async () => {
+      const cur = document.documentElement.dataset.theme;
+      const next = cur === 'dark' ? 'light' : 'dark';
+      settings.theme = next;
+      $('#setThemeMode').value = next;
+      applyTheme();
+      await saveSettings();
+      toast(`Přepnuto na ${next === 'dark' ? 'tmavý' : 'světlý'} motiv`, '🎨');
+    });
+
+    // Ruční Supabase nastavení
+    $('#saveManualSbBtn')?.addEventListener('click', async () => {
+      const url = $('#setSbUrl').value;
+      const key = $('#setSbKey').value;
       saveSupabaseConfigToStorage(url, key);
       try {
-        await testSupabaseConnection();
-        if (currentUser) {
-          await syncWithSupabase(true);
-          toast('Supabase připojena a synchronizována!');
-        } else {
-          renderAll();
-          toast('Supabase připojena! Nyní se přihlas svým jménem.');
-          openAuthModal();
-        }
-      } catch (err) {
+        if (!isSupabaseConfigured()) throw new Error('Vyplň URL i klíč');
+        await sbFetch('/rest/v1/attendance_profiles?select=user_key&limit=1', { method: 'GET' });
         renderAll();
-        alert(`Nepodařilo se spojit se Supabase:\n${err.message}\n\nUjisti se, že jsi v Supabase SQL Editoru spustil přiložený SQL skript.`);
-      }
-    });
-
-    $('#syncNowBtn').addEventListener('click', async () => {
-      if (!isSupabaseConfigured()) {
-        alert('Nejprve vyplň a ulož Supabase Project URL a Anon Key.');
-        return;
-      }
-      if (!currentUser) {
-        openAuthModal();
-        return;
-      }
-      try {
-        await syncWithSupabase(true);
-        toast('Data úspěšně synchronizována se Supabase');
+        toast('Spojení se Supabase je funkční', '✓');
       } catch (err) {
-        alert(`Synchronizace selhala: ${err.message}`);
+        alert(`Připojení selhalo: ${err.message}`);
       }
     });
 
-    $('#openSchemaDialogBtn').addEventListener('click', () => {
-      $('#sqlCodeBlock').textContent = SQL_SCHEMA_TEXT;
-      $('#schemaDialog').showModal();
+    $('#forceSyncCloudBtn')?.addEventListener('click', () => {
+      if (!isCloudReady()) {
+        $('#loginModal').showModal();
+        return;
+      }
+      syncWithSupabase(true)
+        .then(() => toast('Synchronizace dokončena', '✓'))
+        .catch(err => alert(`Synchronizace selhala: ${err.message}`));
     });
-    $('#closeSchemaBtn').addEventListener('click', () => $('#schemaDialog').close());
 
-    $('#copySqlBtn').addEventListener('click', async () => {
+    // SQL Viewer Dialog
+    $('#openSqlViewerBtn')?.addEventListener('click', () => {
+      $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
+      $('#sqlSchemaDialog').showModal();
+    });
+    $('#closeSqlDialogBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
+    $('#closeSqlFooterBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
+    $('#copySqlCodeBtn')?.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(SQL_SCHEMA_TEXT);
-        toast('SQL skript zkopírován do schránky');
+        toast('SQL skript zkopírován do schránky', '📋');
       } catch {
-        toast('Zkopíruj text ze zobrazeného okna');
+        toast('Zkopírujte text z okna ručně', 'ℹ️');
       }
     });
 
-    $('#shareConfigLinkBtn').addEventListener('click', async () => {
-      if (!isSupabaseConfigured()) {
-        alert('Nejprve ulož Supabase Project URL a Anon Key.');
-        return;
-      }
-      const shareUrl = `${location.origin}${location.pathname}?sb_url=${encodeURIComponent(supabaseConfig.url)}&sb_key=${encodeURIComponent(supabaseConfig.anonKey)}`;
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        toast('Odkaz s nastavením databáze zkopírován!');
-      } catch {
-        prompt('Zkopíruj si tento odkaz pro otevření na mobilu:', shareUrl);
-      }
+    // Dialog editace dne
+    $('#closeDayDialogBtn')?.addEventListener('click', () => $('#dayEditDialog').close());
+    $('#cancelDayDialogBtn')?.addEventListener('click', () => $('#dayEditDialog').close());
+
+    $('#editDayType')?.addEventListener('change', () => { updateDayFormVisibility(); updateDayPreview(); });
+    $('#editManualBreakToggle')?.addEventListener('change', () => { updateDayFormVisibility(); updateDayPreview(); });
+    $('#editDoctorFullDay')?.addEventListener('change', () => { updateDayFormVisibility(); updateDayPreview(); });
+
+    ['editDayStart', 'editDayEnd', 'editDayBreak', 'editDoctorStart', 'editDoctorEnd', 'editOtherMinutes'].forEach(id => {
+      $(`#${id}`)?.addEventListener('input', updateDayPreview);
     });
 
-    $('#disconnectSupabaseBtn').addEventListener('click', () => {
-      if (!confirm('Odpojit Supabase databázi v tomto prohlížeči? Lokální záznamy zůstanou zachovány.')) return;
-      saveSupabaseConfigToStorage('', '');
-      setSyncState('local');
-      renderAll();
-      toast('Supabase databáze odpojena');
+    $('#editApplyDefaultHoursBtn')?.addEventListener('click', () => {
+      const key = $('#editDayDate').value || todayKey();
+      const hours = defaultHoursForDate(key);
+      $('#editDayStart').value = hours.start;
+      $('#editDayEnd').value = hours.end;
+      $('#editManualBreakToggle').checked = false;
+      $('#editDayBreak').value = settings.breakMinutes;
+      updateDayFormVisibility();
+      updateDayPreview();
     });
 
-    // Dialog úpravy dne
-    $('#closeDayBtn').addEventListener('click', () => $('#dayDialog').close());
-    $('#dayType').addEventListener('change', () => { updateDayFormVisibility(); updateDayPreview(); });
-    $('#manualBreakToggle').addEventListener('change', () => { updateDayFormVisibility(); updateDayPreview(); });
-    $('#doctorFullDay').addEventListener('change', () => { updateDayFormVisibility(); updateDayPreview(); });
-    ['dayStart', 'dayEnd', 'dayBreak', 'doctorStart', 'doctorEnd', 'otherMinutes'].forEach(id => {
-      $(`#${id}`).addEventListener('input', updateDayPreview);
-    });
-    $('#applyDefaultsBtn').addEventListener('click', applyDefaultHoursToEditor);
-
-    $('#dayForm').addEventListener('submit', async (e) => {
+    $('#dayEditForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const day = formDayFromInputs();
       await saveDay(day);
-      $('#dayDialog').close();
-      toast('Den uložen');
+      $('#dayEditDialog').close();
+      toast('Den byl úspěšně uložen', '✓');
     });
 
-    $('#deleteDayBtn').addEventListener('click', async () => {
-      const key = $('#dayDate').value;
-      if (!confirm('Smazat tento den z evidence?')) return;
+    $('#deleteDayRecordBtn')?.addEventListener('click', async () => {
+      const key = $('#editDayDate').value;
+      if (!confirm('Opravdu smazat záznam pro tento den?')) return;
       await deleteDay(key);
-      $('#dayDialog').close();
-      toast('Den smazán');
+      $('#dayEditDialog').close();
+      toast('Záznam byl smazán', '🗑️');
     });
 
-    // Export / Import / Reset
-    $('#exportBtn').addEventListener('click', exportBackup);
-    $('#importBtn').addEventListener('click', () => $('#importFile').click());
-    $('#importFile').addEventListener('change', async (e) => {
+    // Export & Import
+    $('#exportJsonBtn')?.addEventListener('click', exportBackup);
+    $('#importJsonBtn')?.addEventListener('click', () => $('#jsonImportInput').click());
+    $('#jsonImportInput')?.addEventListener('change', async (e) => {
       const file = e.target.files?.[0];
       if (!file) return;
       try {
         await importBackup(file);
-        toast('Záloha úspěšně importována');
+        toast('Záloha úspěšně importována', '✓');
       } catch (err) {
-        alert(err.message || 'Import se nepodařil.');
+        alert(err.message || 'Import selhal');
       }
       e.target.value = '';
     });
-    $('#resetBtn').addEventListener('click', resetAll);
+    $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
 
-    // Zavření dialogů kliknutím mimo obsah (backdrop)
-    ['dayDialog', 'authDialog', 'schemaDialog', 'helpDialog'].forEach(id => {
+    // Zavření modálu klikem na backdrop
+    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal'].forEach(id => {
       const dlg = $(`#${id}`);
       dlg?.addEventListener('click', (e) => {
         if (e.target === dlg) dlg.close();
@@ -2087,7 +2136,7 @@ create policy "Secure access to own attendance days"
   }
 
   // ============================================================================
-  // START APLIKACE
+  // SPUŠTĚNÍ APLIKACE
   // ============================================================================
   async function refreshConfigFromNetwork() {
     if (DEFAULT_SUPABASE_CONFIG.url && DEFAULT_SUPABASE_CONFIG.anonKey) return;
@@ -2103,7 +2152,7 @@ create policy "Secure access to own attendance days"
         supabaseConfig = loadSupabaseConfig();
       }
     } catch {
-      // Offline nebo lokální spuštění
+      // offline
     }
   }
 
@@ -2118,21 +2167,33 @@ create policy "Secure access to own attendance days"
       if (isCloudReady()) {
         syncWithSupabase(true).catch(console.warn);
       } else if (isSupabaseConfigured() && !currentUser) {
-        openAuthModal();
+        $('#loginModal').showModal();
       }
 
-      if (!activeShiftInterval) {
-        activeShiftInterval = setInterval(() => {
-          updateActiveShiftWidget();
+      // Spuštění živých stopek (každou sekundu)
+      if (!activeShiftTimerInterval) {
+        activeShiftTimerInterval = setInterval(() => {
+          updateActiveShiftTimer();
         }, 1000);
       }
 
+      // Service worker pro PWA s auto-update hláškou
       if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-        navigator.serviceWorker.register('./sw.js').catch(console.warn);
+        navigator.serviceWorker.register('./sw.js').then(reg => {
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            newWorker?.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                toast('Aplikace byla aktualizována na nejnovější verzi', '✓');
+                setTimeout(() => location.reload(), 1000);
+              }
+            });
+          });
+        }).catch(console.warn);
       }
     } catch (err) {
       console.error(err);
-      alert('Aplikaci se nepodařilo spustit. Zkontroluj, že prohlížeč povoluje lokální úložiště.');
+      alert('Aplikaci se nepodařilo spustit. Zkontroluj, že prohlížeč povoluje úložiště IndexedDB.');
     }
   }
 
