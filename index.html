@@ -677,6 +677,10 @@
                 <div class="account-actions-row">
                   <button id="openLoginModalBtn" class="win-btn-accent" type="button">Přihlásit se</button>
                   <button id="openRegisterModalBtn" class="win-btn-standard" type="button">Zaregistrovat nový účet</button>
+                  <button id="openChangePinModalBtn" class="win-btn-standard hidden" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    <span>Změnit PIN / heslo</span>
+                  </button>
                   <button id="logoutUserBtn" class="win-btn-subtle danger-btn hidden" type="button">Odhlásit</button>
                 </div>
               </article>
@@ -1101,6 +1105,47 @@
         <button id="pickerTodayMonthBtn" class="win-btn-subtle" type="button">Přejít na dnešní měsíc</button>
         <button id="pickerCloseFooterBtn" class="win-btn-standard" type="button">Zavřít</button>
       </footer>
+    </div>
+  </dialog>
+
+  <!-- ====================================================================
+       DIALOG F: ZMĚNA PINU / HESLA (CHANGE PIN)
+       ==================================================================== -->
+  <dialog id="changePinModal" class="win11-dialog">
+    <div class="win11-dialog-surface compact">
+      <header class="dialog-header">
+        <div>
+          <span class="dialog-subtitle">Zabezpečení profilu</span>
+          <h2>Změna osobního PINu / hesla</h2>
+        </div>
+        <button id="closeChangePinModalBtn" class="win-btn-subtle icon-only" type="button" aria-label="Zavřít">×</button>
+      </header>
+
+      <form id="changePinForm" class="dialog-body-scroll">
+        <p class="dialog-info-text">
+          Pro změnu zadej svůj dosavadní PIN a zvol si nový (min. 4 znaky). Nový PIN se zabezpečeně zahashuje a uloží v databázi.
+        </p>
+
+        <label class="win-field">
+          <span>Současný PIN / heslo *</span>
+          <input id="oldPinInput" type="password" placeholder="••••" required autocomplete="current-password">
+        </label>
+
+        <label class="win-field">
+          <span>Nový PIN / heslo (min. 4 znaky) *</span>
+          <input id="newPinInput" type="password" placeholder="Zadej nový PIN" required minlength="4" autocomplete="new-password">
+        </label>
+
+        <label class="win-field">
+          <span>Potvrzení nového PINu / hesla *</span>
+          <input id="newPinConfirmInput" type="password" placeholder="Zopakuj nový PIN" required minlength="4" autocomplete="new-password">
+        </label>
+
+        <div class="dialog-footer-block">
+          <button class="win-btn-accent full-width-btn" type="submit">Uložit nový PIN v databázi</button>
+          <button id="cancelChangePinBtn" class="win-btn-standard full-width-btn" type="button" style="margin-top: 6px;">Zrušit</button>
+        </div>
+      </form>
     </div>
   </dialog>
 

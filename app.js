@@ -826,6 +826,49 @@ create policy "Secure access to own attendance days"
     }
   }
 
+  async function performChangePin(oldPin, newPin, newPinConfirm) {
+    if (!currentUser) throw new Error('Pro změnu PINu musíš být přihlášen.');
+    if (!oldPin) throw new Error('Zadej svůj současný PIN / heslo.');
+    if (!newPin) throw new Error('Zadej nový PIN / heslo.');
+    if (newPin.length < 4) throw new Error('Nový PIN / heslo musí mít alespoň 4 znaky.');
+    if (newPin !== newPinConfirm) throw new Error('Nový PIN a jeho potvrzení se neshodují.');
+    if (oldPin === newPin) throw new Error('Nový PIN musí být jiný než současný.');
+
+    const oldHash = await hashPin(oldPin, currentUser.username);
+    if (oldHash !== currentUser.pinHash) {
+      throw new Error('Zadaný současný PIN není správný.');
+    }
+
+    const newHash = await hashPin(newPin, currentUser.username);
+
+    if (isCloudReady()) {
+      setSyncState('syncing');
+      try {
+        await sbFetch(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}`, {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            pin_hash: newHash,
+            updated_at: new Date().toISOString()
+          }),
+          authUser: currentUser
+        });
+
+        currentUser.pinHash = newHash;
+        saveCurrentUser(currentUser);
+        setSyncState('online');
+        return 'PIN byl úspěšně změněn a aktualizován v cloudu.';
+      } catch (err) {
+        setSyncState('error');
+        throw new Error(`Změna PINu v databázi selhala: ${err.message}`);
+      }
+    } else {
+      currentUser.pinHash = newHash;
+      saveCurrentUser(currentUser);
+      return 'PIN byl úspěšně změněn (lokální profil).';
+    }
+  }
+
   async function syncWithSupabase(pushLocalDays = true) {
     if (!isCloudReady()) {
       setSyncState('local');
@@ -1080,6 +1123,7 @@ create policy "Secure access to own attendance days"
 
     $('#openLoginModalBtn')?.classList.toggle('hidden', !!currentUser);
     $('#openRegisterModalBtn')?.classList.toggle('hidden', !!currentUser);
+    $('#openChangePinModalBtn')?.classList.toggle('hidden', !currentUser);
     $('#logoutUserBtn')?.classList.toggle('hidden', !currentUser);
 
     // Sidebar rozvrh
@@ -1941,6 +1985,28 @@ create policy "Secure access to own attendance days"
       }
     });
 
+    $('#openChangePinModalBtn')?.addEventListener('click', () => {
+      $('#changePinForm')?.reset();
+      $('#changePinModal')?.showModal();
+    });
+    $('#closeChangePinModalBtn')?.addEventListener('click', () => $('#changePinModal')?.close());
+    $('#cancelChangePinBtn')?.addEventListener('click', () => $('#changePinModal')?.close());
+
+    $('#changePinForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const msg = await performChangePin(
+          $('#oldPinInput').value,
+          $('#newPinInput').value,
+          $('#newPinConfirmInput').value
+        );
+        $('#changePinModal')?.close();
+        toast(msg, '✓');
+      } catch (err) {
+        alert(err.message || 'Změna PINu se nezdařila.');
+      }
+    });
+
     $('#logoutUserBtn')?.addEventListener('click', () => {
       if (!confirm('Odhlásit uživatele z tohoto zařízení?')) return;
       saveCurrentUser(null);
@@ -2134,7 +2200,7 @@ create policy "Secure access to own attendance days"
     $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
 
     // Zavření modálu klikem na backdrop
-    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal'].forEach(id => {
+    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal'].forEach(id => {
       const dlg = $(`#${id}`);
       dlg?.addEventListener('click', (e) => {
         if (e.target === dlg) dlg.close();
