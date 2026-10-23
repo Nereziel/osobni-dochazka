@@ -2128,7 +2128,17 @@ create policy "Secure access to own attendance days"
       }
 
       if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-        navigator.serviceWorker.register('./sw.js').catch(console.warn);
+        navigator.serviceWorker.register('./sw.js').then(reg => {
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            newWorker?.addEventListener('statechange', () => {
+              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                toast('Nová verze docházky připravena – aktualizuji…');
+                setTimeout(() => location.reload(), 1000);
+              }
+            });
+          });
+        }).catch(console.warn);
       }
     } catch (err) {
       console.error(err);

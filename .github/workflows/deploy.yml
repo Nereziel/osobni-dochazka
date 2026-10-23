@@ -24,17 +24,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inject Supabase keys from GitHub Secrets into config.js
+      - name: Inject Supabase keys from GitHub Secrets and stamp unique build cache
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          BUILD_SHA: ${{ github.sha }}
         run: |
           cat <<EOF > config.js
           window.DOCHAZKA_CONFIG = {
             supabaseUrl: "${SUPABASE_URL}",
-            supabaseAnonKey: "${SUPABASE_ANON_KEY}"
+            supabaseAnonKey: "${SUPABASE_ANON_KEY}",
+            buildTime: "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+            version: "${BUILD_SHA}"
           };
           EOF
+          sed -i "s/const CACHE = '.*';/const CACHE = 'dochazka-${BUILD_SHA}';/" sw.js
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
