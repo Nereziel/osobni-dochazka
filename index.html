@@ -1,0 +1,832 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Docházka">
+  <meta name="format-detection" content="telephone=no">
+  <title>Osobní docházka · Cloud &amp; PWA</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app" class="app-layout">
+    <!-- Postranní panel pro desktop / prohlížeč -->
+    <aside class="sidebar" aria-label="Postranní panel">
+      <div class="sidebar-brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"></circle>
+            <polyline points="12 7 12 12 15.5 14"></polyline>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">Docházka</div>
+          <div class="brand-subtitle">Osobní &amp; Cloud PWA</div>
+        </div>
+      </div>
+
+      <button id="sidebarUserBtn" class="user-card-btn" type="button" title="Správa účtu a přihlášení">
+        <div id="sidebarAvatar" class="user-avatar">P</div>
+        <div class="user-meta">
+          <strong id="sidebarUserName">Nepřihlášen</strong>
+          <span id="sidebarSyncStatus" class="sync-pill local">Lokální režim</span>
+        </div>
+        <span class="user-chevron" aria-hidden="true">›</span>
+      </button>
+
+      <nav class="sidebar-nav" aria-label="Hlavní navigace">
+        <button class="nav-button active" data-view="today" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+          <span>Dnešní přehled</span>
+        </button>
+        <button class="nav-button" data-view="calendar" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span>Kalendář směn</span>
+        </button>
+        <button class="nav-button" data-view="overview" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <span>Přehled &amp; Výkaz</span>
+        </button>
+        <button class="nav-button" data-view="settings" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Nastavení &amp; DB</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-schedule-box">
+        <div class="sidebar-box-label">Můj rozvrh</div>
+        <div id="sidebarScheduleHours" class="sidebar-box-value">06:30 – 15:30</div>
+        <div id="sidebarScheduleDays" class="sidebar-box-sub">Po–Pá · Fond 8:30</div>
+      </div>
+
+      <div class="sidebar-footer">
+        <button id="sidebarSyncNowBtn" class="ghost-button small-btn" type="button" title="Synchronizovat s databází">
+          <span>↻ Synchronizovat</span>
+        </button>
+        <button id="sidebarInstallBtn" class="ghost-button small-btn" type="button" title="Návod na instalaci aplikace">
+          <span>⌂ Instalace PWA</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Hlavní obsahová část -->
+    <div class="app-shell">
+      <header class="app-header no-print">
+        <div class="header-left">
+          <div id="headerEyebrow" class="eyebrow">Osobní docházka</div>
+          <h1 id="headerTitle">Dnes</h1>
+        </div>
+        <div class="header-actions">
+          <button id="syncBadgeBtn" class="sync-header-btn" type="button" title="Stav cloudu a synchronizace">
+            <span id="syncDot" class="sync-dot local"></span>
+            <span id="syncHeaderText">Lokální</span>
+          </button>
+          <button id="headerUserBtn" class="user-pill-btn" type="button" title="Přihlášení a profil">
+            <span id="headerUserAvatar" class="mini-avatar">P</span>
+            <span id="headerUserName" class="header-user-name">Profil</span>
+          </button>
+          <button id="installHelpBtn" class="icon-button" type="button" aria-label="Instalace aplikace" title="Instalace aplikace">⌂</button>
+        </div>
+      </header>
+
+      <main id="mainContent" class="main-content">
+        <!-- ==================== POHLED 1: DNES ==================== -->
+        <section id="viewToday" class="view active" aria-labelledby="todayTitle">
+          <div class="dashboard-grid">
+            <div class="dashboard-col-main">
+              <article class="hero-card">
+                <div class="hero-top">
+                  <div>
+                    <div id="todayDate" class="hero-date"></div>
+                    <div class="badge-row">
+                      <span id="todayTypeBadge" class="badge">Práce</span>
+                      <span id="todayTimeBadge" class="badge subtle-badge">Bez času</span>
+                    </div>
+                  </div>
+                  <button id="editTodayBtn" class="secondary-button compact" type="button">Upravit den</button>
+                </div>
+
+                <div class="hero-balance">
+                  <span class="label">Dnešní saldo</span>
+                  <strong id="todayBalance" class="balance-value">0:00</strong>
+                  <span id="todayBalanceHint" class="muted">Zatím bez záznamu</span>
+                </div>
+
+                <div class="progress-wrap" aria-label="Plnění dnešního fondu">
+                  <div class="progress-labels">
+                    <span id="todayProgressLabel">Plnění denního fondu</span>
+                    <strong id="todayProgressPercent">0 %</strong>
+                  </div>
+                  <div class="progress-track">
+                    <div id="todayProgressBar" class="progress-fill" style="width: 0%"></div>
+                  </div>
+                </div>
+
+                <div class="metric-grid four-col">
+                  <div class="metric">
+                    <span>Odpracováno</span>
+                    <strong id="todayWorked">0:00</strong>
+                  </div>
+                  <div class="metric">
+                    <span>Omluveno</span>
+                    <strong id="todayCredited">0:00</strong>
+                  </div>
+                  <div class="metric">
+                    <span>Přestávka</span>
+                    <strong id="todayBreak">0:00</strong>
+                  </div>
+                  <div class="metric">
+                    <span>Fond dne</span>
+                    <strong id="todayTarget">8:30</strong>
+                  </div>
+                </div>
+              </article>
+
+              <section class="quick-card">
+                <div class="section-heading">
+                  <div>
+                    <h2 id="todayTitle">Rychlý zápis dneška</h2>
+                    <p id="quickHint">Zapiš příchod, odchod nebo jedním klikem běžnou směnu podle rozvrhu.</p>
+                  </div>
+                </div>
+                <div class="quick-actions">
+                  <button id="arrivalNowBtn" class="primary-button action-with-sub" type="button">
+                    <strong>Příchod teď</strong>
+                    <small id="arrivalNowSub">Zapsat aktuální čas</small>
+                  </button>
+                  <button id="departureNowBtn" class="secondary-button action-with-sub" type="button">
+                    <strong>Odchod teď</strong>
+                    <small id="departureNowSub">Ukončit dnešní směnu</small>
+                  </button>
+                  <button id="normalHoursBtn" class="secondary-button action-with-sub" type="button">
+                    <strong>Běžná pracovní doba</strong>
+                    <small id="normalHoursSub">06:30 – 15:30</small>
+                  </button>
+                  <button id="quickVacationBtn" class="secondary-button action-with-sub" type="button">
+                    <strong>Dovolená / Volno</strong>
+                    <small>Celodenní absence</small>
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <div class="dashboard-col-side">
+              <section class="card week-strip-card">
+                <div class="section-heading">
+                  <div>
+                    <h2>Aktuální týden</h2>
+                    <p id="weekStripSubtitle">Kliknutím na den otevřeš jeho úpravu.</p>
+                  </div>
+                </div>
+                <div id="weekStripGrid" class="week-strip-grid"></div>
+              </section>
+
+              <section class="card month-snapshot">
+                <div class="section-heading">
+                  <div>
+                    <h2>Tento měsíc</h2>
+                    <p id="monthSnapshotLabel"></p>
+                  </div>
+                  <button id="goToOverviewBtn" class="text-button" type="button">Celý výkaz ›</button>
+                </div>
+                <div class="summary-grid">
+                  <div class="summary-card">
+                    <span>Odpracováno</span>
+                    <strong id="snapWorked">0:00</strong>
+                    <small id="snapFundSub" class="card-sub">z fondu 0:00</small>
+                  </div>
+                  <div class="summary-card">
+                    <span>Saldo evidovaných dnů</span>
+                    <strong id="snapBalance">0:00</strong>
+                    <small class="card-sub">přesčasy / nedoplatky</small>
+                  </div>
+                  <div class="summary-card">
+                    <span>Omluveno celkem</span>
+                    <strong id="snapCredited">0:00</strong>
+                    <small id="snapVacationSub" class="card-sub">dovolená, lékař, nemoc</small>
+                  </div>
+                  <div class="summary-card">
+                    <span>Nevyplněné dny</span>
+                    <strong id="snapMissing">0</strong>
+                    <small class="card-sub">minulé pracovní dny</small>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== POHLED 2: KALENDÁŘ ==================== -->
+        <section id="viewCalendar" class="view" aria-labelledby="calendarTitle">
+          <div class="calendar-toolbar">
+            <button id="prevMonthBtn" class="icon-button" type="button" aria-label="Předchozí měsíc">‹</button>
+            <div class="toolbar-center">
+              <button id="calendarTitle" class="month-title-button" type="button" title="Kliknutím skočíš na aktuální měsíc"></button>
+              <span id="calendarScheduleHint" class="toolbar-sub"></span>
+            </div>
+            <button id="nextMonthBtn" class="icon-button" type="button" aria-label="Další měsíc">›</button>
+          </div>
+
+          <div class="calendar-layout">
+            <div class="calendar-main-col">
+              <div class="calendar-card">
+                <div class="weekdays" aria-hidden="true">
+                  <span>Po</span><span>Út</span><span>St</span><span>Čt</span><span>Pá</span><span>So</span><span>Ne</span>
+                </div>
+                <div id="calendarGrid" class="calendar-grid"></div>
+              </div>
+              <div class="legend">
+                <span><i class="dot work"></i>Práce / Směna</span>
+                <span><i class="dot home"></i>Home office / Cesta</span>
+                <span><i class="dot leave"></i>Dovolená / Volno</span>
+                <span><i class="dot doctor"></i>Lékař / Nemoc</span>
+                <span><i class="dot weekend-work"></i>Pracovní víkend</span>
+                <span><i class="dot missing"></i>Chybí vyplnit</span>
+              </div>
+            </div>
+
+            <aside class="calendar-side-col">
+              <div class="card calendar-side-card">
+                <div class="section-heading">
+                  <div>
+                    <h3>Rychlé akce měsíce</h3>
+                    <p id="calendarSideSummary">Souhrn vybraného měsíce.</p>
+                  </div>
+                </div>
+                <div class="mini-stats-row">
+                  <div><span>Odpracováno</span><strong id="calStatWorked">0:00</strong></div>
+                  <div><span>Fond</span><strong id="calStatFund">0:00</strong></div>
+                  <div><span>Saldo</span><strong id="calStatBalance">0:00</strong></div>
+                </div>
+                <div class="stacked-actions">
+                  <button id="fillMissingMonthBtn" class="secondary-button" type="button">Doplnit běžnou dobu do nevyplněných dnů</button>
+                  <button id="openTodayFromCalBtn" class="ghost-button" type="button">Upravit dnešní den</button>
+                </div>
+              </div>
+
+              <div class="card recent-list-card">
+                <div class="section-heading">
+                  <div>
+                    <h3>Záznamy v měsíci</h3>
+                    <p>Klikni na den pro rychlou úpravu.</p>
+                  </div>
+                </div>
+                <div id="calendarMonthList" class="day-list-scroll"></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <!-- ==================== POHLED 3: PŘEHLED A VÝKAZ ==================== -->
+        <section id="viewOverview" class="view" aria-labelledby="overviewTitle">
+          <div class="calendar-toolbar no-print">
+            <button id="overviewPrevBtn" class="icon-button" type="button" aria-label="Předchozí měsíc">‹</button>
+            <div class="toolbar-center">
+              <h2 id="overviewTitle" class="month-title"></h2>
+              <span id="overviewUserSubtitle" class="toolbar-sub"></span>
+            </div>
+            <button id="overviewNextBtn" class="icon-button" type="button" aria-label="Další měsíc">›</button>
+          </div>
+
+          <div class="overview-actions-bar no-print">
+            <button id="fillMissingOverviewBtn" class="secondary-button compact" type="button">✓ Doplnit chybějící dny</button>
+            <button id="exportCsvBtn" class="secondary-button compact" type="button">⬇ Export CSV (Excel)</button>
+            <button id="printSheetBtn" class="secondary-button compact" type="button">🖨 Tisk / PDF výkaz</button>
+          </div>
+
+          <div class="overview-stack">
+            <div class="overview-top-grid">
+              <article class="overview-highlight">
+                <span>Saldo evidovaných dnů</span>
+                <strong id="overviewBalance">0:00</strong>
+                <small id="overviewMissingText"></small>
+                <div class="progress-wrap compact-progress">
+                  <div class="progress-labels">
+                    <span>Splnění měsíčního fondu</span>
+                    <strong id="overviewProgressPct">0 %</strong>
+                  </div>
+                  <div class="progress-track">
+                    <div id="overviewProgressBar" class="progress-fill" style="width:0%"></div>
+                  </div>
+                </div>
+              </article>
+
+              <div class="summary-grid three-col">
+                <div class="summary-card">
+                  <span>Fond měsíce</span>
+                  <strong id="overviewFund">0:00</strong>
+                  <small id="overviewWorkdaysCount" class="card-sub">0 pracovních dnů</small>
+                </div>
+                <div class="summary-card">
+                  <span>Odpracováno</span>
+                  <strong id="overviewWorked">0:00</strong>
+                  <small id="overviewWeekendWorked" class="card-sub">vč. víkendů</small>
+                </div>
+                <div class="summary-card">
+                  <span>Omluveno / Absence</span>
+                  <strong id="overviewCredited">0:00</strong>
+                  <small class="card-sub">započtené náhrady</small>
+                </div>
+                <div class="summary-card">
+                  <span>Evidováno dnů</span>
+                  <strong id="overviewRecorded">0</strong>
+                  <small class="card-sub">uložených záznamů</small>
+                </div>
+                <div class="summary-card">
+                  <span>Dovolená (tento rok)</span>
+                  <strong id="overviewVacationRemaining">20 dnů</strong>
+                  <small id="overviewVacationUsed" class="card-sub">vyčerpáno 0 z 20 dnů</small>
+                </div>
+                <div class="summary-card">
+                  <span>Přestávky v měsíci</span>
+                  <strong id="overviewBreaks">0:00</strong>
+                  <small class="card-sub">odečtený čas obědů</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="overview-split-grid">
+              <article class="breakdown-card no-print">
+                <h3>Rozpad absence a režimů v měsíci</h3>
+                <div id="absenceBreakdown" class="breakdown-list"></div>
+              </article>
+
+              <article class="breakdown-card">
+                <div class="sheet-table-header">
+                  <div>
+                    <h3>Měsíční výkaz docházky</h3>
+                    <p id="printReportMeta" class="muted">Detailní přehled všech dnů v měsíci.</p>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="attendance-table">
+                    <thead>
+                      <tr>
+                        <th>Datum</th>
+                        <th>Den</th>
+                        <th>Režim</th>
+                        <th>Příchod–Odchod</th>
+                        <th>Přest.</th>
+                        <th>Odprac.</th>
+                        <th>Saldo</th>
+                        <th>Poznámka</th>
+                      </tr>
+                    </thead>
+                    <tbody id="overviewTableBody"></tbody>
+                  </table>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- ==================== POHLED 4: NASTAVENÍ A DATABÁZE ==================== -->
+        <section id="viewSettings" class="view" aria-labelledby="settingsTitle">
+          <div class="settings-grid-layout">
+            <form id="settingsForm" class="settings-stack">
+              <!-- Karta 1: Běžná pracovní doba -->
+              <article class="settings-card">
+                <div class="card-badge-head">
+                  <div>
+                    <h2 id="settingsTitle">Běžná pracovní doba</h2>
+                    <p class="muted">Výchozí časy pro tvé pracovní dny. Uloží se do zařízení i do tvého profilu v databázi.</p>
+                  </div>
+                </div>
+                <div class="form-grid two-col">
+                  <label>
+                    <span>Běžný příchod</span>
+                    <input id="settingStart" type="time" required>
+                  </label>
+                  <label>
+                    <span>Běžný odchod</span>
+                    <input id="settingEnd" type="time" required>
+                  </label>
+                  <label>
+                    <span>Denní pracovní fond</span>
+                    <input id="settingTarget" type="time" required>
+                  </label>
+                  <label>
+                    <span>Délka přestávky</span>
+                    <div class="input-with-suffix">
+                      <input id="settingBreak" type="number" min="0" max="240" step="5" required>
+                      <span>min</span>
+                    </div>
+                  </label>
+                  <label>
+                    <span>Odečíst přestávku po</span>
+                    <div class="input-with-suffix">
+                      <input id="settingBreakAfter" type="number" min="0" max="1440" step="15" required>
+                      <span>min</span>
+                    </div>
+                  </label>
+                  <label>
+                    <span>Roční nárok na dovolenou</span>
+                    <div class="input-with-suffix">
+                      <input id="settingVacationAllowance" type="number" min="0" max="60" step="0.5" required>
+                      <span>dnů</span>
+                    </div>
+                  </label>
+                </div>
+                <div class="helper-row">
+                  <button id="calcTargetFromHoursBtn" class="text-button" type="button">↻ Spočítat denní fond automaticky z příchodu, odchodu a přestávky</button>
+                </div>
+                <label class="toggle-row">
+                  <input id="settingAutoFill" type="checkbox">
+                  <span>
+                    <strong>Automaticky předvyplňovat pracovní dobu</strong>
+                    <small>Při otevření nového pracovního dne se rovnou doplní běžný příchod a odchod.</small>
+                  </span>
+                </label>
+              </article>
+
+              <!-- Karta 2: Práce o víkendu a pracovní dny -->
+              <article class="settings-card">
+                <h2>Pracovní dny a víkendy</h2>
+                <p class="muted">Nastav si, které dny v týdnu běžně pracuješ a zda pracuješ i o víkendech nebo svátcích.</p>
+
+                <label>
+                  <span>Režim práce o víkendu</span>
+                  <select id="settingWeekendMode">
+                    <option value="none">Nepracuji o víkendu (pouze Po–Pá)</option>
+                    <option value="saturday">Pracuji i v sobotu (Po–So)</option>
+                    <option value="sunday">Pracuji i v neděli (Po–Pá + Ne)</option>
+                    <option value="both">Pracuji celý víkend (Po–Ne)</option>
+                    <option value="custom">Vlastní výběr dnů v týdnu</option>
+                  </select>
+                </label>
+
+                <div class="weekday-picker-wrap">
+                  <span class="field-label">Aktivní pracovní dny v týdnu (započítané do fondu)</span>
+                  <div class="weekday-toggles" id="settingWeekdaysGroup">
+                    <label class="day-chip"><input type="checkbox" value="1" checked><span>Po</span></label>
+                    <label class="day-chip"><input type="checkbox" value="2" checked><span>Út</span></label>
+                    <label class="day-chip"><input type="checkbox" value="3" checked><span>St</span></label>
+                    <label class="day-chip"><input type="checkbox" value="4" checked><span>Čt</span></label>
+                    <label class="day-chip"><input type="checkbox" value="5" checked><span>Pá</span></label>
+                    <label class="day-chip weekend-chip"><input type="checkbox" value="6"><span>So</span></label>
+                    <label class="day-chip weekend-chip"><input type="checkbox" value="0"><span>Ne</span></label>
+                  </div>
+                </div>
+
+                <label class="toggle-row">
+                  <input id="settingWeekendCustomHours" type="checkbox">
+                  <span>
+                    <strong>Odlišná pracovní doba o víkendu</strong>
+                    <small>Umožní nastavit jiný příchod, odchod a denní fond pro sobotu a neděli.</small>
+                  </span>
+                </label>
+
+                <div id="weekendCustomFields" class="subcard hidden" style="margin-top: 12px;">
+                  <h3>Pracovní doba o víkendu (So / Ne)</h3>
+                  <div class="form-grid three-col">
+                    <label>
+                      <span>Víkendový příchod</span>
+                      <input id="settingWeekendStart" type="time">
+                    </label>
+                    <label>
+                      <span>Víkendový odchod</span>
+                      <input id="settingWeekendEnd" type="time">
+                    </label>
+                    <label>
+                      <span>Víkendový fond</span>
+                      <input id="settingWeekendTarget" type="time">
+                    </label>
+                  </div>
+                </div>
+
+                <label class="toggle-row">
+                  <input id="settingWorkOnHolidays" type="checkbox">
+                  <span>
+                    <strong>Pracuji i ve státní svátky</strong>
+                    <small>Pokud je zapnuto, státní svátky mají běžný denní fond místo automatického volna.</small>
+                  </span>
+                </label>
+              </article>
+
+              <button class="primary-button save-settings" type="submit">Uložit nastavení pracovní doby</button>
+            </form>
+
+            <!-- Pravý sloupec v Nastavení: Účet, Supabase DB, Vzhled a Záloha -->
+            <div class="settings-stack">
+              <!-- Karta 3: Uživatel a jednoduchý login -->
+              <article class="settings-card highlight-border">
+                <div class="card-badge-head">
+                  <div>
+                    <h2>Uživatel a přihlášení</h2>
+                    <p class="muted">Přihlas se svým jménem a PINem (nebo e-mailem), aby se tvá pracovní doba a docházka ukládala k tvému účtu.</p>
+                  </div>
+                  <span id="settingsUserBadge" class="badge">Lokální profil</span>
+                </div>
+
+                <div class="profile-summary-box">
+                  <div id="settingsAvatar" class="user-avatar large">P</div>
+                  <div class="profile-summary-info">
+                    <strong id="settingsProfileName">Nepřihlášený uživatel</strong>
+                    <span id="settingsProfileSub" class="muted">Data jsou uložena v tomto prohlížeči</span>
+                  </div>
+                </div>
+
+                <div class="stacked-actions two-btn-row">
+                  <button id="openAuthDialogBtn" class="primary-button" type="button">Přihlásit / Změnit účet</button>
+                  <button id="logoutBtn" class="secondary-button hidden" type="button">Odhlásit se</button>
+                </div>
+              </article>
+
+              <!-- Karta 4: Supabase Cloud Databáze -->
+              <article class="settings-card">
+                <div class="card-badge-head">
+                  <div>
+                    <h2>Supabase Cloud Databáze</h2>
+                    <p class="muted">Připoj aplikaci ke své vlastní Supabase databázi pro synchronizaci mezi mobilem a počítačem.</p>
+                  </div>
+                  <span id="supabaseStatusBadge" class="badge subtle-badge">Nepřipojeno</span>
+                </div>
+
+                <div class="form-grid">
+                  <label>
+                    <span>Supabase Project URL</span>
+                    <input id="supabaseUrlInput" type="url" placeholder="https://xyzcompany.supabase.co" autocomplete="off">
+                  </label>
+                  <label>
+                    <span>Supabase Anon / Public Key</span>
+                    <input id="supabaseKeyInput" type="password" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..." autocomplete="off">
+                  </label>
+                </div>
+
+                <div class="stacked-actions">
+                  <button id="saveSupabaseBtn" class="primary-button" type="button">Uložit a otestovat připojení</button>
+                  <div class="two-btn-row">
+                    <button id="syncNowBtn" class="secondary-button" type="button">↻ Synchronizovat nyní</button>
+                    <button id="openSchemaDialogBtn" class="secondary-button" type="button">🗄 SQL Návrh databáze</button>
+                  </div>
+                  <div class="two-btn-row">
+                    <button id="shareConfigLinkBtn" class="ghost-button small-btn" type="button">🔗 Zkopírovat odkaz pro mobil s DB klíčem</button>
+                    <button id="disconnectSupabaseBtn" class="ghost-button small-btn danger-text" type="button">Odpojit databázi</button>
+                  </div>
+                </div>
+              </article>
+
+              <!-- Karta 5: Vzhled a zálohování -->
+              <article class="settings-card">
+                <h2>Vzhled a lokální záloha</h2>
+                <div class="form-grid">
+                  <label>
+                    <span>Barevný motiv aplikace</span>
+                    <select id="settingTheme">
+                      <option value="system">Podle systému (automaticky)</option>
+                      <option value="light">Světlý motiv</option>
+                      <option value="dark">Tmavý motiv</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="stacked-actions">
+                  <div class="two-btn-row">
+                    <button id="exportBtn" class="secondary-button" type="button">⬇ Exportovat JSON</button>
+                    <button id="importBtn" class="secondary-button" type="button">⬆ Importovat JSON</button>
+                  </div>
+                  <button id="resetBtn" class="danger-button" type="button">Vymazat lokální data v zařízení</button>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Spodní navigace pro mobilní telefony -->
+      <nav class="bottom-nav no-print" aria-label="Mobilní navigace">
+        <button class="nav-button active" data-view="today" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+          <small>Dnes</small>
+        </button>
+        <button class="nav-button" data-view="calendar" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <small>Kalendář</small>
+        </button>
+        <button class="nav-button" data-view="overview" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <small>Přehled</small>
+        </button>
+        <button class="nav-button" data-view="settings" type="button">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <small>Nastavení</small>
+        </button>
+      </nav>
+    </div>
+  </div>
+
+  <!-- ==================== DIALOG: DETAIL A ÚPRAVA DNE ==================== -->
+  <dialog id="dayDialog" class="sheet-dialog">
+    <form id="dayForm" method="dialog" class="sheet">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <header class="sheet-header">
+        <div>
+          <div id="dayDialogEyebrow" class="eyebrow">Detail dne</div>
+          <h2 id="dayDialogTitle"></h2>
+        </div>
+        <button id="closeDayBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+      </header>
+
+      <input id="dayDate" type="hidden">
+
+      <div class="field-stack">
+        <label>
+          <span>Režim / Typ dne</span>
+          <select id="dayType">
+            <option value="work">Práce (běžná směna)</option>
+            <option value="homeOffice">Home office (práce z domova)</option>
+            <option value="businessTrip">Služební cesta</option>
+            <option value="vacation">Dovolená (celý den)</option>
+            <option value="halfVacation">½ dovolené (půlden)</option>
+            <option value="doctor">Lékař / Propustka</option>
+            <option value="sick">Nemoc / Neschopenka</option>
+            <option value="compTime">Náhradní volno</option>
+            <option value="holiday">Svátek / Volný den bez fondu</option>
+            <option value="other">Jiné omluvené volno</option>
+          </select>
+        </label>
+
+        <div id="workFields" class="subcard">
+          <div class="subcard-title-row">
+            <h3>Pracovní doba</h3>
+            <button id="applyDefaultsBtn" class="text-button" type="button">Doplnit mou běžnou dobu</button>
+          </div>
+          <div class="form-grid two-col">
+            <label><span>Příchod</span><input id="dayStart" type="time"></label>
+            <label><span>Odchod</span><input id="dayEnd" type="time"></label>
+          </div>
+          <div class="break-row">
+            <div>
+              <span class="field-label">Přestávka na jídlo a oddech</span>
+              <strong id="autoBreakText">Automaticky 30 min</strong>
+            </div>
+            <label class="mini-toggle"><input id="manualBreakToggle" type="checkbox"><span>Vlastní přestávka</span></label>
+          </div>
+          <label id="manualBreakWrap" class="hidden">
+            <span>Vlastní délka přestávky</span>
+            <div class="input-with-suffix"><input id="dayBreak" type="number" min="0" max="240" step="5"><span>min</span></div>
+          </label>
+        </div>
+
+        <div id="doctorFields" class="subcard hidden">
+          <h3>Návštěva lékaře</h3>
+          <label class="toggle-row compact-toggle">
+            <input id="doctorFullDay" type="checkbox">
+            <span><strong>Celý den u lékaře</strong><small>Započítá se celý denní fond jako omluvená absence.</small></span>
+          </label>
+          <div id="doctorTimeFields" class="form-grid two-col">
+            <label><span>Odchod k lékaři</span><input id="doctorStart" type="time"></label>
+            <label><span>Návrat / Konec</span><input id="doctorEnd" type="time"></label>
+          </div>
+        </div>
+
+        <div id="otherFields" class="subcard hidden">
+          <h3>Omluvený čas</h3>
+          <label>
+            <span>Započítat omluvenou dobu</span>
+            <div class="input-with-suffix"><input id="otherMinutes" type="number" min="0" max="1440" step="5"><span>min</span></div>
+          </label>
+        </div>
+
+        <label>
+          <span>Poznámka ke dni</span>
+          <textarea id="dayNote" rows="2" placeholder="Např. projekt, přesčas, pohotovost, poznámka k lékaři..."></textarea>
+        </label>
+
+        <div class="day-preview">
+          <div><span>Odpracováno</span><strong id="previewWorked">0:00</strong></div>
+          <div><span>Omluveno</span><strong id="previewCredited">0:00</strong></div>
+          <div><span>Fond dne</span><strong id="previewTarget">0:00</strong></div>
+          <div><span>Saldo dne</span><strong id="previewBalance">0:00</strong></div>
+        </div>
+      </div>
+
+      <div class="sheet-actions">
+        <button id="deleteDayBtn" class="danger-button" type="button">Smazat záznam</button>
+        <button class="primary-button" value="save" type="submit">Uložit den</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- ==================== DIALOG: JEDNODUCHÝ LOGIN & PROFIL ==================== -->
+  <dialog id="authDialog" class="sheet-dialog">
+    <div class="sheet compact-sheet">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <header class="sheet-header">
+        <div>
+          <div class="eyebrow">Osobní účet · Supabase Cloud</div>
+          <h2>Přihlášení uživatele</h2>
+        </div>
+        <button id="closeAuthBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+      </header>
+
+      <form id="simpleAuthForm" class="field-stack">
+        <p class="muted" style="margin: 0;">
+          Zadej své <strong>uživatelské jméno</strong> a <strong>PIN / heslo</strong>. Pokud účet v databázi ještě neexistuje, automaticky se vytvoří a uloží tvé nastavení pracovní doby, víkendů i docházku.
+        </p>
+        <div class="form-grid two-col">
+          <label>
+            <span>Uživatelské jméno (login) *</span>
+            <input id="authUsername" type="text" placeholder="např. martin" required autocomplete="username">
+          </label>
+          <label>
+            <span>Celé jméno (na výkaz)</span>
+            <input id="authDisplayName" type="text" placeholder="např. Martin Novák" autocomplete="name">
+          </label>
+        </div>
+        <label>
+          <span>Osobní PIN nebo heslo *</span>
+          <input id="authPin" type="password" placeholder="Zadej svůj PIN nebo heslo" required autocomplete="current-password">
+        </label>
+        <label class="toggle-row compact-toggle">
+          <input id="authMergeLocal" type="checkbox" checked>
+          <span>
+            <strong>Sloučit dosavadní lokální záznamy s účtem</strong>
+            <small>Při přihlášení nahraje dny z tohoto zařízení do tvého profilu v databázi.</small>
+          </span>
+        </label>
+        <div class="stacked-actions">
+          <button class="primary-button" type="submit">Přihlásit se / Vytvořit profil</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- ==================== DIALOG: SQL NÁVRH DATABÁZE SUPABASE ==================== -->
+  <dialog id="schemaDialog" class="sheet-dialog">
+    <div class="sheet">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <header class="sheet-header">
+        <div>
+          <div class="eyebrow">Supabase PostgreSQL</div>
+          <h2>Návrh databáze a nasazení</h2>
+        </div>
+        <button id="closeSchemaBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+      </header>
+
+      <div class="field-stack">
+        <div class="subcard">
+          <h3>Jak databáze funguje?</h3>
+          <ul class="schema-list">
+            <li><strong><code>attendance_profiles</code></strong> – ukládá uživatele (<code>user_key</code>, <code>username</code>, <code>display_name</code>, <code>pin_hash</code>), běžnou pracovní dobu (<code>work_start</code>, <code>work_end</code>, <code>daily_target_minutes</code>, přestávky) a nastavení práce o víkendech (<code>work_days</code>, <code>weekend_mode</code>, vlastní časy o víkendu a svátky).</li>
+            <li><strong><code>attendance_days</code></strong> – ukládá denní záznamy docházky pro každého uživatele (<code>user_key</code> + <code>date</code>), typ směny/absence, časy příchodu a odchodu, přestávku, lékaře, poznámku i spočtené minuty.</li>
+            <li><strong><code>v_monthly_attendance_summary</code></strong> – automatický SQL pohled (VIEW) pro okamžitý přehled odpracovaných hodin, salda a čerpané dovolené po měsících.</li>
+          </ul>
+        </div>
+
+        <div class="subcard">
+          <div class="subcard-title-row">
+            <h3>SQL skript pro Supabase SQL Editor</h3>
+            <div class="inline-btns">
+              <button id="copySqlBtn" class="secondary-button compact" type="button">📋 Zkopírovat SQL</button>
+              <a href="./supabase-schema.sql" download="supabase-schema.sql" class="secondary-button compact link-btn">⬇ Stáhnout .sql</a>
+            </div>
+          </div>
+          <pre id="sqlCodeBlock" class="code-preview"></pre>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- ==================== DIALOG: NÁVOD NA INSTALACI PWA ==================== -->
+  <dialog id="helpDialog" class="sheet-dialog">
+    <div class="sheet compact-sheet">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <header class="sheet-header">
+        <div>
+          <div class="eyebrow">Mobil i Počítač · GitHub Pages</div>
+          <h2>Jak aplikaci nainstalovat</h2>
+        </div>
+        <button id="closeHelpBtn" class="icon-button" type="button" aria-label="Zavřít">×</button>
+      </header>
+      <div class="field-stack">
+        <div class="subcard">
+          <h3>📱 iPhone / iPad (Safari)</h3>
+          <ol class="install-steps">
+            <li>Otevři tuto stránku v prohlížeči <strong>Safari</strong>.</li>
+            <li>Klepni dole na tlačítko <strong>Sdílet</strong>.</li>
+            <li>Zvol <strong>Přidat na plochu</strong>.</li>
+          </ol>
+        </div>
+        <div class="subcard">
+          <h3>🤖 Android (Chrome) &amp; 💻 Počítač (Chrome / Edge)</h3>
+          <ol class="install-steps">
+            <li>Klepni na ikonu <strong>Instalovat aplikaci</strong> v adresním řádku nebo v menu prohlížeče.</li>
+            <li>Aplikace funguje plně offline a při připojení k Supabase automaticky synchronizuje docházku mezi mobilem a prohlížečem.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="./config.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>
