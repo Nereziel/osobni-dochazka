@@ -1101,11 +1101,18 @@ create policy "Secure access to own attendance days"
       : (holiday || (isScheduledWorkday(now) ? 'Pracovní den' : (isWeekendDate(now) ? 'Víkend' : 'Volno')));
 
     const holidayBadge = $('#todayHolidayBadge');
-    if (holiday) {
-      holidayBadge.textContent = holiday;
-      holidayBadge.classList.remove('hidden');
-    } else {
-      holidayBadge.classList.add('hidden');
+    if (holidayBadge) {
+      if (holiday) {
+        holidayBadge.textContent = holiday;
+        holidayBadge.hidden = false;
+        holidayBadge.style.display = 'inline-flex';
+        holidayBadge.classList.remove('hidden');
+      } else {
+        holidayBadge.textContent = '';
+        holidayBadge.hidden = true;
+        holidayBadge.style.display = 'none';
+        holidayBadge.classList.add('hidden');
+      }
     }
 
     if (rec && (rec.start || rec.end)) {

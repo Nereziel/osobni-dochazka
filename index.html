@@ -172,7 +172,7 @@
                     <span id="todayDateLabel" class="hero-date-text">Pátek, 23. října 2026</span>
                     <div class="hero-badges-row">
                       <span id="todayTypeBadge" class="win-badge accent">Práce (směna)</span>
-                      <span id="todayHolidayBadge" class="win-badge warning hidden">Svátek</span>
+                      <span id="todayHolidayBadge" class="win-badge warning" style="display: none;" hidden></span>
                       <span id="todayShiftTimes" class="win-badge neutral">06:30 – 15:30</span>
                     </div>
                   </div>
@@ -355,9 +355,10 @@
 
             <div class="toolbar-actions-group">
               <span id="calScheduleHint" class="schedule-summary-pill">Rozvrh: Po–Pá · 06:30–15:30</span>
-              <button id="calFillMissingBtn" class="win-btn-standard" type="button">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-                <span>Doplnit běžnou dobu do prázdných dnů</span>
+              <button id="calFillMissingBtn" class="win-btn-standard toolbar-action-btn" type="button" title="Doplnit běžnou dobu do prázdných dnů">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="btn-label-desktop">Doplnit běžnou dobu do prázdných dnů</span>
+                <span class="btn-label-mobile">Doplnit běžnou dobu</span>
               </button>
             </div>
           </div>
@@ -417,22 +418,28 @@
               <button id="tsNextMonthBtn" class="win-btn-standard icon-btn" type="button" aria-label="Další měsíc">›</button>
             </div>
 
-            <div class="toolbar-actions-group">
-              <button id="tsFillMissingBtn" class="win-btn-standard" type="button">✓ Doplnit chybějící dny</button>
-              <button id="tsExportCsvBtn" class="win-btn-standard" type="button">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                <span>Export do CSV (Excel)</span>
+            <div class="toolbar-actions-group timesheet-actions">
+              <button id="tsFillMissingBtn" class="win-btn-standard toolbar-action-btn" type="button" title="Doplnit chybějící dny">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="20 6 9 17 4 12"/></svg>
+                <span class="btn-label-desktop">Doplnit chybějící dny</span>
+                <span class="btn-label-mobile">Doplnit</span>
               </button>
-              <button id="tsPrintBtn" class="win-btn-accent" type="button">
+              <button id="tsExportCsvBtn" class="win-btn-standard toolbar-action-btn" type="button" title="Exportovat výkaz do CSV">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span class="btn-label-desktop">Export do CSV</span>
+                <span class="btn-label-mobile">Export CSV</span>
+              </button>
+              <button id="tsPrintBtn" class="win-btn-accent toolbar-action-btn" type="button" title="Vytisknout výkaz nebo uložit do PDF">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-                <span>Tisk / PDF výkaz</span>
+                <span class="btn-label-desktop">Tisk / PDF výkaz</span>
+                <span class="btn-label-mobile">Tisk / PDF</span>
               </button>
             </div>
           </div>
 
           <!-- Hlavička pro tisk oficiálního výkazu -->
           <div class="official-print-header">
-            <h2>MĚSÍČNÍ VÝKAZ ODPACOVANÉ DOBY</h2>
+            <h2>MĚSÍČNÍ VÝKAZ ODPRACOVANÉ DOBY</h2>
             <div class="print-meta-grid">
               <div><strong>Jméno zaměstnance:</strong> <span id="printEmployeeName">Jan Novák</span></div>
               <div><strong>Období:</strong> <span id="printMonthPeriod">Říjen 2026</span></div>
