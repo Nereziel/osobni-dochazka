@@ -756,7 +756,8 @@ create policy "Secure access to own attendance days"
           userKey,
           username: cleanUser,
           displayName: profile.display_name || cleanUser,
-          pinHash
+          pinHash,
+          role: profile.role || 'employee'
         });
         applySettingsFromProfileRow(profile);
         await saveSettings(true);
@@ -773,7 +774,8 @@ create policy "Secure access to own attendance days"
         userKey,
         username: cleanUser,
         displayName: cleanUser,
-        pinHash
+        pinHash,
+        role: 'admin'
       });
       setSyncState('local');
       renderAll();
@@ -781,7 +783,7 @@ create policy "Secure access to own attendance days"
     }
   }
 
-  async function performRegister(usernameInput, displayNameInput, pinInput, pinConfirmInput, mergeLocal) {
+  async function performRegister(usernameInput, displayNameInput, pinInput, pinConfirmInput, inviteCodeInput, mergeLocal) {
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno (písmena, číslice).');
     if (!displayNameInput.trim()) throw new Error('Zadej celé jméno na výkaz.');
@@ -790,19 +792,40 @@ create policy "Secure access to own attendance days"
 
     const userKey = `user:${cleanUser}`;
     const pinHash = await hashPin(pinInput, cleanUser);
-    const candidateUser = {
-      userKey,
-      username: cleanUser,
-      displayName: displayNameInput.trim(),
-      pinHash
-    };
+    let assignedRole = 'employee';
 
     if (isSupabaseConfigured()) {
       setSyncState('syncing');
       try {
-        const row = profileRowFromSettings(candidateUser);
-        await sbFetch('/rest/v1/attendance_profiles', {
+        // Registrace přes zabezpečenou RPC funkci s kontrolou pozvánky
+        const rpcRes = await sbFetch('/rest/v1/rpc/register_user_with_invite', {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            p_username: cleanUser,
+            p_display_name: displayNameInput.trim(),
+            p_pin_hash: pinHash,
+            p_invite_code: (inviteCodeInput || '').trim()
+          })
+        });
+
+        if (rpcRes && rpcRes.role) {
+          assignedRole = rpcRes.role;
+        }
+
+        const candidateUser = {
+          userKey,
+          username: cleanUser,
+          displayName: displayNameInput.trim(),
+          pinHash,
+          role: assignedRole
+        };
+
+        // Aktualizujeme profil o výchozí rozvrh
+        const row = profileRowFromSettings(candidateUser);
+        row.role = assignedRole;
+        await sbFetch(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(userKey)}`, {
+          method: 'PATCH',
           headers: { Prefer: 'return=minimal' },
           body: JSON.stringify(row),
           authUser: candidateUser
@@ -810,15 +833,24 @@ create policy "Secure access to own attendance days"
 
         saveCurrentUser(candidateUser);
         await syncWithSupabase(mergeLocal);
-        return `Účet "${cleanUser}" byl úspěšně vytvořen!`;
+        return assignedRole === 'admin'
+          ? `Účet "${cleanUser}" byl vytvořen s rolí Správce (Admin)!`
+          : `Účet "${cleanUser}" byl úspěšně vytvořen!`;
       } catch (err) {
         setSyncState('error');
-        if (err.status === 409 || /duplicate|unique/i.test(err.message)) {
+        if (err.status === 409 || /duplicate|unique|již existuje/i.test(err.message)) {
           throw new Error(`Uživatelské jméno "${cleanUser}" je již obsazeno. Zvol jiné.`);
         }
         throw err;
       }
     } else {
+      const candidateUser = {
+        userKey,
+        username: cleanUser,
+        displayName: displayNameInput.trim(),
+        pinHash,
+        role: 'admin'
+      };
       saveCurrentUser(candidateUser);
       setSyncState('local');
       renderAll();
@@ -1125,6 +1157,19 @@ create policy "Secure access to own attendance days"
     $('#openRegisterModalBtn')?.classList.toggle('hidden', !!currentUser);
     $('#openChangePinModalBtn')?.classList.toggle('hidden', !currentUser);
     $('#logoutUserBtn')?.classList.toggle('hidden', !currentUser);
+
+    // Správa týmu (pouze pro roli admin)
+    const isAdmin = currentUser?.role === 'admin';
+    $('#navItemTeam')?.classList.toggle('hidden', !isAdmin);
+    $('#mNavItemTeam')?.classList.toggle('hidden', !isAdmin);
+
+    if (isAdmin) {
+      $('#sidebarUserStatus')?.classList.remove('local');
+      $('#sidebarUserStatus')?.classList.add('online');
+      $('#sidebarStatusText').textContent = 'Správce (Admin)';
+      $('#accountSyncBadge').textContent = 'Správce (Admin)';
+      $('#accountSyncBadge').className = 'status-indicator-pill online';
+    }
 
     // Sidebar rozvrh
     $('#sidebarPlanDays').textContent = formatScheduleDaysSummary();
@@ -1559,13 +1604,15 @@ create policy "Secure access to own attendance days"
       dashboard: 'Dnešní přehled',
       calendar: 'Kalendář směn',
       timesheet: 'Měsíční výkaz docházky',
-      settings: 'Nastavení a databáze'
+      settings: 'Nastavení a databáze',
+      team: 'Správa týmu a pozvánky'
     };
     $('#headerViewTitle').textContent = titles[viewName] || 'Docházka';
 
     if (viewName === 'calendar') renderCalendar();
     if (viewName === 'timesheet') renderTimesheet();
     if (viewName === 'settings') renderSettings();
+    if (viewName === 'team') renderTeamView();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -1811,6 +1858,246 @@ create policy "Secure access to own attendance days"
   }
 
   // ============================================================================
+  // SPRÁVA TÝMU & POZVÁNKY (PRO SPRÁVCE)
+  // ============================================================================
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  let teamInvites = [];
+  let teamProfiles = [];
+  let teamSummaries = [];
+
+  async function renderTeamView() {
+    if (currentUser?.role !== 'admin') {
+      toast('Tato sekce je přístupná pouze pro správce.', '⚠️');
+      switchView('dashboard');
+      return;
+    }
+
+    const now = new Date();
+    $('#teamSummaryMonthLabel').textContent = fmtMonthTitle(now);
+
+    try {
+      await Promise.all([
+        loadTeamInvites(),
+        loadTeamProfiles(),
+        loadTeamSummaries()
+      ]);
+    } catch (err) {
+      console.warn('Chyba při načítání týmových dat:', err);
+    }
+  }
+
+  async function loadTeamInvites() {
+    if (!isCloudReady()) return;
+    try {
+      const rows = await sbFetch('/rest/v1/attendance_invites?order=created_at.desc');
+      teamInvites = rows || [];
+      renderTeamInvitesTable();
+    } catch (err) {
+      console.warn('Chyba načtení pozvánek:', err);
+    }
+  }
+
+  function renderTeamInvitesTable() {
+    const tbody = $('#teamInvitesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    $('#invitesCountBadge').textContent = `${teamInvites.length} pozvánek`;
+
+    if (teamInvites.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px;" class="muted">Zatím nebyly vytvořeny žádné pozvánky. Klikni nahoře na "Vytvořit pozvánku".</td></tr>`;
+      return;
+    }
+
+    for (const inv of teamInvites) {
+      const tr = document.createElement('tr');
+      const roleLabel = inv.target_role === 'admin' ? 'Správce' : 'Zaměstnanec';
+      const statusBadge = inv.is_used
+        ? `<span class="invite-status-badge used">Využita</span>`
+        : `<span class="invite-status-badge unused">Aktivní</span>`;
+      const usedByLabel = inv.used_by ? escapeHtml(inv.used_by.replace('user:', '')) : '-';
+
+      tr.innerHTML = `
+        <td><strong><code>${escapeHtml(inv.code)}</code></strong></td>
+        <td><span class="role-badge ${inv.target_role}">${roleLabel}</span></td>
+        <td>${statusBadge}</td>
+        <td>${usedByLabel}</td>
+        <td>
+          <button class="win-btn-standard compact-btn copy-inv-btn" type="button" title="Kopírovat odkaz pozvánky">
+            🔗 Odkaz
+          </button>
+        </td>
+      `;
+
+      tr.querySelector('.copy-inv-btn')?.addEventListener('click', () => {
+        const url = `${window.location.origin}${window.location.pathname}?invite=${inv.code}`;
+        navigator.clipboard?.writeText(url).then(() => {
+          toast(`Odkaz s kódem ${inv.code} zkopírován do schránky`, '✓');
+        }).catch(() => {
+          prompt('Odkaz pozvánky:', url);
+        });
+      });
+
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function loadTeamProfiles() {
+    if (!isCloudReady()) return;
+    try {
+      const rows = await sbFetch('/rest/v1/attendance_profiles?order=created_at.asc');
+      teamProfiles = rows || [];
+      renderTeamProfilesTable();
+    } catch (err) {
+      console.warn('Chyba načtení profilů:', err);
+    }
+  }
+
+  function renderTeamProfilesTable() {
+    const tbody = $('#teamMembersTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    $('#teamMembersCountBadge').textContent = `${teamProfiles.length} uživatelů`;
+
+    if (teamProfiles.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px;" class="muted">V databázi zatím nejsou žádní uživatelé.</td></tr>`;
+      return;
+    }
+
+    for (const prof of teamProfiles) {
+      const tr = document.createElement('tr');
+      const isSelf = prof.user_key === currentUser?.userKey;
+      const roleClass = prof.role === 'admin' ? 'admin' : 'employee';
+      const roleLabel = prof.role === 'admin' ? 'Správce' : 'Zaměstnanec';
+      const createdDate = prof.created_at ? new Date(prof.created_at).toLocaleDateString('cs-CZ') : '-';
+
+      tr.innerHTML = `
+        <td><strong>${escapeHtml(prof.display_name || prof.username)}</strong>${isSelf ? ' <small class="muted">(ty)</small>' : ''}</td>
+        <td><code>${escapeHtml(prof.username)}</code></td>
+        <td><span class="role-badge ${roleClass}">${roleLabel}</span></td>
+        <td>${createdDate}</td>
+        <td>
+          <div class="table-action-cell">
+            <button class="win-btn-standard compact-btn reset-pin-btn" type="button" title="Nastavit nový PIN">
+              🔑 Reset PIN
+            </button>
+            ${!isSelf ? `
+              <button class="win-btn-subtle compact-btn toggle-role-btn" type="button" title="Změnit roli">
+                ${prof.role === 'admin' ? 'Odebrat admin' : 'Dát admin'}
+              </button>
+              <button class="win-btn-subtle compact-btn danger-btn delete-user-btn" type="button" title="Smazat uživatele">
+                ✕ Smazat
+              </button>
+            ` : ''}
+          </div>
+        </td>
+      `;
+
+      tr.querySelector('.reset-pin-btn')?.addEventListener('click', () => {
+        openAdminResetPinModal(prof);
+      });
+
+      tr.querySelector('.toggle-role-btn')?.addEventListener('click', async () => {
+        const nextRole = prof.role === 'admin' ? 'employee' : 'admin';
+        if (!confirm(`Opravdu změnit roli uživatele ${prof.username} na "${nextRole === 'admin' ? 'Správce' : 'Zaměstnanec'}"?`)) return;
+        try {
+          await sbFetch('/rest/v1/rpc/admin_change_user_role', {
+            method: 'POST',
+            body: JSON.stringify({
+              p_target_user_key: prof.user_key,
+              p_new_role: nextRole
+            })
+          });
+          toast(`Role uživatele ${prof.username} změněna.`, '✓');
+          await loadTeamProfiles();
+        } catch (err) {
+          alert(err.message || 'Změna role se nezdařila.');
+        }
+      });
+
+      tr.querySelector('.delete-user-btn')?.addEventListener('click', async () => {
+        if (!confirm(`OPRAVDU SMAZAT uživatele ${prof.username} (${prof.display_name}) a veškerou jeho docházku? Tuto akci nelze vrátit.`)) return;
+        try {
+          await sbFetch('/rest/v1/rpc/admin_delete_user', {
+            method: 'POST',
+            body: JSON.stringify({ p_target_user_key: prof.user_key })
+          });
+          toast(`Uživatel ${prof.username} byl smazán.`, '✓');
+          await loadTeamProfiles();
+          await loadTeamSummaries();
+        } catch (err) {
+          alert(err.message || 'Smazání uživatele selhalo.');
+        }
+      });
+
+      tbody.appendChild(tr);
+    }
+  }
+
+  async function loadTeamSummaries() {
+    if (!isCloudReady()) return;
+    try {
+      const now = new Date();
+      const monthStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+      const rows = await sbFetch(`/rest/v1/v_monthly_attendance_summary?month=eq.${monthStr}`);
+      teamSummaries = rows || [];
+      renderTeamSummariesList();
+    } catch (err) {
+      console.warn('Chyba načtení souhrnů týmu:', err);
+    }
+  }
+
+  function renderTeamSummariesList() {
+    const list = $('#teamSummaryList');
+    if (!list) return;
+    list.innerHTML = '';
+
+    if (teamSummaries.length === 0) {
+      list.innerHTML = `<p class="muted" style="font-size: 13px; margin: 10px 0;">V tomto měsíci zatím nejsou evidována žádná data docházky týmu.</p>`;
+      return;
+    }
+
+    for (const s of teamSummaries) {
+      const item = document.createElement('div');
+      item.className = 'team-summary-item';
+      const bal = Number(s.total_balance_minutes) || 0;
+      const balClass = bal > 0 ? 'positive' : bal < 0 ? 'negative' : 'muted';
+
+      item.innerHTML = `
+        <div class="team-user-meta">
+          <div class="mini-avatar">${(s.display_name || s.username || '?')[0].toUpperCase()}</div>
+          <div>
+            <strong>${escapeHtml(s.display_name || s.username)}</strong>
+            <small>${s.recorded_days} evidovaných dnů · Dovolená: ${s.vacation_days_used} d.</small>
+          </div>
+        </div>
+        <div class="team-user-stats">
+          <strong>${formatDuration(s.total_worked_minutes || 0)}</strong>
+          <small class="${balClass}">Saldo: ${formatDuration(bal, true)}</small>
+        </div>
+      `;
+      list.appendChild(item);
+    }
+  }
+
+  function openAdminResetPinModal(prof) {
+    $('#adminResetTargetUserKey').value = prof.user_key;
+    $('#adminResetTargetName').textContent = prof.display_name || prof.username;
+    $('#adminResetTargetLogin').textContent = prof.username;
+    $('#adminResetNewPin').value = '';
+    $('#adminResetNewPinConfirm').value = '';
+    $('#adminResetPinModal').showModal();
+  }
+
+  // ============================================================================
   // EVENT BINDINGS
   // ============================================================================
   function bindEvents() {
@@ -1975,6 +2262,7 @@ create policy "Secure access to own attendance days"
           $('#regDisplayName').value,
           $('#regPin').value,
           $('#regPinConfirm').value,
+          $('#regInviteCode')?.value,
           $('#regMergeLocalDays').checked
         );
         $('#registerModal').close();
@@ -2005,6 +2293,98 @@ create policy "Secure access to own attendance days"
       } catch (err) {
         alert(err.message || 'Změna PINu se nezdařila.');
       }
+    });
+
+    // SPRÁVA TÝMU & POZVÁNKY
+    $('#openCreateInviteBtn')?.addEventListener('click', () => {
+      $('#createInviteForm')?.reset();
+      $('#inviteResultArea')?.classList.add('hidden');
+      $('#createInviteModal')?.showModal();
+    });
+    $('#closeCreateInviteModalBtn')?.addEventListener('click', () => $('#createInviteModal')?.close());
+    $('#cancelCreateInviteBtn')?.addEventListener('click', () => $('#createInviteModal')?.close());
+
+    $('#createInviteForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!isCloudReady()) {
+        alert('Pro vytváření pozvánek musí být připojena Supabase databáze.');
+        return;
+      }
+      try {
+        const targetRole = $('#inviteRoleSelect')?.value || 'employee';
+        const res = await sbFetch('/rest/v1/rpc/admin_create_invite', {
+          method: 'POST',
+          body: JSON.stringify({ p_target_role: targetRole })
+        });
+
+        if (res && res.code) {
+          const url = `${window.location.origin}${window.location.pathname}?invite=${res.code}`;
+          $('#generatedInviteUrlInput').value = url;
+          $('#generatedInviteCodeBadge').textContent = res.code;
+          $('#inviteResultArea')?.classList.remove('hidden');
+
+          navigator.clipboard?.writeText(url).then(() => {
+            toast('Pozvánka vytvořena a odkaz zkopírován!', '✓');
+          }).catch(() => {
+            toast('Pozvánka byla úspěšně vygenerována.', '✓');
+          });
+
+          await loadTeamInvites();
+        }
+      } catch (err) {
+        alert(err.message || 'Vytvoření pozvánky selhalo.');
+      }
+    });
+
+    $('#copyGeneratedInviteBtn')?.addEventListener('click', () => {
+      const url = $('#generatedInviteUrlInput')?.value;
+      if (!url) return;
+      navigator.clipboard?.writeText(url).then(() => {
+        toast('Odkaz zkopírován do schránky', '✓');
+      }).catch(() => {
+        prompt('Odkaz pozvánky:', url);
+      });
+    });
+
+    // Reset PINu zaměstnance
+    $('#closeAdminResetPinModalBtn')?.addEventListener('click', () => $('#adminResetPinModal')?.close());
+    $('#cancelAdminResetPinBtn')?.addEventListener('click', () => $('#adminResetPinModal')?.close());
+
+    $('#adminResetPinForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const targetUserKey = $('#adminResetTargetUserKey')?.value;
+      const targetLogin = $('#adminResetTargetLogin')?.textContent;
+      const newPin = $('#adminResetNewPin')?.value;
+      const newPinConfirm = $('#adminResetNewPinConfirm')?.value;
+
+      if (!newPin || newPin.length < 4) {
+        alert('PIN musí mít alespoň 4 znaky.');
+        return;
+      }
+      if (newPin !== newPinConfirm) {
+        alert('Nové PINy se neshodují.');
+        return;
+      }
+
+      try {
+        const newHash = await hashPin(newPin, targetLogin);
+        await sbFetch('/rest/v1/rpc/admin_reset_user_pin', {
+          method: 'POST',
+          body: JSON.stringify({
+            p_target_user_key: targetUserKey,
+            p_new_pin_hash: newHash
+          })
+        });
+        $('#adminResetPinModal')?.close();
+        toast(`PIN pro uživatele ${targetLogin} byl změněn.`, '✓');
+      } catch (err) {
+        alert(err.message || 'Reset PINu selhal.');
+      }
+    });
+
+    $('#refreshTeamDataBtn')?.addEventListener('click', async () => {
+      await renderTeamView();
+      toast('Data týmu byla obnovena', '✓');
     });
 
     $('#logoutUserBtn')?.addEventListener('click', () => {
@@ -2129,15 +2509,25 @@ create policy "Secure access to own attendance days"
     });
 
     // SQL Viewer Dialog
-    $('#openSqlViewerBtn')?.addEventListener('click', () => {
-      $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
+    $('#openSqlViewerBtn')?.addEventListener('click', async () => {
+      try {
+        const res = await fetch('./supabase-schema.sql');
+        if (res.ok) {
+          $('#sqlTextContainer').textContent = await res.text();
+        } else {
+          $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
+        }
+      } catch {
+        $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
+      }
       $('#sqlSchemaDialog').showModal();
     });
     $('#closeSqlDialogBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
     $('#closeSqlFooterBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
     $('#copySqlCodeBtn')?.addEventListener('click', async () => {
       try {
-        await navigator.clipboard.writeText(SQL_SCHEMA_TEXT);
+        const txt = $('#sqlTextContainer').textContent || SQL_SCHEMA_TEXT;
+        await navigator.clipboard.writeText(txt);
         toast('SQL skript zkopírován do schránky', '📋');
       } catch {
         toast('Zkopírujte text z okna ručně', 'ℹ️');
@@ -2200,7 +2590,7 @@ create policy "Secure access to own attendance days"
     $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
 
     // Zavření modálu klikem na backdrop
-    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal'].forEach(id => {
+    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal', 'createInviteModal', 'adminResetPinModal'].forEach(id => {
       const dlg = $(`#${id}`);
       dlg?.addEventListener('click', (e) => {
         if (e.target === dlg) dlg.close();
@@ -2237,9 +2627,24 @@ create policy "Secure access to own attendance days"
       bindEvents();
       renderAll();
 
+      // Kontrola pozvánky z URL adresy (?invite=INV-...)
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const inviteCode = urlParams.get('invite');
+        if (inviteCode) {
+          const invField = $('#regInviteCode');
+          if (invField) invField.value = inviteCode.trim().toUpperCase();
+          $('#loginModal')?.close();
+          $('#registerModal')?.showModal();
+          toast(`Pozvánka ${inviteCode} byla načtena`, '✓');
+        }
+      } catch (err) {
+        console.warn('Chyba při čtení URL pozvánky:', err);
+      }
+
       if (isCloudReady()) {
         syncWithSupabase(true).catch(console.warn);
-      } else if (isSupabaseConfigured() && !currentUser) {
+      } else if (isSupabaseConfigured() && !currentUser && !window.location.search.includes('invite=')) {
         $('#loginModal').showModal();
       }
 
