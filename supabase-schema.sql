@@ -63,6 +63,17 @@ create table if not exists public.attendance_profiles (
 alter table public.attendance_profiles 
   add column if not exists role text not null default 'employee' check (role in ('admin', 'manager', 'employee'));
 
+-- Pokud již v databázi existují uživatelé, ale žádný z nich nemá roli 'admin',
+-- automaticky povýšíme nejstaršího (prvního) uživatele na Správce ('admin'),
+-- aby měl stávající vlastník po aplikaci SQL okamžitě přístup ke správě týmu.
+update public.attendance_profiles
+set role = 'admin'
+where user_key in (
+  select user_key from public.attendance_profiles order by created_at asc limit 1
+) and not exists (
+  select 1 from public.attendance_profiles where role = 'admin'
+);
+
 create index if not exists idx_attendance_profiles_username
   on public.attendance_profiles (lower(username));
 
@@ -159,6 +170,10 @@ for each row execute function public.set_updated_at();
 -- ----------------------------------------------------------------------------
 -- 5. PŘEHLEDOVÝ POHLED (VIEW) PRO MĚSÍČNÍ SOUHRNY PO UŽIVATELÍCH
 -- ----------------------------------------------------------------------------
+-- PostgreSQL nedovoluje měnit pořadí nebo názvy sloupců v existujícím view
+-- pomocí pouhého CREATE OR REPLACE VIEW (vyvolává chybu 42P16).
+-- DROP VIEW CASCADE smaže pouze virtuální pohled, NIKDY nesmaže data v tabulkách.
+drop view if exists public.v_monthly_attendance_summary cascade;
 create or replace view public.v_monthly_attendance_summary as
 select
   d.user_key,
@@ -175,6 +190,8 @@ select
 from public.attendance_days d
 join public.attendance_profiles p on p.user_key = d.user_key
 group by d.user_key, p.username, p.display_name, p.role, to_char(d.date, 'YYYY-MM');
+
+grant select on public.v_monthly_attendance_summary to anon, authenticated;
 
 -- ----------------------------------------------------------------------------
 -- 6. POMOCNÉ AUTENTIZAČNÍ FUNKCE (Čtou identitu z X-Client-Info)
@@ -440,6 +457,7 @@ create policy "Secure access to own profile"
     or public.is_admin()
   );
 
+drop policy if exists "Secure update own profile or admin" on public.attendance_profiles;
 create policy "Secure update own profile or admin"
   on public.attendance_profiles
   for update
@@ -453,6 +471,7 @@ create policy "Secure update own profile or admin"
     or public.is_admin()
   );
 
+drop policy if exists "Secure delete profile admin only" on public.attendance_profiles;
 create policy "Secure delete profile admin only"
   on public.attendance_profiles
   for delete
@@ -486,6 +505,7 @@ create policy "Secure access to own attendance days"
     or public.is_admin()
   );
 
+drop policy if exists "Secure write own attendance days" on public.attendance_days;
 create policy "Secure write own attendance days"
   on public.attendance_days
   for insert
@@ -500,6 +520,7 @@ create policy "Secure write own attendance days"
     )
   );
 
+drop policy if exists "Secure update own attendance days" on public.attendance_days;
 create policy "Secure update own attendance days"
   on public.attendance_days
   for update
@@ -523,6 +544,7 @@ create policy "Secure update own attendance days"
     )
   );
 
+drop policy if exists "Secure delete own attendance days" on public.attendance_days;
 create policy "Secure delete own attendance days"
   on public.attendance_days
   for delete
@@ -537,17 +559,17 @@ create policy "Secure delete own attendance days"
     or public.is_admin()
   );
 
-create policy "Secure delete own attendance days"
-  on public.attendance_days
-  for delete
-  to anon, authenticated
-  using (
-    (user_key = public.req_user_key() and exists (
-      select 1
-      from public.attendance_profiles p
-      where p.user_key = attendance_days.user_key
-        and p.pin_hash = public.req_pin_hash()
-    ))
-    or public.is_admin()
-  );
+-- OPRÁVNĚNÍ K FUNKCÍM A TABULKÁM PRO ANONYMNÍ I PŘIHLÁŠENÉ SPOJENÍ
+grant usage on schema public to anon, authenticated;
+grant all on public.attendance_profiles to anon, authenticated;
+grant all on public.attendance_invites to anon, authenticated;
+grant all on public.attendance_days to anon, authenticated;
+grant execute on function public.register_user_with_invite(text, text, text, text) to anon, authenticated;
+grant execute on function public.admin_create_invite(text) to anon, authenticated;
+grant execute on function public.admin_reset_user_pin(text, text) to anon, authenticated;
+grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;
+grant execute on function public.admin_delete_user(text) to anon, authenticated;
+grant execute on function public.is_admin() to anon, authenticated;
+grant execute on function public.req_user_key() to anon, authenticated;
+grant execute on function public.req_pin_hash() to anon, authenticated;
 
