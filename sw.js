@@ -1,10 +1,9 @@
-const CACHE = 'dochazka-pwa-v2';
+const CACHE = 'dochazka-pwa-v3';
 
 const files = [
   './',
   './index.html',
   './styles.css',
-  './config.js',
   './app.js',
   './supabase-schema.sql',
   './manifest.webmanifest',
@@ -29,8 +28,12 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
-  // Nikdy neukládat do cache API dotazy mimo naši doménu (např. Supabase REST API)
+  // Nikdy neukládat do cache API dotazy mimo naši doménu (Supabase) ani config.js ze Secrets
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.endsWith('/config.js')) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request)));
+    return;
+  }
 
   event.respondWith(
     fetch(event.request)

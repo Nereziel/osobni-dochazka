@@ -548,6 +548,10 @@ create policy "Secure access to own attendance days"
     else localStorage.removeItem(LS_USER_KEY);
   }
 
+  function isBuiltInSupabase() {
+    return Boolean(DEFAULT_SUPABASE_CONFIG.url && DEFAULT_SUPABASE_CONFIG.anonKey);
+  }
+
   function isSupabaseConfigured() {
     return Boolean(supabaseConfig.url && supabaseConfig.anonKey);
   }
@@ -1031,13 +1035,14 @@ create policy "Secure access to own attendance days"
       userBadge.textContent = 'Cloud účet';
       $('#settingsProfileSub').textContent = `Synchronizováno se Supabase databází (${supabaseConfig.url.replace(/^https?:\/\//, '')})`;
     } else if (isSupabaseConfigured()) {
-      dot.classList.add('local');
-      headerText.textContent = 'DB připravena';
-      sideSync.textContent = 'Přihlas se pro sync';
-      sbBadge.textContent = 'Klíč uložen';
+      dot.classList.add('online');
+      sideSync.classList.add('online');
+      headerText.textContent = 'Supabase Připojeno';
+      sideSync.textContent = 'DB připojena – přihlas se';
+      sbBadge.textContent = 'Připojeno';
       sbBadge.classList.remove('subtle-badge');
       userBadge.textContent = 'Nepřihlášen';
-      $('#settingsProfileSub').textContent = 'Databáze je připojená – přihlas se jménem a PINem.';
+      $('#settingsProfileSub').textContent = 'Supabase databáze je připojená – přihlas se svým jménem a PINem.';
     } else {
       dot.classList.add('local');
       headerText.textContent = 'Lokální';
@@ -1047,6 +1052,12 @@ create policy "Secure access to own attendance days"
       userBadge.textContent = currentUser ? 'Lokální profil' : 'Bez účtu';
       $('#settingsProfileSub').textContent = 'Data jsou uložena lokálně v tomto prohlížeči / telefonu.';
     }
+
+    const builtIn = isBuiltInSupabase();
+    $('#supabaseAutoConnectedBox')?.classList.toggle('hidden', !builtIn);
+    $('#supabaseManualForm')?.classList.toggle('hidden', builtIn);
+    $('#saveSupabaseBtn')?.classList.toggle('hidden', builtIn);
+    $('#supabaseManualActions')?.classList.toggle('hidden', builtIn);
 
     $('#logoutBtn').classList.toggle('hidden', !currentUser);
 
@@ -2009,8 +2020,27 @@ create policy "Secure access to own attendance days"
   // ============================================================================
   // START APLIKACE
   // ============================================================================
+  async function refreshConfigFromNetwork() {
+    if (DEFAULT_SUPABASE_CONFIG.url && DEFAULT_SUPABASE_CONFIG.anonKey) return;
+    try {
+      const res = await fetch(`./config.js?t=${Date.now()}`, { cache: 'no-store' });
+      if (!res.ok) return;
+      const text = await res.text();
+      const urlMatch = text.match(/supabaseUrl\s*:\s*["']([^"']+)["']/);
+      const keyMatch = text.match(/supabaseAnonKey\s*:\s*["']([^"']+)["']/);
+      if (urlMatch?.[1] && keyMatch?.[1]) {
+        DEFAULT_SUPABASE_CONFIG.url = urlMatch[1].trim().replace(/\/+$/, '');
+        DEFAULT_SUPABASE_CONFIG.anonKey = keyMatch[1].trim();
+        supabaseConfig = loadSupabaseConfig();
+      }
+    } catch {
+      // Offline nebo lokální spuštění
+    }
+  }
+
   async function init() {
     try {
+      await refreshConfigFromNetwork();
       db = await openDb();
       await loadData();
       bindEvents();
@@ -2018,6 +2048,8 @@ create policy "Secure access to own attendance days"
 
       if (isCloudReady()) {
         syncWithSupabase(true).catch(console.warn);
+      } else if (isSupabaseConfigured() && !currentUser) {
+        openAuthModal();
       }
 
       if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
