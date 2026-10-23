@@ -2050,6 +2050,10 @@ input:focus, .win-select:focus, textarea:focus {
   .timesheet-kpi-grid {
     grid-template-columns: repeat(3, 1fr);
   }
+  .team-layout-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -2446,6 +2450,147 @@ input:focus, .win-select:focus, textarea:focus {
     min-height: 94px;
     padding: 10px;
   }
+  .team-layout-grid {
+    grid-template-columns: 1.7fr 1fr;
+    gap: 32px;
+  }
+}
+
+/* ============================================================================
+   VIEW 5: SPRÁVA TÝMU & POZVÁNKY
+   ============================================================================ */
+.team-layout-grid {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 24px;
+}
+
+.team-col-main,
+.team-col-side {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.team-card {
+  padding: 24px;
+}
+
+.team-header-info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.team-header-info span {
+  font-size: 12.5px;
+}
+
+.team-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.team-summary-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--surface-card-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition: all 0.12s ease;
+}
+
+.team-summary-item:hover {
+  background: var(--surface-card);
+  border-color: var(--line-strong);
+}
+
+.team-user-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-user-meta strong {
+  display: block;
+  font-size: 13.5px;
+}
+
+.team-user-meta small {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.team-user-stats {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.team-user-stats strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.team-user-stats small {
+  font-size: 11px;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.role-badge.admin {
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.role-badge.employee {
+  background: var(--surface-card-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+}
+
+.invite-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.invite-status-badge.unused {
+  background: var(--positive-bg);
+  color: var(--positive-text);
+  border: 1px solid var(--positive);
+}
+
+.invite-status-badge.used {
+  background: var(--surface-card-subtle);
+  color: var(--text-tertiary);
+  border: 1px solid var(--line);
+}
+
+.table-action-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ============================================================================
