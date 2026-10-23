@@ -542,12 +542,17 @@
                 <div class="card-badge-head">
                   <div>
                     <h2>Supabase Cloud Databáze</h2>
-                    <p class="muted">Připoj aplikaci ke své vlastní Supabase databázi pro synchronizaci mezi mobilem a počítačem.</p>
+                    <p id="supabaseCardDesc" class="muted">Synchronizace docházky a pracovní doby mezi mobilem a počítačem.</p>
                   </div>
                   <span id="supabaseStatusBadge" class="badge subtle-badge">Nepřipojeno</span>
                 </div>
 
-                <div class="form-grid">
+                <div id="supabaseAutoConnectedBox" class="subcard hidden" style="margin-bottom: 12px;">
+                  <strong style="display:block; margin-bottom:4px;">✓ Databáze je automaticky připojená (GitHub Secrets)</strong>
+                  <span class="muted" style="font-size:12.5px;">Aplikace používá společnou Supabase databázi nastavenou v repozitáři. Stačí se přihlásit svým jménem a PINem.</span>
+                </div>
+
+                <div id="supabaseManualForm" class="form-grid">
                   <label>
                     <span>Supabase Project URL</span>
                     <input id="supabaseUrlInput" type="url" placeholder="https://xyzcompany.supabase.co" autocomplete="off">
@@ -564,7 +569,7 @@
                     <button id="syncNowBtn" class="secondary-button" type="button">↻ Synchronizovat nyní</button>
                     <button id="openSchemaDialogBtn" class="secondary-button" type="button">🗄 SQL Návrh databáze</button>
                   </div>
-                  <div class="two-btn-row">
+                  <div id="supabaseManualActions" class="two-btn-row">
                     <button id="shareConfigLinkBtn" class="ghost-button small-btn" type="button">🔗 Zkopírovat odkaz pro mobil s DB klíčem</button>
                     <button id="disconnectSupabaseBtn" class="ghost-button small-btn danger-text" type="button">Odpojit databázi</button>
                   </div>
