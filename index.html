@@ -78,8 +78,8 @@
     <div class="app-shell">
       <header class="app-header no-print">
         <div class="header-left">
-          <div id="headerEyebrow" class="eyebrow">Osobní docházka</div>
-          <h1 id="headerTitle">Dnes</h1>
+          <div id="headerGreeting" class="header-greeting">Osobní docházka</div>
+          <h1 id="headerTitle">Dnešní přehled</h1>
         </div>
         <div class="header-actions">
           <button id="syncBadgeBtn" class="sync-header-btn" type="button" title="Stav cloudu a synchronizace">
@@ -99,6 +99,18 @@
         <section id="viewToday" class="view active" aria-labelledby="todayTitle">
           <div class="dashboard-grid">
             <div class="dashboard-col-main">
+              <!-- Živý indikátor probíhající směny -->
+              <div id="activeShiftBanner" class="active-shift-banner hidden">
+                <div class="active-shift-left">
+                  <span class="live-dot-pulse" aria-hidden="true"></span>
+                  <div>
+                    <strong id="activeShiftTimer">00:00:00</strong>
+                    <small id="activeShiftStartHint">Směna probíhá od 06:30</small>
+                  </div>
+                </div>
+                <button id="endShiftNowBtn" class="primary-button compact" type="button">Ukončit směnu (Odchod teď)</button>
+              </div>
+
               <article class="hero-card">
                 <div class="hero-top">
                   <div>
@@ -171,6 +183,11 @@
                     <strong>Dovolená / Volno</strong>
                     <small>Celodenní absence</small>
                   </button>
+                </div>
+                <div class="quick-presets-row" style="margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px;">
+                  <button id="quickHoBtn" class="ghost-button small-btn" type="button">🏠 Home office</button>
+                  <button id="quickDocBtn" class="ghost-button small-btn" type="button">🩺 Lékař (celý den)</button>
+                  <button id="quickTripBtn" class="ghost-button small-btn" type="button">🚗 Služební cesta</button>
                 </div>
               </section>
             </div>

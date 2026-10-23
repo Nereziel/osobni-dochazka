@@ -164,6 +164,7 @@ create policy "Secure access to own attendance days"
   let overviewMonth = startOfMonth(new Date());
   let editingOriginal = null;
   let toastTimer;
+  let activeShiftInterval = null;
 
   let supabaseConfig = loadSupabaseConfig();
   let currentUser = loadCurrentUser();
@@ -1066,6 +1067,47 @@ create policy "Secure access to own attendance days"
     $('#sidebarScheduleDays').textContent = `${formatScheduleDaysSummary()} · Fond ${formatDuration(settings.dailyTargetMinutes)}`;
   }
 
+  function updateGreeting() {
+    const el = $('#headerGreeting');
+    if (!el) return;
+    const h = new Date().getHours();
+    let greet = 'Dobré odpoledne';
+    if (h >= 5 && h < 9) greet = 'Dobré ráno';
+    else if (h >= 9 && h < 12) greet = 'Dobré dopoledne';
+    else if (h >= 12 && h < 18) greet = 'Dobré odpoledne';
+    else greet = 'Dobrý večer';
+
+    const name = currentUser ? (currentUser.displayName || currentUser.username) : '';
+    el.textContent = name ? `${greet}, ${name}` : greet;
+  }
+
+  function updateActiveShiftWidget() {
+    const banner = $('#activeShiftBanner');
+    const timer = $('#activeShiftTimer');
+    const hint = $('#activeShiftStartHint');
+    if (!banner || !timer) return;
+
+    const key = todayKey();
+    const rec = records.get(key);
+    if (rec && allowsWork(rec.type) && rec.start && !rec.end) {
+      banner.classList.remove('hidden');
+      if (hint) hint.textContent = `Směna (${TYPE_LABELS[rec.type] || 'Práce'}) probíhá od ${rec.start}`;
+      const sMin = timeToMinutes(rec.start);
+      if (sMin !== null) {
+        const now = new Date();
+        const curMin = now.getHours() * 60 + now.getMinutes();
+        const curSec = now.getSeconds();
+        const diffSec = (curMin >= sMin ? (curMin - sMin) * 60 : (1440 - sMin + curMin) * 60) + curSec;
+        const hh = Math.floor(diffSec / 3600);
+        const mm = Math.floor((diffSec % 3600) / 60);
+        const ss = diffSec % 60;
+        timer.textContent = `${pad(hh)}:${pad(mm)}:${pad(ss)}`;
+      }
+    } else {
+      banner.classList.add('hidden');
+    }
+  }
+
   function renderToday() {
     const now = new Date();
     const key = localDateKey(now);
@@ -1113,6 +1155,8 @@ create policy "Secure access to own attendance days"
 
     // Týdenní pás (Po–Ne aktuálního týdne)
     renderWeekStrip(now);
+    updateGreeting();
+    updateActiveShiftWidget();
 
     // Měsíční souhrn na kartě Dnes
     const stat = monthStats(startOfMonth(now));
@@ -1789,6 +1833,31 @@ create policy "Secure access to own attendance days"
       day.end = '';
     }, 'Zapsána celodenní dovolená'));
 
+    $('#endShiftNowBtn')?.addEventListener('click', () => $('#departureNowBtn').click());
+
+    $('#quickHoBtn')?.addEventListener('click', () => quickToday((day, hours) => {
+      day.type = 'homeOffice';
+      day.start = hours.start;
+      day.end = hours.end;
+      day.manualBreak = false;
+      day.breakMinutes = settings.breakMinutes;
+    }, 'Zapsán Home office'));
+
+    $('#quickDocBtn')?.addEventListener('click', () => quickToday((day) => {
+      day.type = 'doctor';
+      day.doctorFullDay = true;
+      day.start = '';
+      day.end = '';
+    }, 'Zapsán lékař (celý den)'));
+
+    $('#quickTripBtn')?.addEventListener('click', () => quickToday((day, hours) => {
+      day.type = 'businessTrip';
+      day.start = hours.start;
+      day.end = hours.end;
+      day.manualBreak = false;
+      day.breakMinutes = settings.breakMinutes;
+    }, 'Zapsána služební cesta'));
+
     // Kalendář & Přehled posuny měsíců
     $('#prevMonthBtn').addEventListener('click', () => { calendarMonth = addMonths(calendarMonth, -1); renderCalendar(); });
     $('#nextMonthBtn').addEventListener('click', () => { calendarMonth = addMonths(calendarMonth, 1); renderCalendar(); });
@@ -2050,6 +2119,12 @@ create policy "Secure access to own attendance days"
         syncWithSupabase(true).catch(console.warn);
       } else if (isSupabaseConfigured() && !currentUser) {
         openAuthModal();
+      }
+
+      if (!activeShiftInterval) {
+        activeShiftInterval = setInterval(() => {
+          updateActiveShiftWidget();
+        }, 1000);
       }
 
       if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
