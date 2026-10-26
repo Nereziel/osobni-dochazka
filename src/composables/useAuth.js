@@ -5,6 +5,11 @@ const LS_USER_KEY = 'dochazka_active_user_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
 const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
 
+/**
+ * Legacy pomocná funkce pro hashování PINu na klientovi.
+ * Používá se POUZE v offline/lokálním režimu nebo pro testy,
+ * v produkčním Supabase režimu probíhá veškeré ověřování a hashování na serveru (bcrypt).
+ */
 export async function hashPin(pin, username) {
   const clean = (username || '').toLowerCase().trim();
   const raw = `dochazka:${clean}:${pin}`;
@@ -62,37 +67,40 @@ export function useAuth() {
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
 
     const userKey = `user:${cleanUser}`;
-    const pinHash = await hashPin(pinInput, cleanUser);
-    const candidateUser = { userKey, username: cleanUser, pinHash };
 
     if (isSupabaseConfigured()) {
-      const rows = await supabaseRequest(
-        `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(userKey)}&select=*`,
-        {},
-        candidateUser
-      );
-      const profile = rows?.[0];
-      if (!profile) {
-        throw new Error(`Uživatel "${cleanUser}" nebyl nalezen nebo byl zadán chybný PIN.`);
+      const res = await supabaseRequest('/rest/v1/rpc/login_attendance_user', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_username: cleanUser,
+          p_pin: pinInput,
+          p_remember: Boolean(rememberMe)
+        })
+      });
+
+      if (!res?.session_token) {
+        throw new Error('Přihlášení se nezdařilo: server nevydal session token.');
       }
 
       const userObj = {
-        userKey,
-        username: cleanUser,
-        displayName: profile.display_name || cleanUser,
-        pinHash,
-        role: profile.role || 'employee'
+        sessionToken: res.session_token,
+        userKey: res.user_key || userKey,
+        username: res.username || cleanUser,
+        displayName: res.display_name || cleanUser,
+        role: res.role || 'employee',
+        expiresAt: res.expires_at
       };
 
       saveUserSession(userObj, rememberMe);
-      return { message: `Vítej zpět, ${userObj.displayName}!`, profile };
+      return { message: `Vítej zpět, ${userObj.displayName}!`, profile: userObj };
     } else {
       const userObj = {
+        sessionToken: `local_session_${Date.now()}`,
         userKey,
         username: cleanUser,
         displayName: cleanUser,
-        pinHash,
-        role: 'admin'
+        role: 'admin',
+        expiresAt: null
       };
       saveUserSession(userObj, rememberMe);
       return { message: `Přihlášen lokální profil ${cleanUser}.`, profile: null };
@@ -107,7 +115,6 @@ export function useAuth() {
     if (pinInput !== pinConfirmInput) throw new Error('Zadaná hesla/PINy se neshodují.');
 
     const userKey = `user:${cleanUser}`;
-    const pinHash = await hashPin(pinInput, cleanUser);
     let assignedRole = 'employee';
 
     if (isSupabaseConfigured()) {
@@ -118,7 +125,7 @@ export function useAuth() {
         body: JSON.stringify({
           p_username: cleanUser,
           p_display_name: displayNameInput.trim(),
-          p_pin_hash: pinHash,
+          p_pin: pinInput,
           p_invite_code: cleanInvite
         })
       });
@@ -126,11 +133,12 @@ export function useAuth() {
       if (rpcRes?.role) assignedRole = rpcRes.role;
 
       const userObj = {
-        userKey,
-        username: cleanUser,
+        sessionToken: rpcRes.session_token,
+        userKey: rpcRes.user_key || userKey,
+        username: rpcRes.username || cleanUser,
         displayName: displayNameInput.trim(),
-        pinHash,
-        role: assignedRole
+        role: assignedRole,
+        expiresAt: rpcRes.expires_at
       };
 
       saveUserSession(userObj, true);
@@ -142,11 +150,12 @@ export function useAuth() {
       };
     } else {
       const userObj = {
+        sessionToken: `local_session_${Date.now()}`,
         userKey,
         username: cleanUser,
         displayName: displayNameInput.trim(),
-        pinHash,
-        role: 'admin'
+        role: 'admin',
+        expiresAt: null
       };
       saveUserSession(userObj, true);
       return {
@@ -163,35 +172,55 @@ export function useAuth() {
     if (newPin !== newPinConfirm) throw new Error('Nový PIN a jeho potvrzení se neshodují.');
     if (oldPin === newPin) throw new Error('Nový PIN musí být jiný než současný.');
 
-    const oldHash = await hashPin(oldPin, currentUser.value.username);
-    if (oldHash !== currentUser.value.pinHash) {
-      throw new Error('Zadaný současný PIN není správný.');
-    }
-
-    const newHash = await hashPin(newPin, currentUser.value.username);
-
     if (isSupabaseConfigured()) {
-      await supabaseRequest(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.value.userKey)}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
+      await supabaseRequest('/rest/v1/rpc/change_attendance_pin', {
+        method: 'POST',
         body: JSON.stringify({
-          pin_hash: newHash,
-          updated_at: new Date().toISOString()
+          p_old_pin: oldPin,
+          p_new_pin: newPin,
+          p_revoke_others: true
         })
       }, currentUser.value);
     }
 
-    currentUser.value = {
-      ...currentUser.value,
-      pinHash: newHash
-    };
-    saveUserSession(currentUser.value);
     return 'PIN byl úspěšně změněn.';
   }
 
-  function logout() {
+  async function logout() {
+    if (isSupabaseConfigured() && currentUser.value?.sessionToken) {
+      try {
+        await supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
+          method: 'POST',
+          body: JSON.stringify({ p_all_devices: false })
+        }, currentUser.value);
+      } catch {
+        // Ignorujeme případnou chybu při offline odhlášení
+      }
+    }
     saveUserSession(null);
     localStorage.removeItem(LS_BIOMETRICS_KEY);
+  }
+
+  async function verifySession() {
+    if (!isSupabaseConfigured() || !currentUser.value?.sessionToken) return true;
+    try {
+      const res = await supabaseRequest('/rest/v1/rpc/verify_attendance_session', {
+        method: 'POST'
+      }, currentUser.value);
+      if (res?.role && currentUser.value) {
+        currentUser.value = {
+          ...currentUser.value,
+          role: res.role,
+          displayName: res.display_name || currentUser.value.displayName
+        };
+        saveUserSession(currentUser.value, localStorage.getItem(LS_REMEMBER_KEY) !== 'false');
+      }
+      return true;
+    } catch (err) {
+      console.warn('Session expirovala nebo byla odhlášena:', err);
+      await logout();
+      return false;
+    }
   }
 
   // Biometrické odemknutí lokální relace (WebAuthn user verification)
@@ -202,7 +231,7 @@ export function useAuth() {
   function hasSavedBiometrics() {
     try {
       const saved = JSON.parse(localStorage.getItem(LS_BIOMETRICS_KEY) || 'null');
-      return Boolean(saved?.id && saved?.username);
+      return Boolean(saved?.id && saved?.username && saved?.sessionToken);
     } catch {
       return false;
     }
@@ -212,7 +241,7 @@ export function useAuth() {
     if (!isBiometricsSupported()) {
       throw new Error('Zařízení nepodporuje biometrické ověření (WebAuthn).');
     }
-    if (!currentUser.value) throw new Error('Musíš být přihlášen.');
+    if (!currentUser.value?.sessionToken) throw new Error('Musíš být přihlášen s aktivní relací.');
 
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
@@ -244,7 +273,7 @@ export function useAuth() {
         id: rawId,
         username: currentUser.value.username,
         displayName: currentUser.value.displayName,
-        pinHash: currentUser.value.pinHash,
+        sessionToken: currentUser.value.sessionToken,
         role: currentUser.value.role || 'employee',
         userKey: currentUser.value.userKey,
         enabledAt: new Date().toISOString()
@@ -257,7 +286,7 @@ export function useAuth() {
   async function loginWithBiometrics() {
     if (!isBiometricsSupported()) throw new Error('Biometrika není podporována.');
     const saved = JSON.parse(localStorage.getItem(LS_BIOMETRICS_KEY) || 'null');
-    if (!saved?.id || !saved?.username) {
+    if (!saved?.id || !saved?.username || !saved?.sessionToken) {
       throw new Error('Na tomto zařízení dosud není povoleno biometrické přihlašování.');
     }
 
@@ -280,13 +309,20 @@ export function useAuth() {
 
     if (assertion) {
       const userObj = {
+        sessionToken: saved.sessionToken,
         userKey: saved.userKey,
         username: saved.username,
         displayName: saved.displayName,
-        pinHash: saved.pinHash,
         role: saved.role || 'employee'
       };
       saveUserSession(userObj, true);
+
+      // Ověříme platnost obnovené session proti serveru
+      const valid = await verifySession();
+      if (!valid) {
+        throw new Error('Uložená session na serveru expirovala. Přihlaste se prosím PINem.');
+      }
+
       return `Vítej zpět, ${userObj.displayName}!`;
     }
     throw new Error('Biometrické ověření selhalo.');
@@ -300,10 +336,10 @@ export function useAuth() {
     register,
     changePin,
     logout,
+    verifySession,
     isBiometricsSupported,
     hasSavedBiometrics,
     registerBiometrics,
     loginWithBiometrics
   };
 }
-

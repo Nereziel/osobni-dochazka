@@ -108,11 +108,29 @@ Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supab
    - **Autorizace v LWW RPC**: `upsert_attendance_day_lww` ověřuje volajícího přes `current_profile_user_key()` a zakazuje manipulaci s cizími daty (s výjimkou ověřeného administrátora).
    - **Prevence Username Enumeration**: `register_user_with_invite` při běžné registraci nejdříve striktně validuje invite kód, teprve poté kontroluje existenci uživatelského jména. Anonymní útočník bez platné pozvánky nemůže zjišťovat registrovaná uživatelská jména.
 
+9. **`009_custom_sessions.sql`**:
+   - **Vlastní bezpečný session systém**: Odstraňuje závislost na Supabase Auth i nebezpečný bearer PIN hash model.
+   - **Bcrypt hashování PINu**: Hesla/PINy jsou na serveru hashována pomalým bcryptem (`crypt(pin, gen_salt('bf', 10))`).
+   - **256-bitové Opaque Session Tokeny**: V databázi se ukládá pouze SHA-256 hash tokenu (`attendance_sessions.token_hash`).
+   - **Plynulá migrace stávajících uživatelů**: Uživatelé s `auth_version = 1` jsou při prvním přihlášení automaticky převedeni na bcrypt bez nutnosti resetovat heslo nebo znovu zakládat účet.
+   - **Brute-force ochrana**: Automatický dočasný lockout po 5 (1 min) a 10 (5 min) chybných pokusech.
+
+10. **`010_session_rls.sql`**:
+    - **Převod RLS politik na session token**: Všechny tabulky (`attendance_days`, `attendance_profiles`, `attendance_invites`, `attendance_sessions`) ověřují identitu volajícího výhradně ze session tokenu v hlavičce `X-Attendance-Session`.
+    - **LWW RPC autorizace přes session**: `upsert_attendance_day_lww` získává identitu volajícího z `current_session_user_key()`.
+
+11. **`011_legacy_cleanup.sql`**:
+    - **Registrace s přímým vystavením session**: `register_user_with_invite` ukládá bcrypt hash a ihned vrací session token.
+    - **Úklid nepotřebných funkcí**: Odstranění `link_auth_account`, `current_profile_user_key`, `req_user_key`, `req_pin_hash`.
+
 ---
 
 ## 📊 Přehled stavu funkcí
 
 ### Plně implementováno
+- **Vlastní bezpečný session systém (bez Supabase Auth)**: Uživatel nepotřebuje e-mail ani externí účet. Přihlášení probíhá přes `username + PIN`. Server vystavuje 256-bitový session token odesílaný v hlavičce `X-Attendance-Session`.
+- **Bcrypt hashování na serveru**: PIN je v databázi chráněn funkcí `crypt(pin, gen_salt('bf', 10))`.
+- **5s synchronizace v popředí**: Namísto Realtime kanálu aplikace periodicky synchronizuje data každých 5 sekund, pokud je otevřená v popředí a online. Při minimalizaci (hidden) se polling zastaví; po návratu do popředí se okamžitě provede synchronizace.
 - **Vue 3 + Vite + Composition API**: Moderní architektura bez starého vanilkového kódu.
 - **PWA & Offline Shell**: Plná funkčnost bez internetu na mobilu i desktopu.
 - **Per-user IndexedDB**: Oddělení záznamů podle `[userId, date]` a per-user nastavení.
@@ -120,10 +138,7 @@ Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supab
 - **Atomický Server-side LWW**: Outbox odesílá změny přes RPC `upsert_attendance_day_lww`.
 - **Spolehlivé Tombstones**: Smazání nastavuje `deleted_at` a spolehlivě odstraňuje dny na všech synchronizovaných zařízeních.
 - **Bezpečnostní RLS a RPC**: Ochrana proti privilege escalation, úniku pozvánek a čtení cizích dat.
-
-### Přechodný stav (Příprava)
-- **Supabase Auth**: Backend je plně připraven na `auth.uid()`, databáze obsahuje `auth_id` a propojovací RPC `link_auth_account`. Frontend prozatím používá zpětně kompatibilní PIN autentizaci, aby nedošlo k destruktivnímu odhlášení existujících uživatelů. Detailní plán migrace naleznete v [docs/AUTH_MIGRATION.md](./docs/AUTH_MIGRATION.md).
-- **Biometrické odemknutí**: Funguje jako rychlé lokální odemknutí uložené relace v daném prohlížeči. Nejedná se o serverové WebAuthn ověřování.
+- **Biometrické odemknutí**: Rychlé lokální odemknutí uloženého session tokenu v daném prohlížeči (s ověřením platnosti relace proti serveru).
 
 ### Známá omezení
 - **Původní IndexedDB (v1–v3)**: Původní databáze neobsahovala vlastníka záznamu. Při migraci na v4 jsou stará lokální data přiřazena aktuálně známému profilu. Pokud bylo stejné zařízení ve staré verzi používáno více účty, nelze původního vlastníka historických lokálních záznamů spolehlivě určit. Cloudová data v Supabase tím nejsou ovlivněna.

@@ -1,21 +1,24 @@
 import { ref } from 'vue';
 import { performFullSync } from '../services/sync.js';
 import { getPendingSyncActions } from '../services/indexedDb.js';
-import { isSupabaseConfigured, getSupabaseClient } from '../services/supabase.js';
+import { isSupabaseConfigured } from '../services/supabase.js';
 
-export const REALTIME_SYNC_DEBOUNCE_MS = 5000;
+export const FOREGROUND_SYNC_INTERVAL_MS = 5000;
+// Zpětně kompatibilní alias
+export const REALTIME_SYNC_DEBOUNCE_MS = FOREGROUND_SYNC_INTERVAL_MS;
 
 const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error'
 const syncError = ref(null);
 const pendingCount = ref(0);
 
-// Proměnné pro řízení Realtime trailing debounce a serializace synchronizace
+// Řízení synchronizace a 5s foreground pollingu
 let syncInProgress = false;
-let pendingRealtimeSync = false;
-let realtimeDebounceTimer = null;
-let realtimeChannel = null;
-let activeSubscriptionUserKey = null;
+let pendingFollowupSync = false;
+let pollingTimer = null;
+let activeUser = null;
+let activeSettings = null;
 let onSyncCompletedCallback = null;
+let listenersAttached = false;
 
 export function useSync() {
   async function refreshPendingCount(userId) {
@@ -29,50 +32,123 @@ export function useSync() {
   }
 
   /**
-   * Spustí nebo restartuje 5s trailing debounce timer pro Realtime synchronizaci
+   * Spustí jeden krok lehkého foreground syncu
    */
-  function scheduleRealtimeDebounce(currentUser, currentSettings) {
-    if (realtimeDebounceTimer) {
-      clearTimeout(realtimeDebounceTimer);
-      realtimeDebounceTimer = null;
+  async function triggerPeriodicSync() {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      stopPollingTimer();
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      stopPollingTimer();
+      return;
+    }
+    if (!activeUser?.userKey || !isSupabaseConfigured()) {
+      stopPollingTimer();
+      return;
     }
 
-    realtimeDebounceTimer = setTimeout(async () => {
-      realtimeDebounceTimer = null;
-
-      if (syncInProgress) {
-        // Pokud již běží jiná synchronizace, označíme příznak a počkáme na její dokončení
-        pendingRealtimeSync = true;
-        return;
+    try {
+      const res = await sync(activeUser, activeSettings, { pushLocalDays: false });
+      if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
+        onSyncCompletedCallback(res.recordsMap);
       }
+    } catch (err) {
+      console.warn('Periodická 5s synchronizace selhala:', err);
+    }
+  }
 
-      try {
-        const res = await sync(currentUser, currentSettings, { pushLocalDays: false });
-        if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
-          onSyncCompletedCallback(res.recordsMap);
-        }
-      } catch (err) {
-        console.warn('Automatická Realtime synchronizace selhala:', err);
+  function startPollingTimer() {
+    stopPollingTimer();
+    pollingTimer = setInterval(() => {
+      triggerPeriodicSync();
+    }, FOREGROUND_SYNC_INTERVAL_MS);
+  }
+
+  function stopPollingTimer() {
+    if (pollingTimer) {
+      clearInterval(pollingTimer);
+      pollingTimer = null;
+    }
+  }
+
+  function onVisibilityChange() {
+    if (typeof document === 'undefined') return;
+    if (document.visibilityState === 'visible') {
+      if (typeof navigator === 'undefined' || navigator.onLine) {
+        // Okamžitá synchronizace při návratu do foreground a restart 5s intervalu
+        triggerPeriodicSync();
+        startPollingTimer();
       }
-    }, REALTIME_SYNC_DEBOUNCE_MS);
+    } else {
+      // Pozastavit polling, pokud je aplikace na pozadí
+      stopPollingTimer();
+    }
+  }
+
+  function onOnline() {
+    // Obnova online stavu -> okamžitý full sync
+    if (activeUser?.userKey) {
+      sync(activeUser, activeSettings, { pushLocalDays: true }).catch(() => {});
+    }
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      startPollingTimer();
+    }
+  }
+
+  function onOffline() {
+    stopPollingTimer();
+    syncState.value = 'local';
   }
 
   /**
-   * Zpracování Realtime eventu z Postgresu:
-   * Event restartuje 5s trailing debounce. Pokud právě běží sync, nastaví pending příznak.
+   * Zahájení 5s pollingu v popředí (nahrazuje Realtime odběr)
    */
-  function handleRealtimeEvent(currentUser, currentSettings) {
-    if (syncInProgress) {
-      pendingRealtimeSync = true;
+  function startForegroundSync(currentUser, currentSettings, onRecordsUpdated) {
+    activeUser = currentUser;
+    activeSettings = currentSettings;
+
+    if (typeof onRecordsUpdated === 'function') {
+      onSyncCompletedCallback = onRecordsUpdated;
+    }
+
+    if (!isSupabaseConfigured() || !currentUser?.userKey) {
+      stopForegroundSync();
       return;
     }
-    scheduleRealtimeDebounce(currentUser, currentSettings);
+
+    if (!listenersAttached && typeof window !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      window.addEventListener('online', onOnline);
+      window.addEventListener('offline', onOffline);
+      listenersAttached = true;
+    }
+
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      startPollingTimer();
+    }
+  }
+
+  /**
+   * Zastavení 5s pollingu a úklid
+   */
+  function stopForegroundSync() {
+    stopPollingTimer();
+    activeUser = null;
+    activeSettings = null;
+    onSyncCompletedCallback = null;
+
+    if (listenersAttached && typeof window !== 'undefined') {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      listenersAttached = false;
+    }
   }
 
   /**
    * Hlavní synchronizace:
    * Zajišťuje, že neběží dvě plné synchronizace paralelně (syncInProgress).
-   * Po dokončení zkontroluje, zda během běhu nepřišel Realtime event (pendingRealtimeSync).
    */
   async function sync(currentUser, currentSettings, options = { pushLocalDays: true }) {
     if (!isSupabaseConfigured() || !currentUser?.userKey) {
@@ -81,8 +157,7 @@ export function useSync() {
     }
 
     if (syncInProgress) {
-      // Pokud již synchronizace probíhá, zaznamenáme požadavek a vyčkáme
-      pendingRealtimeSync = true;
+      pendingFollowupSync = true;
       return { status: 'syncing' };
     }
 
@@ -104,80 +179,13 @@ export function useSync() {
     } finally {
       syncInProgress = false;
 
-      // Pokud během synchronizace dorazil další Realtime event,
-      // po dokončení běžícího syncu znovu spustíme 5s trailing debounce
-      if (pendingRealtimeSync) {
-        pendingRealtimeSync = false;
-        scheduleRealtimeDebounce(currentUser, currentSettings);
+      if (pendingFollowupSync) {
+        pendingFollowupSync = false;
+        setTimeout(() => {
+          sync(currentUser, currentSettings, { pushLocalDays: false }).catch(() => {});
+        }, 50);
       }
     }
-  }
-
-  /**
-   * Přihlášení k odběru Supabase Realtime změn tabulky attendance_days pro přihlášeného uživatele
-   */
-  function subscribeRealtime(currentUser, currentSettings, onRecordsUpdated) {
-    if (typeof onRecordsUpdated === 'function') {
-      onSyncCompletedCallback = onRecordsUpdated;
-    }
-
-    if (!isSupabaseConfigured() || !currentUser?.userKey) {
-      unsubscribeRealtime();
-      return;
-    }
-
-    // Pokud již odběr pro tohoto uživatele běží, znovu ho nezakládáme
-    if (realtimeChannel && activeSubscriptionUserKey === currentUser.userKey) {
-      return;
-    }
-
-    unsubscribeRealtime();
-
-    const client = getSupabaseClient();
-    if (!client) return;
-
-    activeSubscriptionUserKey = currentUser.userKey;
-    const channelName = `attendance_days_${currentUser.userKey.replace(/[^a-zA-Z0-9_]/g, '_')}`;
-
-    realtimeChannel = client
-      .channel(channelName)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'attendance_days',
-          filter: `user_key=eq.${currentUser.userKey}`
-        },
-        (_payload) => {
-          handleRealtimeEvent(currentUser, currentSettings);
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          // Odběr úspěšně aktivován
-        } else if (status === 'CHANNEL_ERROR') {
-          console.warn('Realtime kanál zaznamenal chybu připojení');
-        }
-      });
-  }
-
-  /**
-   * Zrušení odběru a vyčištění časovačů
-   */
-  function unsubscribeRealtime() {
-    if (realtimeDebounceTimer) {
-      clearTimeout(realtimeDebounceTimer);
-      realtimeDebounceTimer = null;
-    }
-    pendingRealtimeSync = false;
-
-    if (realtimeChannel) {
-      const client = getSupabaseClient();
-      client?.removeChannel(realtimeChannel);
-      realtimeChannel = null;
-    }
-    activeSubscriptionUserKey = null;
   }
 
   return {
@@ -186,9 +194,13 @@ export function useSync() {
     pendingCount,
     refreshPendingCount,
     sync,
-    subscribeRealtime,
-    unsubscribeRealtime,
-    handleRealtimeEvent,
-    scheduleRealtimeDebounce
+    startForegroundSync,
+    stopForegroundSync,
+    triggerPeriodicSync,
+    // Zpětně kompatibilní aliasy
+    subscribeRealtime: startForegroundSync,
+    unsubscribeRealtime: stopForegroundSync,
+    handleRealtimeEvent: triggerPeriodicSync,
+    scheduleRealtimeDebounce: startPollingTimer
   };
 }

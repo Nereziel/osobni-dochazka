@@ -88,7 +88,7 @@ export function isSupabaseConfigured() {
 }
 
 /**
- * Zabezpečené volání Supabase REST/RPC API
+ * Zabezpečené volání Supabase REST/RPC API přes session token
  */
 export async function supabaseRequest(path, options = {}, authUser = null) {
   const cfg = getSupabaseConfig();
@@ -96,17 +96,31 @@ export async function supabaseRequest(path, options = {}, authUser = null) {
     throw new Error('Supabase databáze není nakonfigurována.');
   }
 
-  const clientInfo = authUser?.userKey && authUser?.pinHash
-    ? `dochazka-pwa|${authUser.userKey}|${authUser.pinHash}`
-    : 'dochazka-pwa||';
+  let sessionToken = authUser?.sessionToken || null;
+  if (!sessionToken && typeof window !== 'undefined') {
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem('dochazka_active_user_v2') ||
+        sessionStorage.getItem('dochazka_active_user_v2') ||
+        'null'
+      );
+      sessionToken = stored?.sessionToken || null;
+    } catch {
+      // ignorujeme chybu parsování
+    }
+  }
 
   const headers = {
     apikey: cfg.anonKey,
     Authorization: `Bearer ${cfg.anonKey}`,
-    'X-Client-Info': clientInfo,
+    'X-Client-Info': 'dochazka-pwa',
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
+
+  if (sessionToken) {
+    headers['X-Attendance-Session'] = sessionToken;
+  }
 
   const response = await fetch(`${cfg.url}${path}`, {
     ...options,

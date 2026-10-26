@@ -213,6 +213,7 @@ const {
   register,
   changePin,
   logout,
+  verifySession,
   isBiometricsSupported,
   hasSavedBiometrics,
   registerBiometrics,
@@ -314,10 +315,15 @@ onMounted(async () => {
       openRegisterModal(inviteParam.trim().toUpperCase());
       showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
     } else if (isSupabaseConfigured() && currentUser.value) {
-      triggerSync(false);
-      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
-        records.value = newMap;
-      });
+      const isValid = await verifySession();
+      if (isValid && currentUser.value) {
+        triggerSync(false);
+        subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+          records.value = newMap;
+        });
+      } else {
+        openLoginModal();
+      }
     } else if (isSupabaseConfigured() && !currentUser.value) {
       openLoginModal();
     }
@@ -695,12 +701,11 @@ function openAdminResetPinModal(prof) {
 async function handleAdminResetPinSubmit({ targetUserKey, targetUsername, newPin }) {
   adminResetPinModalRef.value?.setLoading(true);
   try {
-    const newHash = await hashPin(newPin, targetUsername);
     await supabaseRequest('/rest/v1/rpc/admin_reset_user_pin', {
       method: 'POST',
       body: JSON.stringify({
         p_target_user_key: targetUserKey,
-        p_new_pin_hash: newHash
+        p_new_pin: newPin
       })
     }, currentUser.value);
 

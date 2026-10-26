@@ -14,7 +14,7 @@ describe('Real Integration Tests for Sync Engine', () => {
   const currentUser = {
     userKey: 'user:martin',
     username: 'martin',
-    pinHash: 'test_hash_123'
+    sessionToken: 'test_session_token_123'
   };
 
   beforeEach(() => {
