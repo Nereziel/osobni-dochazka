@@ -841,7 +841,7 @@ html[data-theme="dark"] .win-btn-subtle:hover {
 
 .win-week-strip {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -1022,7 +1022,7 @@ html[data-theme="dark"] .win-btn-subtle:hover {
 .calendar-weekdays-header,
 .calendar-cells-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1036,6 +1036,25 @@ html[data-theme="dark"] .win-btn-subtle:hover {
   font-weight: 700;
   color: var(--text-secondary);
   padding: 6px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-weekdays-header .wd-short {
+  display: none;
+}
+.calendar-weekdays-header .wd-full {
+  display: inline;
+}
+
+@media (max-width: 1200px) {
+  .calendar-weekdays-header .wd-full {
+    display: none;
+  }
+  .calendar-weekdays-header .wd-short {
+    display: inline;
+  }
 }
 
 .cal-day-cell {
@@ -1050,6 +1069,11 @@ html[data-theme="dark"] .win-btn-subtle:hover {
   flex-direction: column;
   justify-content: space-between;
   transition: all 0.12s ease;
+  min-width: 0;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
 }
 
 .cal-day-cell:hover {
@@ -1089,9 +1113,22 @@ html[data-theme="dark"] .cal-day-cell.weekend {
   width: 100%;
 }
 
-.cal-day-num {
+.cal-day-num,
+.cal-day-number {
   font-size: 14px;
   font-weight: 750;
+}
+
+.cal-day-top-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cal-holiday-star {
+  font-size: 11px;
+  color: var(--warning, #eab308);
+  line-height: 1;
 }
 
 .dot,
@@ -1117,12 +1154,18 @@ html[data-theme="dark"] .cal-day-cell.weekend {
   align-items: flex-start;
   gap: 2px;
   font-size: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .cal-time-range {
   font-weight: 650;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .cal-tag-pill {
@@ -1132,6 +1175,20 @@ html[data-theme="dark"] .cal-day-cell.weekend {
   border-radius: 3px;
   background: var(--surface-card);
   border: 1px solid var(--line);
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.cal-tag-pill.positive {
+  color: var(--positive);
+  background: var(--positive-bg);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.cal-tag-pill.negative {
+  color: var(--negative);
+  background: var(--negative-bg);
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .calendar-legend-bar {
@@ -2547,9 +2604,53 @@ input:focus, .win-select:focus, textarea:focus {
     display: inline !important;
   }
 
+  .calendar-weekdays-header,
+  .calendar-cells-grid {
+    gap: 4px;
+  }
+
+  .calendar-card-shell {
+    padding: 12px 10px;
+  }
+
   .cal-day-cell {
     min-height: 60px;
-    padding: 6px 4px;
+    padding: 5px 3px;
+  }
+
+  .cal-day-num,
+  .cal-day-number {
+    font-size: 12px;
+  }
+
+  .cal-time-range {
+    font-size: 9px;
+  }
+
+  .cal-tag-pill {
+    font-size: 8.5px;
+    padding: 0 2px;
+  }
+
+  .win-week-strip {
+    gap: 4px;
+  }
+
+  .week-day-card {
+    min-height: 72px;
+    padding: 8px 3px;
+  }
+
+  .week-day-name {
+    font-size: 10px;
+  }
+
+  .week-day-number {
+    font-size: 14px;
+  }
+
+  .week-day-hours {
+    font-size: 10px;
   }
 }
 
@@ -2595,14 +2696,49 @@ input:focus, .win-select:focus, textarea:focus {
     padding: 6px 2px;
     font-size: 10.5px;
   }
-  .cal-day-cell {
-    min-height: 52px;
-    padding: 4px 2px;
+  .calendar-weekdays-header,
+  .calendar-cells-grid {
+    gap: 2px;
   }
+  .calendar-card-shell {
+    padding: 8px 4px;
+  }
+  .cal-day-cell {
+    min-height: 50px;
+    padding: 3px 2px;
+    border-radius: 4px;
+  }
+  .cal-day-num,
   .cal-day-number {
     font-size: 11px;
   }
-  .cal-day-time {
+  .cal-time-range {
+    font-size: 8px;
+  }
+  .cal-tag-pill {
+    font-size: 7.5px;
+    padding: 0 1px;
+  }
+  .dot,
+  .cal-dot {
+    width: 6px;
+    height: 6px;
+  }
+  .win-week-strip {
+    gap: 2px;
+  }
+  .week-day-card {
+    min-height: 62px;
+    padding: 6px 2px;
+    border-radius: 4px;
+  }
+  .week-day-name {
+    font-size: 9px;
+  }
+  .week-day-number {
+    font-size: 12px;
+  }
+  .week-day-hours {
     font-size: 9px;
   }
   #viewTeam .team-header-info h2 {

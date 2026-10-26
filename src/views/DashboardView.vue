@@ -159,26 +159,24 @@
           </div>
 
           <div class="win-week-strip">
-            <div
+            <button
               v-for="item in weekDays"
               :key="item.key"
+              type="button"
               class="week-day-card"
               :class="{
                 today: item.isToday,
                 weekend: item.isWeekend,
                 recorded: item.hasRecord
               }"
+              :title="item.tooltip"
               @click="$emit('edit-day', item.key)"
             >
-              <div class="week-day-header">
-                <span class="day-name">{{ item.name }}</span>
-                <span class="day-num">{{ item.num }}</span>
-              </div>
-              <div class="week-day-body">
-                <span class="type-badge">{{ item.typeLabel }}</span>
-                <strong class="time-label">{{ item.timeLabel }}</strong>
-              </div>
-            </div>
+              <span class="week-day-name">{{ item.name }}</span>
+              <span class="week-day-number">{{ item.num }}</span>
+              <span v-if="item.status" class="cal-dot" :class="item.status"></span>
+              <span class="week-day-hours">{{ item.hoursText }}</span>
+            </button>
           </div>
         </article>
 
@@ -237,6 +235,8 @@ import { formatDuration } from '../utils/time.js';
 import {
   dayMetrics,
   defaultHoursForDate,
+  isScheduledWorkday,
+  statusClassForDay,
   TYPE_LABELS,
   SHORT_TYPE_LABELS
 } from '../utils/attendance.js';
@@ -348,6 +348,7 @@ const weekDays = computed(() => {
   const dayOfWeek = now.getDay(); // 0=Ne, 1=Po..
   const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset, 12);
+  const today = currentKey;
 
   const daysNames = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
   const list = [];
@@ -356,26 +357,30 @@ const weekDays = computed(() => {
     const cur = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i, 12);
     const key = localDateKey(cur);
     const rec = props.records.get(key);
-    const isToday = key === currentKey;
+    const isToday = key === today;
     const isWeekend = isWeekendDate(cur);
+    const status = statusClassForDay(key, rec, props.settings, today);
+    const m = rec ? dayMetrics(rec, props.settings) : null;
+    const h = holidayName(key);
 
-    let typeLabel = '—';
-    let timeLabel = '—';
-
+    let hoursText = '—';
     if (rec) {
-      typeLabel = SHORT_TYPE_LABELS[rec.type] || rec.type;
-      if (rec.start && rec.end) {
-        timeLabel = `${rec.start}–${rec.end}`;
-      } else if (rec.start) {
-        timeLabel = `od ${rec.start}`;
+      if (m && m.worked > 0) {
+        hoursText = formatDuration(m.worked);
       } else {
-        timeLabel = typeLabel;
+        hoursText = SHORT_TYPE_LABELS[rec.type] || '—';
       }
+    } else if (h) {
+      hoursText = 'Svátek';
+    } else if (isScheduledWorkday(cur, props.settings)) {
+      hoursText = key < today ? 'Chybí' : '—';
     } else {
-      const h = holidayName(key);
-      if (h) typeLabel = 'Svátek';
-      else if (isWeekend) typeLabel = 'Víkend';
+      hoursText = 'Volno';
     }
+
+    const tooltip = rec
+      ? `${TYPE_LABELS[rec.type] || rec.type}${rec.note ? ` (${rec.note})` : ''}`
+      : (h || '');
 
     list.push({
       key,
@@ -384,8 +389,9 @@ const weekDays = computed(() => {
       isToday,
       isWeekend,
       hasRecord: Boolean(rec),
-      typeLabel,
-      timeLabel
+      status,
+      hoursText,
+      tooltip
     });
   }
 

@@ -265,6 +265,21 @@ export function monthVacationDays(monthDate, recordsMap) {
   return used;
 }
 
+export function statusClassForDay(key, rec, settings = DEFAULT_SETTINGS, today = localDateKey(new Date())) {
+  const date = parseDateKey(key);
+  if (rec) {
+    if (rec.type === 'doctor' || rec.type === 'sick') return 'doctor';
+    if (rec.type === 'homeOffice') return 'home';
+    if (rec.type === 'businessTrip') return 'trip';
+    if (['vacation', 'halfVacation', 'holiday', 'compTime', 'other'].includes(rec.type)) return 'leave';
+    if (isWeekendDate(date)) return 'weekend-work';
+    return 'work';
+  }
+  if (isPublicHoliday(key)) return 'leave';
+  if (baseTargetForDate(key, settings) > 0 && key < today) return 'missing';
+  return '';
+}
+
 export function formatVacationDays(n) {
   if (n === 1) return '1 den';
   if (n >= 2 && n <= 4) return `${n} dny`;

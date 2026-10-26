@@ -31,49 +31,49 @@
       <!-- Velká kalendářní mřížka -->
       <div class="win-card calendar-card-shell">
         <div class="calendar-weekdays-header" aria-hidden="true">
-          <span>Pondělí</span><span>Úterý</span><span>Středa</span><span>Čtvrtek</span><span>Pátek</span><span>Sobota</span><span>Neděle</span>
+          <span title="Pondělí"><span class="wd-full">Pondělí</span><span class="wd-short">Po</span></span>
+          <span title="Úterý"><span class="wd-full">Úterý</span><span class="wd-short">Út</span></span>
+          <span title="Středa"><span class="wd-full">Středa</span><span class="wd-short">St</span></span>
+          <span title="Čtvrtek"><span class="wd-full">Čtvrtek</span><span class="wd-short">Čt</span></span>
+          <span title="Pátek"><span class="wd-full">Pátek</span><span class="wd-short">Pá</span></span>
+          <span title="Sobota"><span class="wd-full">Sobota</span><span class="wd-short">So</span></span>
+          <span title="Neděle"><span class="wd-full">Neděle</span><span class="wd-short">Ne</span></span>
         </div>
 
         <div class="calendar-cells-grid">
-          <!-- Odsazení před 1. dnem měsíce -->
-          <div
-            v-for="padIndex in leadingEmptyDays"
-            :key="'pad-' + padIndex"
-            class="cal-day-cell empty"
-          ></div>
-
-          <!-- Dny v měsíci -->
-          <div
+          <button
             v-for="cell in calendarCells"
             :key="cell.dateKey"
+            type="button"
             class="cal-day-cell"
             :class="{
-              today: cell.isToday,
+              outside: cell.isOutside,
               weekend: cell.isWeekend,
-              has_record: cell.hasRecord,
-              missing_work: cell.isMissingWork
+              'scheduled-weekend': cell.isScheduledWeekend,
+              today: cell.isToday
             }"
+            :title="cell.tooltip"
             @click="$emit('edit-day', cell.dateKey)"
           >
             <div class="cal-day-top">
-              <span class="cal-day-number">{{ cell.dayNumber }}</span>
-              <span v-if="cell.holiday" class="cal-holiday-tag" :title="cell.holiday">★</span>
-            </div>
-
-            <div class="cal-day-content">
-              <div v-if="cell.hasRecord" class="cal-record-pill" :class="cell.recordTypeClass">
-                <span class="pill-type">{{ cell.shortTypeLabel }}</span>
-                <span v-if="cell.timeString" class="pill-time">{{ cell.timeString }}</span>
+              <span class="cal-day-num">{{ cell.dayNumber }}</span>
+              <div class="cal-day-top-badges">
+                <span v-if="cell.holiday" class="cal-holiday-star" :title="cell.holiday">★</span>
+                <span v-if="cell.status" class="cal-dot" :class="cell.status"></span>
               </div>
-              <span v-else-if="cell.isWeekend" class="cal-empty-sub">Víkend</span>
-              <span v-else-if="cell.holiday" class="cal-empty-sub">{{ cell.holiday }}</span>
-              <span v-else-if="cell.isMissingWork" class="cal-missing-tag">Nevyplněno</span>
             </div>
 
-            <div v-if="cell.metrics && cell.metrics.balance !== 0" class="cal-day-balance" :class="cell.metrics.balance > 0 ? 'positive' : 'negative'">
-              {{ formatDuration(cell.metrics.balance, true) }}
+            <div class="cal-day-bottom">
+              <span v-if="cell.timeText" class="cal-time-range">{{ cell.timeText }}</span>
+              <span
+                v-if="cell.tagText"
+                class="cal-tag-pill"
+                :class="cell.balanceClass"
+              >
+                {{ cell.tagText }}
+              </span>
             </div>
-          </div>
+          </button>
         </div>
 
         <!-- Legenda -->
@@ -154,8 +154,8 @@ import { computed } from 'vue';
 import {
   fmtMonthTitle,
   localDateKey,
-  parseDateKey,
   todayKey,
+  isSameMonth,
   isWeekendDate,
   fmtWeekdayShort,
   addMonths,
@@ -164,7 +164,8 @@ import {
 import { holidayName } from '../utils/holidays.js';
 import { formatDuration } from '../utils/time.js';
 import {
-  baseTargetForDate,
+  isScheduledWorkday,
+  statusClassForDay,
   dayMetrics,
   TYPE_LABELS,
   SHORT_TYPE_LABELS,
@@ -211,65 +212,69 @@ const scheduleHint = computed(() => {
   return `Rozvrh: ${daysStr} · ${props.settings.workStart || '06:30'}–${props.settings.workEnd || '15:30'}`;
 });
 
-const leadingEmptyDays = computed(() => {
-  const firstDay = new Date(props.currentMonth.getFullYear(), props.currentMonth.getMonth(), 1, 12);
-  const day = firstDay.getDay(); // 0=Ne, 1=Po..
-  return day === 0 ? 6 : day - 1;
-});
-
 const today = todayKey();
 
 const calendarCells = computed(() => {
-  const year = props.currentMonth.getFullYear();
-  const month = props.currentMonth.getMonth();
-  const daysCount = getDaysInMonth(year, month);
+  const currentMonth = props.currentMonth;
+  const first = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1, 12);
+  const mondayIndex = (first.getDay() + 6) % 7;
+  const start = new Date(first);
+  start.setDate(first.getDate() - mondayIndex);
   const cells = [];
 
-  for (let d = 1; d <= daysCount; d++) {
-    const curDate = new Date(year, month, d, 12, 0, 0, 0);
+  for (let i = 0; i < 42; i++) {
+    const curDate = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i, 12);
     const dateKey = localDateKey(curDate);
     const rec = props.records.get(dateKey);
     const holiday = holidayName(dateKey);
     const isWeekend = isWeekendDate(curDate);
-    const baseTarget = baseTargetForDate(dateKey, props.settings);
+    const isScheduled = isScheduledWorkday(curDate, props.settings);
+    const isOutside = !isSameMonth(curDate, currentMonth);
     const isToday = dateKey === today;
-    const isMissingWork = baseTarget > 0 && dateKey < today && !rec;
+    const isScheduledWeekend = isWeekend && isScheduled;
 
-    let timeString = '';
-    let shortTypeLabel = '';
-    let recordTypeClass = '';
-    let metrics = null;
+    const status = statusClassForDay(dateKey, rec, props.settings, today);
+    const m = rec ? dayMetrics(rec, props.settings) : null;
+
+    let timeText = '';
+    let tagText = '';
+    let balanceClass = '';
 
     if (rec) {
-      metrics = dayMetrics(rec, props.settings);
-      shortTypeLabel = SHORT_TYPE_LABELS[rec.type] || rec.type;
-
-      if (rec.start && rec.end) {
-        timeString = `${rec.start}–${rec.end}`;
-      } else if (rec.start) {
-        timeString = `od ${rec.start}`;
+      if (m && m.worked > 0) {
+        timeText = rec.start && rec.end ? `${rec.start}–${rec.end}` : formatDuration(m.worked);
+        tagText = m.balance !== 0 ? formatDuration(m.balance, true) : formatDuration(m.worked);
+        if (m.balance > 0) balanceClass = 'positive';
+        else if (m.balance < 0) balanceClass = 'negative';
+      } else {
+        timeText = SHORT_TYPE_LABELS[rec.type] || rec.type;
+        if (m && m.credited > 0) {
+          tagText = formatDuration(m.credited);
+        }
       }
-
-      if (rec.type === 'homeOffice') recordTypeClass = 'home';
-      else if (rec.type === 'businessTrip') recordTypeClass = 'trip';
-      else if (rec.type === 'vacation' || rec.type === 'halfVacation' || rec.type === 'compTime') recordTypeClass = 'leave';
-      else if (rec.type === 'doctor' || rec.type === 'sick') recordTypeClass = 'doctor';
-      else if (isWeekend) recordTypeClass = 'weekend-work';
-      else recordTypeClass = 'work';
+    } else if (holiday) {
+      timeText = 'Svátek';
+    } else if (isScheduled && !isOutside && dateKey < today) {
+      timeText = 'Chybí';
     }
+
+    const tooltip = rec
+      ? `${TYPE_LABELS[rec.type] || rec.type}${rec.note ? ` (${rec.note})` : ''}`
+      : (holiday || '');
 
     cells.push({
       dateKey,
-      dayNumber: d,
-      isToday,
+      dayNumber: curDate.getDate(),
+      isOutside,
       isWeekend,
+      isScheduledWeekend,
+      isToday,
       holiday,
-      hasRecord: Boolean(rec),
-      isMissingWork,
-      recordTypeClass,
-      shortTypeLabel,
-      timeString,
-      metrics
+      status,
+      timeText,
+      tagText,
+      balanceClass,
+      tooltip
     });
   }
 
@@ -309,4 +314,3 @@ const monthRecordsList = computed(() => {
 
 const monthRecordsCount = computed(() => monthRecordsList.value.length);
 </script>
-
