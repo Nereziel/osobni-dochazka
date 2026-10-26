@@ -66,62 +66,20 @@ VITE_SUPABASE_ANON_KEY=vas-anon-public-klic
 
 ---
 
-## 📜 Pořadí a přehled SQL migrací
+## 📜 Inicializace databáze v Supabase
 
-Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supabase/migrations/) a jsou navrženy jako bezeztrátové a idempotentní:
+Veškerá struktura databáze je uceleně definována v jediném souboru [`supabase/schema.sql`](./supabase/schema.sql).
 
-1. **`001_security_fix.sql`**:
-   - **Oprava Privilege Escalation**: Zamezuje běžným uživatelům povýšit se na roli `admin` přímým PATCH REST požadavkem.
-   - **Zabezpečení pozvánek**: Odstraněn veřejný `SELECT` z `attendance_invites`. Ověření probíhá přes bezpečnou RPC funkci `verify_invite_code`.
-   - **Vysoká entropie tokenů**: Pozvánky generují 128+ bitové kryptografické tokeny s expirací `expires_at`.
-   - **Oprava View**: Pohled `v_monthly_attendance_summary` je vytvořen s `security_invoker = true`.
-   - **Princip nejmenších oprávnění**: Revokováno `grant all`, nastaven `SET search_path = public` na všech `SECURITY DEFINER` funkcích.
+Tento skript obsahuje:
+- **Rozšíření `pgcrypto`**: Pro bezpečné generování náhodných session tokenů a bcrypt hashování PINu.
+- **Tabulky a indexy**: `attendance_profiles`, `attendance_sessions`, `attendance_invites`, `attendance_days`.
+- **Pohled `v_monthly_attendance_summary`**: S volbou `security_invoker = true` pro respektování RLS politik.
+- **Session systém**: Ověřování relací přes HTTP hlavičku `X-Attendance-Session`, serverový lockout po 5 a 10 chybných pokusech.
+- **Invite-only registrace**: První uživatel se stává automaticky administrátorem bez nutnosti pozvánky.
+- **Atomický LWW upsert**: RPC funkce `upsert_attendance_day_lww` pro spolehlivou synchronizaci a řešení konfliktů.
+- **Row Level Security (RLS)**: Striktní autorizace pro všechny operace.
 
-2. **`002_auth_migration.sql`**:
-   - Přidává vazbu `auth_id uuid references auth.users(id)` do `attendance_profiles`.
-   - Umožňuje bezpečné propojení přihlášeného Supabase Auth účtu s existujícím profilem přes RPC funkci `link_auth_account`.
-
-3. **`003_sync_metadata.sql`**:
-   - Přidává sloupec `deleted_at timestamptz` a indexy pro offline mazání (tombstones).
-
-4. **`004_sync_lww_tombstones.sql`**:
-   - Zavádí atomickou serverovou RPC funkci `upsert_attendance_day_lww(p_day)`, která porovnává `incoming.updated_at >= existing.updated_at` a brání race conditions při outbox synchronizaci.
-   - Zajišťuje, že smazané záznamy s `deleted_at` procházejí stejnou LWW logikou a nepřebíjejí novější úpravy (a naopak novější tombstone spolehlivě maže starší záznamy).
-   - Obsahuje maintenance funkci `admin_cleanup_old_tombstones(p_retention_days)` pro bezpečný úklid tombstones starších než 90 dní.
-
-5. **`005_registration_status.sql`**:
-   - Zavádí anonymní RPC funkci `registration_status()`, která vrací pouze `{ requires_invite: boolean, registration_enabled: boolean }`.
-   - Zabraňuje úniku interních dat o počtu uživatelů a nahrazuje nespolehlivý anonymní `SELECT LIMIT 1`.
-
-6. **`006_admin_security_fix.sql`**:
-   - Zpřísňuje `is_admin()` – odstraňuje automatické povýšení při neexistujícím adminovi.
-   - Vrací `TRUE` výhradně pro platně ověřeného uživatele (`auth.uid()` nebo ověřený PIN hash) s rolí `admin`.
-   - Bootstrap prvního admina je možný pouze atomicky při registraci prvního profilu.
-
-7. **`007_atomic_lww_upsert.sql`**:
-   - Skutečně atomický server-side LWW upsert: nahrazuje dvoukrokový `SELECT ... FOR UPDATE` přímým atomickým `INSERT ... ON CONFLICT (user_key, date) DO UPDATE SET ... WHERE excluded.updated_at >= d.updated_at RETURNING *`.
-   - Zabraňuje race condition (unique violation) při souběžném prvním vytvoření záznamu stejného dne ze dvou zařízení.
-
-8. **`008_fix_legacy_auth_vulnerability.sql`**:
-   - **Oprava P0 autorizační zranitelnosti**: `current_profile_user_key()` již nikdy nekriticky nedůvěřuje hlavičce `req_user_key()`. Legacy identita je uznána výhradně při shodě `user_key` i odpovídajícího `pin_hash`.
-   - **Zabezpečení RLS politik**: Všechny politiky pro `attendance_days`, `attendance_profiles` a `attendance_invites` používají ověřenou identitu. Útočník s podvrženou hlavičkou získá 0 řádků na SELECT a odmítnutí na zápis/aktualizaci/smazání.
-   - **Autorizace v LWW RPC**: `upsert_attendance_day_lww` ověřuje volajícího přes `current_profile_user_key()` a zakazuje manipulaci s cizími daty (s výjimkou ověřeného administrátora).
-   - **Prevence Username Enumeration**: `register_user_with_invite` při běžné registraci nejdříve striktně validuje invite kód, teprve poté kontroluje existenci uživatelského jména. Anonymní útočník bez platné pozvánky nemůže zjišťovat registrovaná uživatelská jména.
-
-9. **`009_custom_sessions.sql`**:
-   - **Vlastní bezpečný session systém**: Odstraňuje závislost na Supabase Auth i nebezpečný bearer PIN hash model.
-   - **Bcrypt hashování PINu**: Hesla/PINy jsou na serveru hashována pomalým bcryptem (`crypt(pin, gen_salt('bf', 10))`).
-   - **256-bitové Opaque Session Tokeny**: V databázi se ukládá pouze SHA-256 hash tokenu (`attendance_sessions.token_hash`).
-   - **Plynulá migrace stávajících uživatelů**: Uživatelé s `auth_version = 1` jsou při prvním přihlášení automaticky převedeni na bcrypt bez nutnosti resetovat heslo nebo znovu zakládat účet.
-   - **Brute-force ochrana**: Automatický dočasný lockout po 5 (1 min) a 10 (5 min) chybných pokusech.
-
-10. **`010_session_rls.sql`**:
-    - **Převod RLS politik na session token**: Všechny tabulky (`attendance_days`, `attendance_profiles`, `attendance_invites`, `attendance_sessions`) ověřují identitu volajícího výhradně ze session tokenu v hlavičce `X-Attendance-Session`.
-    - **LWW RPC autorizace přes session**: `upsert_attendance_day_lww` získává identitu volajícího z `current_session_user_key()`.
-
-11. **`011_legacy_cleanup.sql`**:
-    - **Registrace s přímým vystavením session**: `register_user_with_invite` ukládá bcrypt hash a ihned vrací session token.
-    - **Úklid nepotřebných funkcí**: Odstranění `link_auth_account`, `current_profile_user_key`, `req_user_key`, `req_pin_hash`.
+Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./supabase/schema.sql) vložit do **Supabase SQL Editoru** a spustit.
 
 ---
 

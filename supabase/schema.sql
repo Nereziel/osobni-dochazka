@@ -1,43 +1,51 @@
 -- ============================================================================
--- OSOBNÍ DOCHÁZKA PWA – DATABÁZE PRO SUPABASE (PostgreSQL)
+-- OSOBNÍ DOCHÁZKA PWA – KOMPLETNÍ SCHÉMA ČISTÉ DATABÁZE (PostgreSQL pro Supabase)
 -- ============================================================================
--- Databáze pro aplikaci Osobní docházka:
--- 1. AUTENTIZACE POMOCÍ SESSION TOKENŮ:
---    - Přihlášení přes uživatelské jméno + PIN
---    - Serverové ověření PINu pomocí bcrypt (pgcrypto)
---    - Vystavení kryptograficky bezpečného 256-bitového session tokenu
---    - V databázi se ukládá pouze SHA-256 hash tokenu
+-- Tento skript slouží pro čistou inicializaci celé databáze.
+--
+-- 1. AUTENTIZACE:
+--    - Přihlašování pouze přes: uživatelské jméno + PIN
+--    - Žádný e-mail, žádný Supabase Auth účet
+--    - Serverové hashování PINu pomocí bcrypt (pgcrypto)
+--    - 256-bitové náhodné session tokeny (v DB se ukládá pouze SHA-256 hash)
 --    - Klient posílá session token v HTTP hlavičce X-Attendance-Session
---    - Žádné e-maily, žádný Supabase Auth
+--    - Ochrana proti brute-force (dočasný lockout po 5 a 10 chybných pokusech)
 --
 -- 2. ROW LEVEL SECURITY (RLS):
---    - Veškeré operace jsou autorizovány podle platného session tokenu
---    - Uživatel má plný přístup výhradně ke svým datům
---    - Správce (role: admin) má přístup k přehledům týmu a správě pozvánek
+--    - Každý uživatel má přístup výhradně ke svým datům
+--    - Správce (role = admin) má přístup ke správě týmu, pozvánkám a souhrnům
 --
--- 3. INVITE-ONLY REGISTRACE:
---    - První registrovaný uživatel se automaticky stává Správcem (admin) bez pozvánky
---    - Každý další uživatel se může registrovat pouze s platným kódem pozvánky
---    - Prevence username enumeration: pozvánka je ověřena před kontrolou jména
+-- 3. REGISTRACE NA POZVÁNKY (Invite-Only):
+--    - První uživatel v databázi se automaticky stává Správcem (admin) bez pozvánky
+--    - Další uživatelé se mohou registrovat pouze s platným kódem pozvánky
+--    - Prevence username enumeration: kód pozvánky je ověřen před kontrolou jména
+--
+-- 4. ATOMICKÝ LAST-WRITE-WINS A TOMBSTONES:
+--    - Atomický LWW upsert dnů docházky (ON CONFLICT DO UPDATE WHERE newer)
+--    - Smazání vytváří soft tombstone (deleted_at), který se spolehlivě šíří
 -- ============================================================================
+
+-- Volitelný reset existujících tabulek před čistou instalací (v případě potřeby odkomentujte):
+-- drop view if exists public.v_monthly_attendance_summary cascade;
+-- drop table if exists public.attendance_days cascade;
+-- drop table if exists public.attendance_sessions cascade;
+-- drop table if exists public.attendance_invites cascade;
+-- drop table if exists public.attendance_profiles cascade;
 
 create extension if not exists pgcrypto;
 
 -- ----------------------------------------------------------------------------
--- 1. UŽIVATELÉ A JEJICH PROFILY (attendance_profiles)
+-- 1. UŽIVATELÉ A PROFILY (attendance_profiles)
 -- ----------------------------------------------------------------------------
 create table if not exists public.attendance_profiles (
   user_key text primary key,
   username text not null unique,
   display_name text not null default '',
-  pin_password_hash text,
-  auth_version integer not null default 2,
-  pin_hash text default null, -- legacy sloupec pro plynulý přechod
+  pin_password_hash text not null,
+  role text not null default 'employee' check (role in ('admin', 'manager', 'employee')),
   failed_login_count integer not null default 0,
   locked_until timestamptz default null,
   last_failed_login_at timestamptz default null,
-  legacy_migrated_at timestamptz default null,
-  role text not null default 'employee' check (role in ('admin', 'manager', 'employee')),
 
   -- Běžná pracovní doba
   work_start text not null default '06:30',
@@ -88,13 +96,13 @@ create table if not exists public.attendance_sessions (
 );
 
 create unique index if not exists idx_attendance_sessions_token_hash
-  on public.attendance_sessions(token_hash);
+  on public.attendance_sessions (token_hash);
 
 create index if not exists idx_attendance_sessions_user_key
-  on public.attendance_sessions(user_key);
+  on public.attendance_sessions (user_key);
 
 create index if not exists idx_attendance_sessions_active
-  on public.attendance_sessions(token_hash)
+  on public.attendance_sessions (token_hash)
   where revoked_at is null;
 
 -- ----------------------------------------------------------------------------
@@ -173,7 +181,7 @@ join public.attendance_profiles p on p.user_key = d.user_key
 group by d.user_key, p.username, p.display_name, to_char(d.date, 'YYYY-MM');
 
 -- ----------------------------------------------------------------------------
--- 6. POMOCNÉ FUNKCE PRO SESSION AUTENTIZACI
+-- 6. POMOCNÉ AUTENTIZAČNÍ FUNKCE
 -- ----------------------------------------------------------------------------
 
 -- Získání RAW session tokenu z HTTP hlavičky X-Attendance-Session
@@ -252,7 +260,7 @@ $$;
 -- 7. SESSION A AUTH RPC FUNKCE
 -- ----------------------------------------------------------------------------
 
--- Přihlášení: ověření PINu (bcrypt / jednorázová migrace ze SHA-256), brute-force ochrana a vystavení session tokenu
+-- Přihlášení: ověření PINu přes bcrypt, brute-force ochrana a vystavení session tokenu
 create or replace function public.login_attendance_user(
   p_username text,
   p_pin text,
@@ -268,8 +276,6 @@ declare
   v_user_key text;
   v_profile public.attendance_profiles%rowtype;
   v_is_valid boolean := false;
-  v_legacy_hash text;
-  v_new_bcrypt text;
   v_raw_token text;
   v_token_hash text;
   v_expires_at timestamptz;
@@ -289,24 +295,7 @@ begin
     raise exception 'Účet je dočasně uzamčen z bezpečnostních důvodů. Zkuste to za chvíli.';
   end if;
 
-  if v_profile.auth_version = 2 and v_profile.pin_password_hash is not null then
-    v_is_valid := (crypt(p_pin, v_profile.pin_password_hash) = v_profile.pin_password_hash);
-  elsif v_profile.auth_version = 1 and v_profile.pin_hash is not null then
-    v_legacy_hash := encode(digest('dochazka:' || v_clean_user || ':' || p_pin, 'sha256'), 'hex');
-    if v_legacy_hash = v_profile.pin_hash then
-      v_is_valid := true;
-      v_new_bcrypt := crypt(p_pin, gen_salt('bf', 10));
-      update public.attendance_profiles
-      set pin_password_hash = v_new_bcrypt,
-          auth_version = 2,
-          legacy_migrated_at = now(),
-          pin_hash = null,
-          failed_login_count = 0,
-          locked_until = null,
-          updated_at = now()
-      where user_key = v_profile.user_key;
-    end if;
-  end if;
+  v_is_valid := (crypt(p_pin, v_profile.pin_password_hash) = v_profile.pin_password_hash);
 
   if not v_is_valid then
     update public.attendance_profiles
@@ -361,7 +350,7 @@ begin
 end;
 $$;
 
--- Odhlášení
+-- Odhlášení: serverová revokace session tokenu
 create or replace function public.logout_attendance_session(
   p_all_devices boolean default false
 )
@@ -481,11 +470,7 @@ begin
     raise exception 'Uživatel nebyl nalezen.';
   end if;
 
-  if v_profile.auth_version = 2 and v_profile.pin_password_hash is not null then
-    v_old_valid := (crypt(p_old_pin, v_profile.pin_password_hash) = v_profile.pin_password_hash);
-  elsif v_profile.pin_hash is not null then
-    v_old_valid := (encode(digest('dochazka:' || v_profile.username || ':' || p_old_pin, 'sha256'), 'hex') = v_profile.pin_hash);
-  end if;
+  v_old_valid := (crypt(p_old_pin, v_profile.pin_password_hash) = v_profile.pin_password_hash);
 
   if not v_old_valid then
     raise exception 'Původní PIN není správný.';
@@ -495,9 +480,6 @@ begin
 
   update public.attendance_profiles
   set pin_password_hash = v_new_bcrypt,
-      pin_hash = null,
-      auth_version = 2,
-      legacy_migrated_at = now(),
       updated_at = now()
   where user_key = v_user_key;
 
@@ -519,7 +501,8 @@ begin
 end;
 $$;
 
--- Registrace s ověřením pozvánky a okamžitým vystavením session tokenu
+-- Registrace s ověřením pozvánky, bcrypt hashem a okamžitým session tokenem
+drop function if exists public.register_user_with_invite(text, text, text, text);
 create or replace function public.register_user_with_invite(
   p_username text,
   p_display_name text,
@@ -591,17 +574,13 @@ begin
     username,
     display_name,
     pin_password_hash,
-    role,
-    auth_version,
-    pin_hash
+    role
   ) values (
     v_user_key,
     v_clean_user,
     coalesce(nullif(trim(p_display_name), ''), v_clean_user),
     v_bcrypt,
-    v_assigned_role,
-    2,
-    null
+    v_assigned_role
   );
 
   if v_user_count > 0 and v_invite.code is not null then
@@ -643,7 +622,7 @@ begin
 end;
 $$;
 
--- Stav registrace pro nepřihlášené návštěvníky (pouze zda je vyžadována pozvánka)
+-- Anonymní stav registrace pro nepřihlášené návštěvníky
 create or replace function public.registration_status()
 returns jsonb
 language plpgsql
@@ -715,6 +694,7 @@ end;
 $$;
 
 -- Správce: reset PINu uživatele
+drop function if exists public.admin_reset_user_pin(text, text);
 create or replace function public.admin_reset_user_pin(
   p_target_user_key text,
   p_new_pin text
@@ -739,8 +719,6 @@ begin
 
   update public.attendance_profiles
   set pin_password_hash = v_bcrypt,
-      pin_hash = null,
-      auth_version = 2,
       failed_login_count = 0,
       locked_until = null,
       updated_at = now()
@@ -804,6 +782,34 @@ begin
   where user_key = p_target_user_key;
 
   return true;
+end;
+$$;
+
+-- Správce: bezpečný úklid starých smazaných záznamů (tombstones)
+create or replace function public.admin_cleanup_old_tombstones(
+  p_retention_days integer default 90
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_deleted_count integer;
+  v_cutoff timestamptz;
+begin
+  if not public.is_admin() then
+    raise exception 'Přístup odepřen: Pouze správce může provádět údržbu databáze.';
+  end if;
+
+  v_cutoff := now() - (coalesce(p_retention_days, 90) || ' days')::interval;
+
+  delete from public.attendance_days
+  where deleted_at is not null
+    and deleted_at < v_cutoff;
+
+  get diagnostics v_deleted_count = row_count;
+  return v_deleted_count;
 end;
 $$;
 
@@ -1069,4 +1075,5 @@ grant execute on function public.admin_create_invite(text) to anon, authenticate
 grant execute on function public.admin_reset_user_pin(text, text) to anon, authenticated;
 grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;
 grant execute on function public.admin_delete_user(text) to anon, authenticated;
+grant execute on function public.admin_cleanup_old_tombstones(integer) to anon, authenticated;
 grant execute on function public.upsert_attendance_day_lww(jsonb) to anon, authenticated;
