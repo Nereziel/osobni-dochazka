@@ -120,21 +120,53 @@ export function openDatabase() {
 }
 
 /**
- * Pomocné volání IDB transakce
+ * Pomocné volání IDB transakce.
+ * Zápis je považován za úspěšný až při tx.oncomplete (skutečný commit na disk).
+ * Správně zachycuje request error, transaction error i transaction abort.
  */
 async function idbAction(storeName, mode, callback) {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(storeName, mode);
     const store = tx.objectStore(storeName);
-    const request = callback(store, tx);
+    let result = undefined;
 
-    if (request && 'onsuccess' in request) {
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    } else {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => {
+      resolve(result);
+    };
+
+    tx.onerror = () => {
+      reject(tx.error || new Error(`IndexedDB transaction error na store "${storeName}".`));
+    };
+
+    tx.onabort = () => {
+      reject(tx.error || new Error(`IndexedDB transaction abort na store "${storeName}".`));
+    };
+
+    try {
+      const request = callback(store, tx);
+      if (request && 'onsuccess' in request) {
+        request.onsuccess = () => {
+          result = request.result;
+          // U readonly transakce resolveujeme rovnou po onsuccess pro rychlost,
+          // ale u readwrite čekáme na tx.oncomplete pro potvrzení commitu
+          if (mode === 'readonly') {
+            resolve(result);
+          }
+        };
+        request.onerror = (e) => {
+          // Zabráníme nekontrolovanému bublání, tx.onerror zachytí chybu
+          e.stopPropagation?.();
+          reject(request.error || new Error(`IndexedDB request error na store "${storeName}".`));
+        };
+      }
+    } catch (err) {
+      try {
+        tx.abort();
+      } catch {
+        // Ignorujeme případný abort error
+      }
+      reject(err);
     }
   });
 }

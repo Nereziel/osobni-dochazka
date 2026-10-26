@@ -1,6 +1,9 @@
 import pluginVue from 'eslint-plugin-vue';
 
 export default [
+  {
+    ignores: ['dist/**', 'node_modules/**', '.git/**']
+  },
   ...pluginVue.configs['flat/recommended'],
   {
     files: ['**/*.{js,vue}'],
@@ -15,4 +18,3 @@ export default [
     }
   }
 ];
-

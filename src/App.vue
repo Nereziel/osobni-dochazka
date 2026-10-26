@@ -498,8 +498,11 @@ async function openRegisterModal(prefilledInvite = '') {
   let isFirst = false;
   if (isSupabaseConfigured()) {
     try {
-      const rows = await supabaseRequest('/rest/v1/attendance_profiles?select=user_key&limit=1');
-      isFirst = !rows || rows.length === 0;
+      const statusRes = await supabaseRequest('/rest/v1/rpc/registration_status', {
+        method: 'POST'
+      });
+      // requires_invite je false právě tehdy, když v DB ještě není žádný profil (první uživatel)
+      isFirst = statusRes?.requires_invite === false;
     } catch {
       // fallback
     }

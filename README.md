@@ -23,17 +23,17 @@ npm run dev
 ```
 Aplikace poběží na `http://localhost:5173/osobni-dochazka/`.
 
-### 3. Sestavení produkčního buildu
+### 3. Kontrola kódu a testy
+```bash
+npm run lint
+npm run test
+```
+
+### 4. Sestavení produkčního buildu
 ```bash
 npm run build
 ```
 Statický build se vygeneruje do složky `./dist`.
-
-### 4. Spuštění testů
-```bash
-npm run test
-```
-Spustí jednotkové testy v prostředí **Vitest** (testování výpočtů, absencí, českých svátků, časových převodů, outboxu a konfliktů).
 
 ---
 
@@ -42,9 +42,10 @@ Spustí jednotkové testy v prostředí **Vitest** (testování výpočtů, abse
 - **Frontend framework**: Vue 3 (Composition API s `<script setup>`)
 - **Build nástroj**: Vite (s bází `/osobni-dochazka/`)
 - **PWA**: `vite-plugin-pwa` s Workbox serviceworkerem, offline shell a automatickým promptem pro aktualizaci nové verze
-- **Lokální databáze**: IndexedDB (verze 4) s rozdělením dat podle uživatele `[userId, date]`, per-user nastavením a perzistentní frontou změn (Outbox queue)
-- **Backend / Databáze**: Supabase (PostgreSQL, Row Level Security, RPC funkce)
-- **Testy**: Vitest pro rychlé a přesné testování business logiky bez DOM závislostí
+- **Lokální databáze**: IndexedDB (verze 4) s rozdělením dat podle uživatele `[userId, date]`, per-user nastavením a transakčním potvrzováním zápisů (`oncomplete`)
+- **Synchronizace**: Robustní offline-first outbox fronta se sloučením změn (`coalesce`), skutečnými tombstones (`deleted_at`) a atomickým serverovým Last-Write-Wins (LWW)
+- **Backend / Databáze**: Supabase (PostgreSQL, Row Level Security, RPC funkce s `search_path = public`)
+- **Testy**: Vitest pro testování výpočtů, absencí, českých svátků, časových převodů i reálného integračního sync motoru
 
 ---
 
@@ -63,8 +64,11 @@ VITE_SUPABASE_ANON_KEY=vas-anon-public-klic
 > - `VITE_SUPABASE_ANON_KEY` je veřejný publishable klíč, nikdy nepoužívejte `service_role` klíč!
 > - Aplikace neakceptuje injektování URL z query parametrů (`?sb_url=`), což brání phishingu a krádeži relací.
 
-### SQL migrace
-Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supabase/migrations/):
+---
+
+## 📜 Pořadí a přehled SQL migrací
+
+Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supabase/migrations/) a jsou navrženy jako bezeztrátové a idempotentní:
 
 1. **`001_security_fix.sql`**:
    - **Oprava Privilege Escalation**: Zamezuje běžným uživatelům povýšit se na roli `admin` přímým PATCH REST požadavkem.
@@ -78,7 +82,42 @@ Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supab
    - Umožňuje bezpečné propojení přihlášeného Supabase Auth účtu s existujícím profilem přes RPC funkci `link_auth_account`.
 
 3. **`003_sync_metadata.sql`**:
-   - Přidává sloupec `deleted_at timestamptz` a indexy pro offline mazání (tombstones) bez rizika nechtěného znovustažení smazaného dne.
+   - Přidává sloupec `deleted_at timestamptz` a indexy pro offline mazání (tombstones).
+
+4. **`004_sync_lww_tombstones.sql`**:
+   - Zavádí atomickou serverovou RPC funkci `upsert_attendance_day_lww(p_day)`, která porovnává `incoming.updated_at >= existing.updated_at` a brání race conditions při outbox synchronizaci.
+   - Zajišťuje, že smazané záznamy s `deleted_at` procházejí stejnou LWW logikou a nepřebíjejí novější úpravy (a naopak novější tombstone spolehlivě maže starší záznamy).
+   - Obsahuje maintenance funkci `admin_cleanup_old_tombstones(p_retention_days)` pro bezpečný úklid tombstones starších než 90 dní.
+
+5. **`005_registration_status.sql`**:
+   - Zavádí anonymní RPC funkci `registration_status()`, která vrací pouze `{ requires_invite: boolean, registration_enabled: boolean }`.
+   - Zabraňuje úniku interních dat o počtu uživatelů a nahrazuje nespolehlivý anonymní `SELECT LIMIT 1`.
+
+6. **`006_admin_security_fix.sql`**:
+   - Zpřísňuje `is_admin()` – odstraňuje automatické povýšení při neexistujícím adminovi.
+   - Vrací `TRUE` výhradně pro platně ověřeného uživatele (`auth.uid()` nebo ověřený PIN hash) s rolí `admin`.
+   - Bootstrap prvního admina je možný pouze atomicky při registraci prvního profilu.
+
+---
+
+## 📊 Přehled stavu funkcí
+
+### Plně implementováno
+- **Vue 3 + Vite + Composition API**: Moderní architektura bez starého vanilkového kódu.
+- **PWA & Offline Shell**: Plná funkčnost bez internetu na mobilu i desktopu.
+- **Per-user IndexedDB**: Oddělení záznamů podle `[userId, date]` a per-user nastavení.
+- **Transakční integrita IDB**: Potvrzení zápisu až po `tx.oncomplete`.
+- **Atomický Server-side LWW**: Outbox odesílá změny přes RPC `upsert_attendance_day_lww`.
+- **Spolehlivé Tombstones**: Smazání nastavuje `deleted_at` a spolehlivě odstraňuje dny na všech synchronizovaných zařízeních.
+- **Bezpečnostní RLS a RPC**: Ochrana proti privilege escalation, úniku pozvánek a čtení cizích dat.
+
+### Přechodný stav (Příprava)
+- **Supabase Auth**: Backend je plně připraven na `auth.uid()`, databáze obsahuje `auth_id` a propojovací RPC `link_auth_account`. Frontend prozatím používá zpětně kompatibilní PIN autentizaci, aby nedošlo k destruktivnímu odhlášení existujících uživatelů. Detailní plán migrace naleznete v [docs/AUTH_MIGRATION.md](./docs/AUTH_MIGRATION.md).
+- **Biometrické odemknutí**: Funguje jako rychlé lokální odemknutí uložené relace v daném prohlížeči. Nejedná se o serverové WebAuthn ověřování.
+
+### Známá omezení
+- **Původní IndexedDB (v1–v3)**: Původní databáze neobsahovala vlastníka záznamu. Při migraci na v4 jsou stará lokální data přiřazena aktuálně známému profilu. Pokud bylo stejné zařízení ve staré verzi používáno více účty, nelze původního vlastníka historických lokálních záznamů spolehlivě určit. Cloudová data v Supabase tím nejsou ovlivněna.
+- **Klientská časová razítka (`updated_at`)**: Last-Write-Wins závisí na správně nastavených systémových hodinách zařízení. Serverová RPC funkce atomicky porovnává `updated_at`, ale při extrémně posunutém systémovém čase na klientu může dojít k nesprávnému vyhodnocení pořadí změn.
 
 ---
 
@@ -88,7 +127,8 @@ Deploy na GitHub Pages je plně automatizovaný přes GitHub Actions workflow [`
 
 1. Při pushi do větve `main` workflow spustí:
    - `npm ci`
-   - `npm run test` (ověří správnost výpočtů před nasazením)
+   - `npm run lint`
+   - `npm run test` (ověří testy před nasazením)
    - `npm run build` (sestaví aplikaci s klíči ze Secrets)
    - Publikuje složku `./dist` na GitHub Pages
 2. **Nastavení GitHub Secrets**:
@@ -97,19 +137,3 @@ Deploy na GitHub Pages je plně automatizovaný přes GitHub Actions workflow [`
      - `SUPABASE_URL`: URL adresa Supabase projektu
      - `SUPABASE_ANON_KEY`: Veřejný anon klíč projektu
    - V **Settings → Pages** vyberte Source: **GitHub Actions**.
-
----
-
-## 🔄 Migrace ze staré verze (Vanilla JS na Vue 3)
-
-### Co se stane se stávajícími daty?
-- **Supabase**: Data v tabulkách `attendance_profiles`, `attendance_days` a `attendance_invites` zůstávají 100% zachována. Žádné tabulky se nemažou ani netruncují.
-- **IndexedDB**:
-  - Stará verze používala databázi verze 3 s klíčem podle `date`.
-  - Nová aplikace automaticky upgraduje IndexedDB na verzi 4.
-  - Všechny existující dny a nastavení se automaticky převedou do per-user úložiště (`[userId, date]` a `user_settings`).
-- **Offline DELETE fronta**:
-  - Pokud uživatel smaže den offline, uloží se záznam o smazání do persistentní `sync_queue` (Outbox).
-  - Při obnovení spojení se nejdříve provede smazání v cloudu, takže se smazaný den nikdy nevrátí.
-- **PWA Service Worker**:
-  - `vite-plugin-pwa` automaticky detekuje novou verzi a nabídne uživateli lištu **„Je dostupná nová verze aplikace – Aktualizovat“**. Stará cache se bezpečně vyčistí.

@@ -60,10 +60,9 @@ export function useAttendance() {
     if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
       const row = dayRowForSupabase(updated, currentUser.userKey, settings);
       try {
-        await supabaseRequest('/rest/v1/attendance_days?on_conflict=user_key,date', {
+        await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
           method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: JSON.stringify(row)
+          body: JSON.stringify({ p_day: row })
         }, currentUser);
       } catch (err) {
         console.warn('Uložení dne do cloudu selhalo, zařazeno do outboxu:', err);
@@ -81,12 +80,22 @@ export function useAttendance() {
     records.value = new Map(records.value);
 
     if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
+      const nowIso = new Date().toISOString();
+      const tombstonePayload = {
+        user_key: currentUser.userKey,
+        date: dateKey,
+        deleted_at: nowIso,
+        updated_at: nowIso
+      };
+
       try {
-        const q = `/rest/v1/attendance_days?user_key=eq.${encodeURIComponent(currentUser.userKey)}&date=eq.${encodeURIComponent(dateKey)}`;
-        await supabaseRequest(q, { method: 'DELETE' }, currentUser);
+        await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
+          method: 'POST',
+          body: JSON.stringify({ p_day: tombstonePayload })
+        }, currentUser);
       } catch (err) {
-        console.warn('Smazání dne v cloudu selhalo, zařazeno do outboxu:', err);
-        await enqueueSyncAction(userId, 'attendance_days', 'DELETE', { date: dateKey });
+        console.warn('Smazání dne v cloudu selhalo, zařazeno do outboxu jako tombstone:', err);
+        await enqueueSyncAction(userId, 'attendance_days', 'DELETE', tombstonePayload);
       }
     }
   }
