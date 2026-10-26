@@ -1,4 +1,4 @@
-name: Deploy PWA to GitHub Pages (with Supabase Secrets)
+name: Deploy Vue PWA to GitHub Pages
 
 on:
   push:
@@ -9,14 +9,13 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  actions: write
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -25,41 +24,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Inject Supabase keys from GitHub Secrets and stamp unique build cache
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test
+
+      - name: Build static site with Vite
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          BUILD_SHA: ${{ github.sha }}
-        run: |
-          cat <<EOF > config.js
-          window.DOCHAZKA_CONFIG = {
-            supabaseUrl: "${SUPABASE_URL}",
-            supabaseAnonKey: "${SUPABASE_ANON_KEY}",
-            buildTime: "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
-            version: "${BUILD_SHA}"
-          };
-          EOF
-          sed -i "s/const CACHE = '.*';/const CACHE = 'dochazka-${BUILD_SHA}';/" sw.js
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: "."
+          path: "./dist"
 
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
-      - name: Delete artifacts
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "Fetching and deleting GitHub Pages build artifacts..."
-          ARTIFACT_IDS=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts --jq '.artifacts[].id')
-          for ID in $ARTIFACT_IDS; do
-            echo "Deleting artifact ID: $ID"
-            gh api --method DELETE repos/${{ github.repository }}/actions/artifacts/$ID
-          done
-          echo "Artifact cleanup completed."
-
