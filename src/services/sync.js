@@ -17,7 +17,7 @@ import {
   putUserDay,
   deleteUserDay
 } from './indexedDb.js';
-import { dayMetrics } from '../utils/attendance.js';
+import { dayMetrics, normalizeSettings } from '../utils/attendance.js';
 
 export function dayRowForSupabase(day, userKey, settings) {
   const m = dayMetrics(day, settings);
@@ -83,6 +83,34 @@ export function profileRowFromSettings(settings, user) {
     theme: settings.theme || 'system',
     settings_json: settings
   };
+}
+
+export function settingsFromProfileRow(profileRow) {
+  if (!profileRow) return null;
+  const jsonSettings = typeof profileRow.settings_json === 'object' && profileRow.settings_json !== null
+    ? profileRow.settings_json
+    : {};
+
+  return normalizeSettings({
+    ...jsonSettings,
+    workStart: profileRow.work_start || jsonSettings.workStart || '06:30',
+    workEnd: profileRow.work_end || jsonSettings.workEnd || '15:30',
+    dailyTargetMinutes: profileRow.daily_target_minutes ?? jsonSettings.dailyTargetMinutes ?? 510,
+    breakMinutes: profileRow.break_minutes ?? jsonSettings.breakMinutes ?? 30,
+    breakAfterMinutes: profileRow.break_after_minutes ?? jsonSettings.breakAfterMinutes ?? 360,
+    autoFill: profileRow.auto_fill ?? jsonSettings.autoFill ?? true,
+    workDays: Array.isArray(profileRow.work_days) && profileRow.work_days.length > 0
+      ? profileRow.work_days
+      : (jsonSettings.workDays || [1, 2, 3, 4, 5]),
+    workWeekends: profileRow.work_weekends ?? jsonSettings.workWeekends ?? false,
+    weekendMode: profileRow.weekend_mode || jsonSettings.weekendMode || 'none',
+    weekendCustomHours: profileRow.weekend_custom_hours ?? jsonSettings.weekendCustomHours ?? false,
+    weekendStart: profileRow.weekend_start || jsonSettings.weekendStart || '07:00',
+    weekendEnd: profileRow.weekend_end || jsonSettings.weekendEnd || '15:30',
+    weekendTargetMinutes: profileRow.weekend_target_minutes ?? jsonSettings.weekendTargetMinutes ?? 480,
+    workOnHolidays: profileRow.work_on_holidays ?? jsonSettings.workOnHolidays ?? false,
+    theme: profileRow.theme || jsonSettings.theme || 'system'
+  });
 }
 
 /**
@@ -270,7 +298,7 @@ export async function performFullSync(
 
   const remoteRows = await supabaseRequest(daysUrl, {}, currentUser);
 
-  // Rychlá optimalizace: pokud při 5s pollingu nepřibyla žádná změna na serveru
+  // Rychlá optimalizace: pokud při periodickém pollingu nepřibyla žádná změna na serveru
   if (isIncremental && (!remoteRows || remoteRows.length === 0) && !options.pushLocalDays) {
     setLastSuccessfulPullAt(currentUser.userKey, new Date().toISOString());
     const localList = await getUserDays(currentUser.userKey);

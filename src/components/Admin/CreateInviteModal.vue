@@ -13,16 +13,8 @@
 
       <form class="dialog-body-scroll" @submit.prevent="generateInvite">
         <p class="dialog-info-text">
-          Vygeneruj jednorázový odkaz pozvánky. Odkaz můžeš rovnou poslat novému zaměstnanci do chatu nebo e-mailem.
+          Vygeneruj jednorázový odkaz pozvánky. Nový uživatel získá účet s rolí zaměstnance. Povýšení na správce můžeš provést kdykoliv v přehledu týmu.
         </p>
-
-        <label class="win-field">
-          <span>Oprávnění nového uživatele</span>
-          <select v-model="targetRole" class="win-select">
-            <option value="employee">Běžný zaměstnanec (pouze vlastní docházka)</option>
-            <option value="admin">Správce (plná správa týmu a pozvánek)</option>
-          </select>
-        </label>
 
         <div v-if="generatedUrl" class="dialog-subcard" style="margin-top: 14px;">
           <span class="field-sub-label">Vygenerovaný odkaz s pozvánkou:</span>

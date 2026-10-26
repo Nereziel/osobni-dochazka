@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import crypto from 'crypto';
+import { settingsFromProfileRow } from '../src/services/sync.js';
 
 describe('Security & Custom Session-Based Auth Authorization Tests (Clean Architecture)', () => {
   // Databázové tabulky simulující čisté PostgreSQL schema:
@@ -175,19 +176,23 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     return profile?.role === 'admin';
   }
 
-  // 4. PostgreSQL login_attendance_user (vrací JSON, counter se ukládá i při chybě)
+  // 4. PostgreSQL login_attendance_user (vrací JSON, counter se ukládá i při chybě, žádná metadata pro enumeration)
   function login_attendance_user(username, pin, remember = true) {
+    if (!username || typeof username !== 'string' || !username.trim() || !pin || typeof pin !== 'string' || pin.length < 1) {
+      return { success: false, error: 'invalid_credentials', message: 'Neplatné přihlašovací údaje.' };
+    }
+
     const cleanUser = (username || '').toLowerCase().trim().replace(/[^a-zA-Z0-9._-]/g, '');
     const userKey = `user:${cleanUser}`;
     const profile = profilesTable.find(p => p.user_key === userKey);
     const cred = credentialsTable.find(c => c.user_key === userKey);
 
     if (!profile || !cred) {
-      return { success: false, error: 'invalid_credentials', message: 'Neplatné uživatelské jméno nebo PIN.' };
+      return { success: false, error: 'invalid_credentials', message: 'Neplatné přihlašovací údaje.' };
     }
 
     if (cred.locked_until && new Date(cred.locked_until) > new Date()) {
-      return { success: false, error: 'account_locked', message: 'Účet je dočasně uzamčen.', locked_until: cred.locked_until };
+      return { success: false, error: 'invalid_credentials', message: 'Neplatné přihlašovací údaje.' };
     }
 
     const isValid = (cred.pin_password_hash === `bcrypt:${pin}`);
@@ -202,9 +207,8 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       }
       return {
         success: false,
-        error: cred.locked_until ? 'account_locked' : 'invalid_credentials',
-        message: 'Neplatné uživatelské jméno nebo PIN.',
-        failed_attempts: cred.failed_login_count
+        error: 'invalid_credentials',
+        message: 'Neplatné přihlašovací údaje.'
       };
     }
 
@@ -315,9 +319,82 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     if (p_settings.work_end !== undefined) profile.work_end = p_settings.work_end;
     if (p_settings.daily_target_minutes !== undefined) profile.daily_target_minutes = p_settings.daily_target_minutes;
     if (p_settings.break_minutes !== undefined) profile.break_minutes = p_settings.break_minutes;
+    if (Array.isArray(p_settings.work_days)) {
+      profile.work_days = p_settings.work_days.filter(d => typeof d === 'number' && d >= 0 && d <= 6);
+    }
     if (p_settings.theme !== undefined) profile.theme = p_settings.theme;
 
     return { success: true, profile };
+  }
+
+  // 7b. PostgreSQL change_attendance_pin
+  function change_attendance_pin(oldPin, newPin, revokeOthers = true) {
+    const callerKey = current_session_user_key();
+    if (!callerKey) return { success: false, error: 'unauthorized', message: 'Uživatel není přihlášen.' };
+
+    if (!oldPin || !newPin || newPin.length < 4) {
+      return { success: false, error: 'invalid_pin', message: 'Původní PIN i nový PIN (min. 4 znaky) musí být zadány.' };
+    }
+
+    const cred = credentialsTable.find(c => c.user_key === callerKey);
+    if (!cred) return { success: false, error: 'not_found', message: 'Uživatel nebyl nalezen.' };
+
+    if (cred.pin_password_hash !== `bcrypt:${oldPin}`) {
+      return { success: false, error: 'invalid_old_pin', message: 'Původní PIN není správný.' };
+    }
+
+    cred.pin_password_hash = `bcrypt:${newPin}`;
+    if (revokeOthers) {
+      const currentToken = current_session_token();
+      const currentHash = sha256(currentToken);
+      sessionsTable.forEach(s => {
+        if (s.user_key === callerKey && s.token_hash !== currentHash) {
+          s.revoked_at = new Date().toISOString();
+        }
+      });
+    }
+
+    return { success: true, message: 'PIN byl úspěšně změněn.' };
+  }
+
+  // 7c. PostgreSQL admin_change_user_role
+  function admin_change_user_role(targetUserKey, newRole) {
+    if (!is_admin()) throw new Error('Přístup odepřen: Pouze správce může měnit role.');
+    if (!['admin', 'employee'].includes(newRole)) throw new Error('Neplatná role.');
+
+    if (newRole === 'employee') {
+      const target = profilesTable.find(p => p.user_key === targetUserKey);
+      if (target?.role === 'admin') {
+        const otherAdmins = profilesTable.filter(p => p.role === 'admin' && p.user_key !== targetUserKey).length;
+        if (otherAdmins === 0) {
+          throw new Error('Operaci nelze provést: Nelze odebrat roli poslednímu administrátorovi v systému.');
+        }
+      }
+    }
+
+    const profile = profilesTable.find(p => p.user_key === targetUserKey);
+    if (profile) profile.role = newRole;
+    return true;
+  }
+
+  // 7d. PostgreSQL admin_delete_user
+  function admin_delete_user(targetUserKey) {
+    if (!is_admin()) throw new Error('Přístup odepřen: Pouze správce může mazat uživatele.');
+    const callerKey = current_session_user_key();
+    if (targetUserKey === callerKey) throw new Error('Nemůžeš smazat svůj vlastní přihlášený administrátorský účet.');
+
+    const target = profilesTable.find(p => p.user_key === targetUserKey);
+    if (target?.role === 'admin') {
+      const otherAdmins = profilesTable.filter(p => p.role === 'admin' && p.user_key !== targetUserKey).length;
+      if (otherAdmins === 0) {
+        throw new Error('Operaci nelze provést: Nelze smazat posledního administrátora v systému.');
+      }
+    }
+
+    profilesTable = profilesTable.filter(p => p.user_key !== targetUserKey);
+    credentialsTable = credentialsTable.filter(c => c.user_key !== targetUserKey);
+    sessionsTable = sessionsTable.filter(s => s.user_key !== targetUserKey);
+    return true;
   }
 
   // 8. RLS simulace pro attendance_days (POUZE SELECT)
@@ -525,21 +602,100 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     });
   });
 
-  describe('P3.1 & P9: Brute-force ochrana s persistencí counteru', () => {
-    it('Po 5 chybných pokusech o login se účet dočasně uzamkne a counter zůstává uložen', () => {
+  describe('P3.1 & P9: Brute-force ochrana a prevence username enumeration', () => {
+    it('Po 5 chybných pokusech o login se účet interně uzamkne, ale klient dostane generickou odpověď', () => {
       for (let i = 0; i < 5; i++) {
         const res = login_attendance_user('bob', 'wrong_pin');
         expect(res.success).toBe(false);
+        expect(res.error).toBe('invalid_credentials');
+        expect(res.failed_attempts).toBeUndefined();
+        expect(res.locked_until).toBeUndefined();
       }
 
       const bobCred = credentialsTable.find(c => c.user_key === 'user:bob');
       expect(bobCred.failed_login_count).toBe(5);
       expect(bobCred.locked_until).toBeTruthy();
 
-      // 6. pokus je odmítnut z důvodu uzamčení účtu
+      // 6. pokus je odmítnut, ale bez prozrazení lockoutu (prevence enumeration)
       const lockRes = login_attendance_user('bob', 'bob1234');
       expect(lockRes.success).toBe(false);
-      expect(lockRes.error).toBe('account_locked');
+      expect(lockRes.error).toBe('invalid_credentials');
+    });
+
+    it('NULL PIN ani NULL username nevytvoří session a vrátí generickou chybu', () => {
+      const initialSessions = sessionsTable.length;
+
+      const nullPinRes = login_attendance_user('bob', null);
+      expect(nullPinRes.success).toBe(false);
+      expect(nullPinRes.error).toBe('invalid_credentials');
+
+      const nullUserRes = login_attendance_user(null, 'bob1234');
+      expect(nullUserRes.success).toBe(false);
+      expect(nullUserRes.error).toBe('invalid_credentials');
+
+      expect(sessionsTable.length).toBe(initialSessions);
+    });
+
+    it('Neexistující uživatel a špatný PIN existujícího uživatele vrací identickou odpověď', () => {
+      const nonExist = login_attendance_user('ghost_user_123', 'any_pin');
+      const wrongPin = login_attendance_user('bob', 'bad_pin');
+
+      expect(nonExist.success).toBe(wrongPin.success);
+      expect(nonExist.error).toBe(wrongPin.error);
+      expect(nonExist.message).toBe(wrongPin.message);
+    });
+
+    it('Změna PINu: NULL původní PIN je zamítnut', () => {
+      const loginBob = login_attendance_user('bob', 'bob1234');
+      setSessionHeader(loginBob.session_token);
+
+      const res = change_attendance_pin(null, 'new_pin_5678');
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('invalid_pin');
+    });
+
+    it('Poslední admin: degradace ani smazání posledního admina není dovoleno', () => {
+      const loginAdmin = login_attendance_user('admin', 'admin1234');
+      setSessionHeader(loginAdmin.session_token);
+
+      // Pokus o změnu role jediného admina na employee
+      expect(() => {
+        admin_change_user_role('user:admin', 'employee');
+      }).toThrow(/Nelze odebrat roli poslednímu administrátorovi/);
+
+      // Pokus o smazání admina (pokud by byl volán jiným kontextem nebo sám sebe)
+      expect(() => {
+        admin_delete_user('user:admin');
+      }).toThrow();
+    });
+
+    it('update_own_settings: bezpečně ukládá pole work_days', () => {
+      const loginBob = login_attendance_user('bob', 'bob1234');
+      setSessionHeader(loginBob.session_token);
+
+      const res = update_own_settings({ work_days: [1, 2, 3, 4] });
+      expect(res.success).toBe(true);
+      const bobProf = profilesTable.find(p => p.user_key === 'user:bob');
+      expect(bobProf.work_days).toEqual([1, 2, 3, 4]);
+    });
+
+    it('settingsFromProfileRow: správně převede serverProfile na lokální settings model', () => {
+      const profileRow = {
+        work_start: '07:15',
+        work_end: '16:00',
+        daily_target_minutes: 495,
+        break_minutes: 30,
+        work_days: [1, 2, 3, 4, 5],
+        theme: 'dark',
+        settings_json: {}
+      };
+
+      const settings = settingsFromProfileRow(profileRow);
+      expect(settings.workStart).toBe('07:15');
+      expect(settings.workEnd).toBe('16:00');
+      expect(settings.dailyTargetMinutes).toBe(495);
+      expect(settings.theme).toBe('dark');
+      expect(settings.workDays).toEqual([1, 2, 3, 4, 5]);
     });
   });
 

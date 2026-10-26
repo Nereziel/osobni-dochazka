@@ -171,7 +171,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import Header from './components/Common/Header.vue';
 import Sidebar from './components/Common/Sidebar.vue';
 import MobileNav from './components/Common/MobileNav.vue';
@@ -199,8 +199,9 @@ import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync } from './composables/useSync.js';
 
-import { openDatabase, clearUserDays } from './services/indexedDb.js';
+import { openDatabase, clearUserDays, putUserSettings } from './services/indexedDb.js';
 import { supabaseRequest, isSupabaseConfigured } from './services/supabase.js';
+import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock } from './utils/time.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
 
@@ -317,10 +318,8 @@ onMounted(async () => {
     } else if (isSupabaseConfigured() && currentUser.value) {
       const isValid = await verifySession();
       if (isValid && currentUser.value) {
-        triggerSync(false);
-        startForegroundSync(currentUser.value, settings.value, (newMap) => {
-          records.value = newMap;
-        });
+        await triggerSync(false);
+        startSyncService();
       } else {
         openLoginModal();
       }
@@ -333,12 +332,33 @@ onMounted(async () => {
   }
 });
 
-// Automatická synchronizace při obnově připojení
-watch(isOnline, (online) => {
-  if (online && currentUser.value && isSupabaseConfigured()) {
-    triggerSync(true);
+async function applyServerProfile(serverProfile) {
+  if (!serverProfile || !currentUser.value) return;
+  const newSettings = settingsFromProfileRow(serverProfile);
+  if (newSettings) {
+    settings.value = newSettings;
+    await putUserSettings(currentUser.value.userKey, newSettings);
+    applyTheme();
   }
-});
+}
+
+async function handleSyncUpdate(recordsMap, serverProfile) {
+  if (recordsMap) records.value = recordsMap;
+  if (serverProfile) await applyServerProfile(serverProfile);
+}
+
+async function handleInvalidSession() {
+  await handleLogout();
+  openLoginModal();
+}
+
+function startSyncService() {
+  if (!currentUser.value) return;
+  startForegroundSync(currentUser.value, settings.value, handleSyncUpdate, {
+    onVerifySession: verifySession,
+    onInvalidSession: handleInvalidSession
+  });
+}
 
 async function triggerSync(pushLocalDays = true) {
   if (!currentUser.value) {
@@ -349,6 +369,9 @@ async function triggerSync(pushLocalDays = true) {
     const res = await sync(currentUser.value, settings.value, { pushLocalDays });
     if (res?.recordsMap) {
       records.value = res.recordsMap;
+    }
+    if (res?.serverProfile) {
+      await applyServerProfile(res.serverProfile);
     }
     showToast('Data byla synchronizována', '✓');
   } catch (err) {
@@ -489,10 +512,8 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
     const userKey = currentUser.value?.userKey;
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
     if (isSupabaseConfigured()) {
-      triggerSync(false);
-      startForegroundSync(currentUser.value, settings.value, (newMap) => {
-        records.value = newMap;
-      });
+      await triggerSync(false);
+      startSyncService();
     }
   } catch (err) {
     alert(err.message || 'Přihlášení selhalo');
@@ -509,10 +530,8 @@ async function handleBiometricLogin() {
     const userKey = currentUser.value?.userKey;
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
     if (isSupabaseConfigured()) {
-      triggerSync(false);
-      startForegroundSync(currentUser.value, settings.value, (newMap) => {
-        records.value = newMap;
-      });
+      await triggerSync(false);
+      startSyncService();
     }
   } catch (err) {
     alert(err.message || 'Biometrické přihlášení selhalo');
@@ -546,10 +565,8 @@ async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, in
     await loadSettings(userKey);
     await loadRecords(userKey);
     if (isSupabaseConfigured()) {
-      triggerSync(mergeLocal);
-      startForegroundSync(currentUser.value, settings.value, (newMap) => {
-        records.value = newMap;
-      });
+      await triggerSync(mergeLocal);
+      startSyncService();
     }
   } catch (err) {
     alert(err.message || 'Registrace selhala');

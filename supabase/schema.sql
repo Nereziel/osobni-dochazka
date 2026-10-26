@@ -313,7 +313,26 @@ declare
   v_token_hash text;
   v_expires_at timestamptz;
 begin
+  -- 1. Explicitní validace vstupů proti NULL a prázdným hodnotám (prevence NULL auth bypassu)
+  if p_username is null or trim(p_username) = '' or p_pin is null or length(p_pin) < 1 then
+    perform crypt(coalesce(p_pin, 'dummy_pin'), '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUUWXYZ123456');
+    return jsonb_build_object(
+      'success', false,
+      'error', 'invalid_credentials',
+      'message', 'Neplatné přihlašovací údaje.'
+    );
+  end if;
+
   v_clean_user := lower(trim(regexp_replace(p_username, '[^a-zA-Z0-9._-]', '', 'g')));
+  if length(v_clean_user) < 1 then
+    perform crypt(p_pin, '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUUWXYZ123456');
+    return jsonb_build_object(
+      'success', false,
+      'error', 'invalid_credentials',
+      'message', 'Neplatné přihlašovací údaje.'
+    );
+  end if;
+
   v_user_key := 'user:' || v_clean_user;
 
   select * into v_profile
@@ -326,7 +345,7 @@ begin
     return jsonb_build_object(
       'success', false,
       'error', 'invalid_credentials',
-      'message', 'Neplatné uživatelské jméno nebo PIN.'
+      'message', 'Neplatné přihlašovací údaje.'
     );
   end if;
 
@@ -340,22 +359,22 @@ begin
     return jsonb_build_object(
       'success', false,
       'error', 'invalid_credentials',
-      'message', 'Neplatné uživatelské jméno nebo PIN.'
+      'message', 'Neplatné přihlašovací údaje.'
     );
   end if;
 
-  -- Kontrola dočasného zámku účtu
+  -- Kontrola dočasného zámku účtu (externě vrací generickou chybu pro zamezení user enumeration)
   if v_cred.locked_until is not null and v_cred.locked_until > now() then
+    perform crypt(p_pin, '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUUWXYZ123456');
     return jsonb_build_object(
       'success', false,
-      'error', 'account_locked',
-      'message', 'Účet je dočasně uzamčen z bezpečnostních důvodů. Zkuste to za chvíli.',
-      'locked_until', v_cred.locked_until
+      'error', 'invalid_credentials',
+      'message', 'Neplatné přihlašovací údaje.'
     );
   end if;
 
-  -- Ověření PINu přes bcrypt
-  v_is_valid := (crypt(p_pin, v_cred.pin_password_hash) = v_cred.pin_password_hash);
+  -- Bezpečné ověření PINu přes bcrypt (coalesce chrání před tříhodnotovou logikou NULL)
+  v_is_valid := coalesce(crypt(p_pin, v_cred.pin_password_hash) = v_cred.pin_password_hash, false);
 
   if not v_is_valid then
     v_new_failed := v_cred.failed_login_count + 1;
@@ -374,20 +393,10 @@ begin
         updated_at = now()
     where user_key = v_user_key;
 
-    if v_lock_until is not null then
-      return jsonb_build_object(
-        'success', false,
-        'error', 'account_locked',
-        'message', 'Příliš mnoho neúspěšných pokusů. Účet byl dočasně uzamčen.',
-        'locked_until', v_lock_until
-      );
-    end if;
-
     return jsonb_build_object(
       'success', false,
       'error', 'invalid_credentials',
-      'message', 'Neplatné uživatelské jméno nebo PIN.',
-      'failed_attempts', v_new_failed
+      'message', 'Neplatné přihlašovací údaje.'
     );
   end if;
 
@@ -547,8 +556,9 @@ begin
     return jsonb_build_object('success', false, 'error', 'unauthorized', 'message', 'Uživatel není přihlášen.');
   end if;
 
-  if length(p_new_pin) < 4 then
-    return jsonb_build_object('success', false, 'error', 'pin_too_short', 'message', 'Nový PIN musí mít alespoň 4 znaky.');
+  -- Explicitní validace původního i nového PINu proti NULL a minimální délce
+  if p_old_pin is null or length(p_old_pin) < 1 or p_new_pin is null or length(p_new_pin) < 4 then
+    return jsonb_build_object('success', false, 'error', 'invalid_pin', 'message', 'Původní PIN i nový PIN (min. 4 znaky) musí být zadány.');
   end if;
 
   select * into v_cred
@@ -560,7 +570,8 @@ begin
     return jsonb_build_object('success', false, 'error', 'not_found', 'message', 'Uživatel nebyl nalezen.');
   end if;
 
-  v_old_valid := (crypt(p_old_pin, v_cred.pin_password_hash) = v_cred.pin_password_hash);
+  -- Bezpečné porovnání původního PINu s ochranou před tříhodnotovou logikou NULL
+  v_old_valid := coalesce(crypt(p_old_pin, v_cred.pin_password_hash) = v_cred.pin_password_hash, false);
 
   if not v_old_valid then
     return jsonb_build_object('success', false, 'error', 'invalid_old_pin', 'message', 'Původní PIN není správný.');
@@ -786,10 +797,32 @@ as $$
 declare
   v_user_key text;
   v_result public.attendance_profiles%rowtype;
+  v_work_days integer[];
+  v_item jsonb;
+  v_day_num integer;
+  v_safe_settings jsonb;
 begin
   v_user_key := public.current_session_user_key();
   if v_user_key = '' then
     raise exception 'Neautorizovaný přístup: Neplatná nebo chybějící session.';
+  end if;
+
+  -- Zpracování a validace work_days pole (dny v týdnu 0..6: 1=Po, 2=Út, 3=St, 4=Čt, 5=Pá, 6=So, 0=Ne)
+  if p_settings ? 'work_days' and jsonb_typeof(p_settings->'work_days') = 'array' then
+    v_work_days := array[]::integer[];
+    for v_item in select * from jsonb_array_elements(p_settings->'work_days') loop
+      if jsonb_typeof(v_item) = 'number' then
+        v_day_num := v_item::text::integer;
+        if v_day_num between 0 and 6 and not (v_work_days @> array[v_day_num]) then
+          v_work_days := array_append(v_work_days, v_day_num);
+        end if;
+      end if;
+    end loop;
+  end if;
+
+  -- Bezpečnostní filtrace settings_json: odstranění citlivých atributů před uložením
+  if p_settings ? 'settings_json' and jsonb_typeof(p_settings->'settings_json') = 'object' then
+    v_safe_settings := p_settings->'settings_json' - 'role' - 'username' - 'user_key' - 'pin' - 'pin_password_hash' - 'credentials' - 'sessions';
   end if;
 
   update public.attendance_profiles
@@ -800,6 +833,7 @@ begin
     break_minutes = coalesce((p_settings->>'break_minutes')::integer, break_minutes),
     break_after_minutes = coalesce((p_settings->>'break_after_minutes')::integer, break_after_minutes),
     auto_fill = coalesce((p_settings->>'auto_fill')::boolean, auto_fill),
+    work_days = coalesce(v_work_days, work_days),
     work_weekends = coalesce((p_settings->>'work_weekends')::boolean, work_weekends),
     weekend_mode = coalesce(p_settings->>'weekend_mode', weekend_mode),
     weekend_custom_hours = coalesce((p_settings->>'weekend_custom_hours')::boolean, weekend_custom_hours),
@@ -808,7 +842,7 @@ begin
     weekend_target_minutes = coalesce((p_settings->>'weekend_target_minutes')::integer, weekend_target_minutes),
     work_on_holidays = coalesce((p_settings->>'work_on_holidays')::boolean, work_on_holidays),
     theme = coalesce(p_settings->>'theme', theme),
-    settings_json = coalesce(p_settings->'settings_json', settings_json),
+    settings_json = coalesce(v_safe_settings, settings_json),
     updated_at = now()
   where user_key = v_user_key
   returning * into v_result;
@@ -823,12 +857,13 @@ begin
     'username', v_result.username,
     'display_name', v_result.display_name,
     'role', v_result.role,
+    'work_days', v_result.work_days,
     'updated_at', v_result.updated_at
   );
 end;
 $$;
 
--- Správce: generování pozvánky
+-- Správce: generování pozvánky (vždy výhradně pro roli employee)
 create or replace function public.admin_create_invite(
   p_target_role text default 'employee'
 )
@@ -846,10 +881,7 @@ begin
     raise exception 'Přístup odepřen: Pouze správce může generovat pozvánky.';
   end if;
 
-  if p_target_role not in ('employee', 'admin') then
-    raise exception 'Neplatná role. Podporované role: employee, admin.';
-  end if;
-
+  -- Pozvánky se generují výhradně pro roli employee. Povýšení na admina provádí správce dodatečně přes admin_change_user_role().
   v_creator := public.current_session_user_key();
   v_code := 'INV-' || upper(encode(gen_random_bytes(16), 'hex'));
   v_expires := now() + interval '14 days';
@@ -862,7 +894,7 @@ begin
   ) values (
     v_code,
     v_creator,
-    p_target_role,
+    'employee',
     v_expires
   );
 
@@ -920,7 +952,7 @@ begin
 end;
 $$;
 
--- Správce: změna role uživatele
+-- Správce: změna role uživatele (s ochranou proti odebrání posledního administrátora)
 create or replace function public.admin_change_user_role(
   p_target_user_key text,
   p_new_role text
@@ -930,6 +962,8 @@ language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
+declare
+  v_other_admins integer;
 begin
   if not public.is_admin() then
     raise exception 'Přístup odepřen: Pouze správce může měnit role.';
@@ -937,6 +971,20 @@ begin
 
   if p_new_role not in ('admin', 'employee') then
     raise exception 'Neplatná role. Podporované role: employee, admin.';
+  end if;
+
+  -- Ochrana posledního administrátora v systému: nelze odebrat roli admin, pokud by žádný admin nezbyl
+  if p_new_role = 'employee' and exists (
+    select 1 from public.attendance_profiles
+    where user_key = p_target_user_key and role = 'admin'
+  ) then
+    select count(*) into v_other_admins
+    from public.attendance_profiles
+    where role = 'admin' and user_key <> p_target_user_key;
+
+    if v_other_admins = 0 then
+      raise exception 'Operaci nelze provést: Nelze odebrat roli poslednímu administrátorovi v systému.';
+    end if;
   end if;
 
   update public.attendance_profiles
@@ -948,7 +996,7 @@ begin
 end;
 $$;
 
--- Správce: smazání uživatele (čistý kaskádový úklid profilu, credentials, sessions i pozvánek)
+-- Správce: smazání uživatele (s ochranou proti smazání posledního administrátora)
 create or replace function public.admin_delete_user(
   p_target_user_key text
 )
@@ -957,6 +1005,8 @@ language plpgsql
 security definer
 set search_path = public, extensions, pg_temp
 as $$
+declare
+  v_other_admins integer;
 begin
   if not public.is_admin() then
     raise exception 'Přístup odepřen: Pouze správce může mazat uživatele.';
@@ -964,6 +1014,20 @@ begin
 
   if p_target_user_key = public.current_session_user_key() then
     raise exception 'Nemůžeš smazat svůj vlastní přihlášený administrátorský účet.';
+  end if;
+
+  -- Ochrana posledního administrátora: nelze smazat účet, pokud by v systému nezbyl žádný administrátor
+  if exists (
+    select 1 from public.attendance_profiles
+    where user_key = p_target_user_key and role = 'admin'
+  ) then
+    select count(*) into v_other_admins
+    from public.attendance_profiles
+    where role = 'admin' and user_key <> p_target_user_key;
+
+    if v_other_admins = 0 then
+      raise exception 'Operaci nelze provést: Nelze smazat posledního administrátora v systému.';
+    end if;
   end if;
 
   -- Úklid pozvánek vytvořených tímto uživatelem
@@ -978,7 +1042,7 @@ begin
 end;
 $$;
 
--- Správce: bezpečný úklid starých smazaných záznamů (tombstones)
+-- Správce: bezpečný úklid starých smazaných záznamů (tombstones) s minimální retencí 30 dní
 create or replace function public.admin_cleanup_old_tombstones(
   p_retention_days integer default 90
 )
@@ -988,6 +1052,7 @@ security definer
 set search_path = public, pg_temp
 as $$
 declare
+  v_retention_days integer;
   v_deleted_count integer;
   v_cutoff timestamptz;
 begin
@@ -995,7 +1060,9 @@ begin
     raise exception 'Přístup odepřen: Pouze správce může provádět údržbu databáze.';
   end if;
 
-  v_cutoff := now() - (coalesce(p_retention_days, 90) || ' days')::interval;
+  -- Minimální retence je 30 dní (ochrana před smazáním čerstvých tombstones při předání 0 nebo záporné hodnoty)
+  v_retention_days := greatest(coalesce(p_retention_days, 90), 30);
+  v_cutoff := now() - (v_retention_days || ' days')::interval;
 
   delete from public.attendance_days
   where deleted_at is not null

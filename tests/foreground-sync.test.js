@@ -25,7 +25,7 @@ class MockEventTarget {
   }
 }
 
-describe('Foreground 5s periodic sync, visibility and serialization', () => {
+describe('Foreground 10s periodic sync, visibility and serialization', () => {
   const currentUser = {
     userKey: 'user:martin',
     username: 'martin',
@@ -183,6 +183,57 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
       incremental: false,
       fetchProfile: true
     });
+
+    stopForegroundSync();
+  });
+
+  it('unified reconnect flow: verifies session on online event before running full sync', async () => {
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+
+    const fakeVerify = vi.fn().mockResolvedValue(true);
+
+    const { startForegroundSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, currentSettings, null, {
+      onVerifySession: fakeVerify
+    });
+
+    globalThis.window.dispatchEvent({ type: 'online' });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fakeVerify).toHaveBeenCalledTimes(1);
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+
+    stopForegroundSync();
+  });
+
+  it('unified reconnect flow: invalid session calls onInvalidSession and does not sync', async () => {
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+
+    const fakeVerify = vi.fn().mockResolvedValue(false);
+    const fakeInvalid = vi.fn();
+
+    const { startForegroundSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, currentSettings, null, {
+      onVerifySession: fakeVerify,
+      onInvalidSession: fakeInvalid
+    });
+
+    globalThis.window.dispatchEvent({ type: 'online' });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fakeVerify).toHaveBeenCalledTimes(1);
+    expect(fakeInvalid).toHaveBeenCalledTimes(1);
+    expect(syncSpy).not.toHaveBeenCalled();
 
     stopForegroundSync();
   });

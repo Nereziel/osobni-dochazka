@@ -33,6 +33,11 @@ declare
   v_reg_res jsonb;
   v_active_count integer;
   v_has_priv boolean;
+  v_res_nonexist jsonb;
+  v_res_wrong_pin jsonb;
+  v_sessions_before integer;
+  v_sessions_after integer;
+  v_pin_res jsonb;
 begin
   raise notice '====================================================================';
   raise notice '>>> SPUŠTĚNÍ KOMPLETNÍCH SQL BEZPEČNOSTNÍCH TESTŮ... <<<';
@@ -102,10 +107,11 @@ begin
   raise notice '✓ TEST 1 PROŠEL: Přísná tabulková oprávnění pro REST role jsou 100%% v pořádku.';
 
   -- --------------------------------------------------------------------------
-  -- TEST 2: BRUTE-FORCE OCHRANA A PERSISTENCE COUNTERU (BEZ ROLLBACKU)
+  -- TEST 2: BRUTE-FORCE OCHRANA, NULL PIN BYPASS A PERSISTENCE COUNTERU
   -- --------------------------------------------------------------------------
+  -- 1. Pokus se špatným PINem
   v_login_res := public.login_attendance_user(v_test_user, 'wrong_pin', true);
-  if (v_login_res->>'success')::boolean is not false then
+  if (v_login_res->>'success')::boolean is not false or v_login_res->>'error' <> 'invalid_credentials' then
     raise exception 'TEST 2 SELHAL: Přihlášení se špatným PINem mělo vrátit success = false.';
   end if;
 
@@ -116,16 +122,42 @@ begin
   if v_cred_row.failed_login_count <> 1 then
     raise exception 'TEST 2 SELHAL: failed_login_count se neuložil v transakci.';
   end if;
-  raise notice '✓ TEST 2 PROŠEL: Brute-force counter se trvale uložil do DB i při neplatném PINu.';
+
+  -- 2. Kritický test: NULL PIN ani NULL username nesmí uspět a nesmí vytvořit session
+  v_sessions_before := (select count(*) from public.attendance_sessions where user_key = v_test_key);
+  v_login_res := public.login_attendance_user(v_test_user, null, true);
+  v_sessions_after := (select count(*) from public.attendance_sessions where user_key = v_test_key);
+
+  if (v_login_res->>'success')::boolean is not false or v_sessions_after <> v_sessions_before then
+    raise exception 'TEST 2 SELHAL: Login s NULL PINem nesmí uspět ani vytvořit session!';
+  end if;
+
+  v_login_res := public.login_attendance_user(null, '5678', true);
+  if (v_login_res->>'success')::boolean is not false then
+    raise exception 'TEST 2 SELHAL: Login s NULL username nesmí uspět!';
+  end if;
+
+  raise notice '✓ TEST 2 PROŠEL: Brute-force counter funguje, NULL PIN/username je bezpečně odmítnut bez vytvoření session.';
 
   -- --------------------------------------------------------------------------
-  -- TEST 3: OCHRANA PROTI TIMING ENUMERATION NEEXISTUJÍCÍCH UŽIVATELŮ
+  -- TEST 3: OCHRANA PROTI USERNAME ENUMERATION A TIMING ÚTOKŮM
   -- --------------------------------------------------------------------------
-  v_login_res := public.login_attendance_user('non_existing_ghost_user_999', 'some_pin', true);
-  if (v_login_res->>'success')::boolean is not false or v_login_res->>'error' <> 'invalid_credentials' then
-    raise exception 'TEST 3 SELHAL: Neexistující uživatel musí vrátit stejnou chybu invalid_credentials.';
+  -- Porovnání response neexistujícího uživatele a existujícího účtu se špatným PINem
+  v_res_nonexist := public.login_attendance_user('non_existing_ghost_user_999', 'wrong_pin_1234', true);
+  v_res_wrong_pin := public.login_attendance_user(v_test_user, 'wrong_pin_1234', true);
+
+  if (v_res_nonexist->>'success')::boolean <> (v_res_wrong_pin->>'success')::boolean or
+     v_res_nonexist->>'error' <> v_res_wrong_pin->>'error' or
+     v_res_nonexist->>'message' <> v_res_wrong_pin->>'message' then
+    raise exception 'TEST 3 SELHAL: Odpověď pro neexistujícího uživatele se liší od existujícího: nonexist=%, exist=%', v_res_nonexist, v_res_wrong_pin;
   end if;
-  raise notice '✓ TEST 3 PROŠEL: Neexistující uživatel vrací identickou generickou odpověď jako špatný PIN.';
+
+  -- Response nesmí obsahovat interní metadata (failed_attempts, locked_until, account_locked)
+  if v_res_wrong_pin ? 'failed_attempts' or v_res_wrong_pin ? 'locked_until' or v_res_wrong_pin ? 'account_locked' then
+    raise exception 'TEST 3 SELHAL: Odpověď nesmí obsahovat interní lockout metadata (failed_attempts/locked_until).';
+  end if;
+
+  raise notice '✓ TEST 3 PROŠEL: Ochrana proti username enumeration ověřena: neexistující účet vrací identickou odpověď a nepropouští metadata.';
 
   -- --------------------------------------------------------------------------
   -- TEST 4: ÚSPĚŠNÉ PŘIHLÁŠENÍ, RESET COUNTERU A GENEROVÁNÍ 256-BIT TOKENU
@@ -227,9 +259,16 @@ begin
   raise notice '✓ TEST 7 PROŠEL: Administrátorské RPC funkce jsou spolehlivě blokovány pro běžného zaměstnance.';
 
   -- --------------------------------------------------------------------------
-  -- TEST 8: ZMĚNA PINU REVOKUJE OSTATNÍ SESSIONS UŽIVATELE
+  -- TEST 8: ZMĚNA PINU: VALIDACE NULL A REVOKACE OSTATNÍCH SESSIONS
   -- --------------------------------------------------------------------------
-  -- Vytvoříme 2. relaci pro uživatele A
+  -- 1. Změna PINu s NULL starým PINem musí být zamítnuta
+  perform set_config('request.headers', json_build_object('x-attendance-session', v_session_token)::text, true);
+  v_pin_res := public.change_attendance_pin(null, 'new_pin_999', true);
+  if (v_pin_res->>'success')::boolean is not false or (v_pin_res->>'error') <> 'invalid_pin' then
+    raise exception 'TEST 8 SELHAL: Změna PINu s NULL původním PINem musí selhat s invalid_pin.';
+  end if;
+
+  -- 2. Vytvoříme 2. relaci pro uživatele A
   v_login_res := public.login_attendance_user(v_test_user, v_pin, true);
   v_session_token_b := v_login_res->>'session_token';
 
@@ -248,7 +287,7 @@ begin
   if public.current_session_user_key() <> v_test_key then
     raise exception 'TEST 8 SELHAL: Aktuální session měla zůstat aktivní.';
   end if;
-  raise notice '✓ TEST 8 PROŠEL: Změna PINu úspěšně revokovala všechny ostatní sessions uživatele.';
+  raise notice '✓ TEST 8 PROŠEL: Změna PINu vyžaduje validní vstupy (NULL zamítnut) a úspěšně revokuje ostatní sessions.';
 
   -- --------------------------------------------------------------------------
   -- TEST 9: ADMIN RESET PINU REVOKUJE VŠECHNY RELACE CÍLOVÉHO UŽIVATELE
@@ -297,6 +336,59 @@ begin
     raise exception 'TEST 10 SELHAL: Starší příchozí změna měla být bezpečně odmítnuta.';
   end if;
   raise notice '✓ TEST 10 PROŠEL: Atomický LWW bezpečně odmítl starší záznam bez porušení konzistence.';
+
+  -- --------------------------------------------------------------------------
+  -- TEST 11: OCHRANA POSLEDNÍHO ADMINISTRÁTORA
+  -- --------------------------------------------------------------------------
+  perform set_config('request.headers', json_build_object('x-attendance-session', v_admin_session)::text, true);
+
+  -- 1. Pokus odebrat roli poslednímu adminovi
+  begin
+    perform public.admin_change_user_role(v_admin_key, 'employee');
+    raise exception 'TEST 11 SELHAL: Poslední admin nesmí být degradován na employee.';
+  exception
+    when others then
+      if sqlerrm not like '%poslední%' then
+        raise exception 'TEST 11 SELHAL: Neočekávaná chyba při degradaci posledního admina: %', sqlerrm;
+      end if;
+  end;
+
+  -- 2. Pokus smazat posledního admina
+  begin
+    perform public.admin_delete_user(v_admin_key);
+    raise exception 'TEST 11 SELHAL: Poslední admin nesmí být smazán.';
+  exception
+    when others then
+      if sqlerrm not like '%poslední%' and sqlerrm not like '%vlastní%' then
+        raise exception 'TEST 11 SELHAL: Neočekávaná chyba při mazání posledního admina: %', sqlerrm;
+      end if;
+  end;
+
+  -- 3. Ověření, že změna role admina je povolena, pokud existuje jiný admin
+  insert into public.attendance_profiles (user_key, username, display_name, role)
+  values ('user:second_admin', 'second_admin', 'Second Admin', 'admin');
+
+  perform public.admin_change_user_role('user:second_admin', 'employee');
+  delete from public.attendance_profiles where user_key = 'user:second_admin';
+
+  raise notice '✓ TEST 11 PROŠEL: Systém spolehlivě brání degradaci i smazání posledního administrátora.';
+
+  -- --------------------------------------------------------------------------
+  -- TEST 12: TOMBSTONE RETENTION MINIMUM 30 DNÍ
+  -- --------------------------------------------------------------------------
+  -- Vložíme smazaný den docházky smazaný před 5 dny
+  insert into public.attendance_days (user_key, date, type, deleted_at, updated_at)
+  values (v_test_key, '2026-01-05', 'work', now() - interval '5 days', now());
+
+  -- Pokus o cleanup s hodnotou 0 dní (musí vynutit minimum 30 dní)
+  perform public.admin_cleanup_old_tombstones(0);
+
+  if not exists (select 1 from public.attendance_days where user_key = v_test_key and date = '2026-01-05') then
+    raise exception 'TEST 12 SELHAL: admin_cleanup_old_tombstones(0) smazal tombstone mladší než 30 dní!';
+  end if;
+
+  delete from public.attendance_days where user_key = v_test_key and date = '2026-01-05';
+  raise notice '✓ TEST 12 PROŠEL: admin_cleanup_old_tombstones striktně dodržuje minimální retenci 30 dní i při zadání 0.';
 
   -- --------------------------------------------------------------------------
   -- ÚKLID TESTOVACÍCH DAT

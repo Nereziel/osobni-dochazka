@@ -22,6 +22,8 @@ let pollingTimer = null;
 let activeUser = null;
 let activeSettings = null;
 let onSyncCompletedCallback = null;
+let onVerifySessionCallback = null;
+let onInvalidSessionCallback = null;
 let listenersAttached = false;
 
 export function useSync() {
@@ -59,10 +61,10 @@ export function useSync() {
         fetchProfile: false
       });
       if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
-        onSyncCompletedCallback(res.recordsMap);
+        onSyncCompletedCallback(res.recordsMap, res.serverProfile);
       }
     } catch (err) {
-      console.warn('Periodická 5s synchronizace selhala:', err);
+      console.warn('Periodická 10s synchronizace selhala:', err);
     }
   }
 
@@ -84,7 +86,7 @@ export function useSync() {
     if (typeof document === 'undefined') return;
     if (document.visibilityState === 'visible') {
       if (typeof navigator === 'undefined' || navigator.onLine) {
-        // Okamžitá synchronizace při návratu do foreground a restart 5s intervalu
+        // Okamžitá synchronizace při návratu do foreground a restart 10s intervalu
         triggerPeriodicSync();
         startPollingTimer();
       }
@@ -94,11 +96,36 @@ export function useSync() {
     }
   }
 
-  function onOnline() {
-    // Obnova online stavu -> okamžitý full sync
+  async function onOnline() {
+    // Jednotný reconnect flow:
+    // online -> verifySession -> pokud validní: full sync pushLocalDays=true -> resume periodic polling
+    //                            pokud nevalidní: logout / login
     if (activeUser?.userKey) {
-      sync(activeUser, activeSettings, { pushLocalDays: true }).catch(() => {});
+      if (typeof onVerifySessionCallback === 'function') {
+        const isValid = await onVerifySessionCallback();
+        if (!isValid) {
+          stopPollingTimer();
+          if (typeof onInvalidSessionCallback === 'function') {
+            onInvalidSessionCallback();
+          }
+          return;
+        }
+      }
+
+      try {
+        const res = await sync(activeUser, activeSettings, {
+          pushLocalDays: true,
+          incremental: false,
+          fetchProfile: true
+        });
+        if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
+          onSyncCompletedCallback(res.recordsMap, res.serverProfile);
+        }
+      } catch (err) {
+        console.warn('Reconnect full sync selhal:', err);
+      }
     }
+
     if (typeof document === 'undefined' || document.visibilityState === 'visible') {
       startPollingTimer();
     }
@@ -110,14 +137,20 @@ export function useSync() {
   }
 
   /**
-   * Zahájení 5s pollingu v popředí
+   * Zahájení periodického pollingu v popředí
    */
-  function startForegroundSync(currentUser, currentSettings, onRecordsUpdated) {
+  function startForegroundSync(currentUser, currentSettings, onRecordsUpdated, options = {}) {
     activeUser = currentUser;
     activeSettings = currentSettings;
 
     if (typeof onRecordsUpdated === 'function') {
       onSyncCompletedCallback = onRecordsUpdated;
+    }
+    if (typeof options?.onVerifySession === 'function') {
+      onVerifySessionCallback = options.onVerifySession;
+    }
+    if (typeof options?.onInvalidSession === 'function') {
+      onInvalidSessionCallback = options.onInvalidSession;
     }
 
     if (!isSupabaseConfigured() || !currentUser?.userKey) {
@@ -138,13 +171,15 @@ export function useSync() {
   }
 
   /**
-   * Zastavení 5s pollingu a úklid
+   * Zastavení periodického pollingu a úklid
    */
   function stopForegroundSync() {
     stopPollingTimer();
     activeUser = null;
     activeSettings = null;
     onSyncCompletedCallback = null;
+    onVerifySessionCallback = null;
+    onInvalidSessionCallback = null;
 
     if (listenersAttached && typeof window !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);
