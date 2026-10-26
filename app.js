@@ -15,6 +15,11 @@
   const DB_VERSION = 3;
   const LS_SUPABASE_KEY = 'dochazka_supabase_config_v2';
   const LS_USER_KEY = 'dochazka_active_user_v2';
+  const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
+  const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
+  const APP_VERSION = 'v2.4.0';
+  const APP_BUILD_DATE = '2026.10';
+  const APP_SW_CACHE = 'Cache v6';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -67,97 +72,6 @@
     'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
     'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'
   ];
-
-  const SQL_SCHEMA_TEXT = `-- ============================================================================
--- OSOBNÍ DOCHÁZKA PWA – DATABÁZE PRO SUPABASE (PostgreSQL)
--- Spusť tento skript v Supabase -> SQL Editor -> New query -> Run
--- ============================================================================
-
-create extension if not exists pgcrypto;
-
-create table if not exists public.attendance_profiles (
-  user_key text primary key,
-  username text not null unique,
-  display_name text not null default '',
-  pin_hash text not null default '',
-  work_start text not null default '06:30',
-  work_end text not null default '15:30',
-  daily_target_minutes integer not null default 510 check (daily_target_minutes between 0 and 1440),
-  break_minutes integer not null default 30 check (break_minutes between 0 and 240),
-  break_after_minutes integer not null default 360 check (break_after_minutes between 0 and 1440),
-  auto_fill boolean not null default true,
-  work_days integer[] not null default '{1,2,3,4,5}',
-  work_weekends boolean not null default false,
-  weekend_mode text not null default 'none' check (weekend_mode in ('none', 'saturday', 'sunday', 'both', 'custom')),
-  weekend_custom_hours boolean not null default false,
-  weekend_start text not null default '07:00',
-  weekend_end text not null default '15:30',
-  weekend_target_minutes integer not null default 480 check (weekend_target_minutes between 0 and 1440),
-  work_on_holidays boolean not null default false,
-  vacation_allowance_days numeric(4,1) not null default 20.0,
-  theme text not null default 'system' check (theme in ('system', 'light', 'dark')),
-  settings_json jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.attendance_days (
-  id uuid primary key default gen_random_uuid(),
-  user_key text not null references public.attendance_profiles(user_key) on delete cascade,
-  date date not null,
-  type text not null default 'work' check (
-    type in ('work','homeOffice','businessTrip','vacation','halfVacation','doctor','sick','holiday','compTime','other')
-  ),
-  start_time text not null default '',
-  end_time text not null default '',
-  manual_break boolean not null default false,
-  break_minutes integer not null default 30,
-  doctor_full_day boolean not null default false,
-  doctor_start text not null default '',
-  doctor_end text not null default '',
-  other_minutes integer not null default 0,
-  worked_minutes integer not null default 0,
-  credited_minutes integer not null default 0,
-  target_minutes integer not null default 0,
-  balance_minutes integer not null default 0,
-  note text not null default '',
-  updated_at timestamptz not null default now(),
-  unique (user_key, date)
-);
-
-create index if not exists idx_attendance_days_user_date
-  on public.attendance_days (user_key, date desc);
-
-create or replace function public.req_user_key()
-returns text language sql stable as $$
-  select coalesce(nullif(split_part(current_setting('request.headers', true)::json->>'x-client-info', '|', 2), ''), '');
-$$;
-
-create or replace function public.req_pin_hash()
-returns text language sql stable as $$
-  select coalesce(nullif(split_part(current_setting('request.headers', true)::json->>'x-client-info', '|', 3), ''), '');
-$$;
-
-alter table public.attendance_profiles enable row level security;
-alter table public.attendance_days enable row level security;
-
-drop policy if exists "Secure access to own profile" on public.attendance_profiles;
-create policy "Secure access to own profile"
-  on public.attendance_profiles for all to anon, authenticated
-  using (user_key = public.req_user_key() and pin_hash = public.req_pin_hash())
-  with check (user_key = public.req_user_key() and pin_hash = public.req_pin_hash());
-
-drop policy if exists "Secure access to own attendance days" on public.attendance_days;
-create policy "Secure access to own attendance days"
-  on public.attendance_days for all to anon, authenticated
-  using (
-    user_key = public.req_user_key()
-    and exists (select 1 from public.attendance_profiles p where p.user_key = attendance_days.user_key and p.pin_hash = public.req_pin_hash())
-  )
-  with check (
-    user_key = public.req_user_key()
-    and exists (select 1 from public.attendance_profiles p where p.user_key = attendance_days.user_key and p.pin_hash = public.req_pin_hash())
-  );`;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
@@ -537,16 +451,149 @@ create policy "Secure access to own attendance days"
 
   function loadCurrentUser() {
     try {
-      return JSON.parse(localStorage.getItem(LS_USER_KEY) || 'null');
+      const remember = localStorage.getItem(LS_REMEMBER_KEY);
+      if (remember === 'false') {
+        // Uživatel si nepřál trvalé uložení přihlášení
+        return JSON.parse(sessionStorage.getItem(LS_USER_KEY) || 'null');
+      }
+      return JSON.parse(localStorage.getItem(LS_USER_KEY) || sessionStorage.getItem(LS_USER_KEY) || 'null');
     } catch {
       return null;
     }
   }
 
-  function saveCurrentUser(user) {
+  function saveCurrentUser(user, remember = true) {
     currentUser = user;
-    if (user) localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
-    else localStorage.removeItem(LS_USER_KEY);
+    if (user) {
+      if (remember) {
+        localStorage.setItem(LS_REMEMBER_KEY, 'true');
+        localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+        sessionStorage.removeItem(LS_USER_KEY);
+      } else {
+        localStorage.setItem(LS_REMEMBER_KEY, 'false');
+        localStorage.removeItem(LS_USER_KEY);
+        sessionStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+      }
+    } else {
+      localStorage.removeItem(LS_USER_KEY);
+      sessionStorage.removeItem(LS_USER_KEY);
+    }
+  }
+
+  // ============================================================================
+  // BIOMETRICKÉ OVĚŘENÍ (WebAuthn / Windows Hello / Touch ID / Face ID)
+  // ============================================================================
+  function isBiometricsSupported() {
+    return Boolean(window.PublicKeyCredential && navigator.credentials);
+  }
+
+  function getSavedBiometricsCredentials() {
+    try {
+      return JSON.parse(localStorage.getItem(LS_BIOMETRICS_KEY) || 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function saveBiometricsCredentials(cred) {
+    if (cred) localStorage.setItem(LS_BIOMETRICS_KEY, JSON.stringify(cred));
+    else localStorage.removeItem(LS_BIOMETRICS_KEY);
+  }
+
+  async function registerBiometricsForCurrentUser(pin) {
+    if (!isBiometricsSupported()) {
+      throw new Error('Tento prohlížeč nebo zařízení nepodporuje biometrické ověření (WebAuthn).');
+    }
+    if (!currentUser) throw new Error('Musíš být přihlášen.');
+
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const userId = new TextEncoder().encode(currentUser.username);
+
+    const publicKeyCredentialCreationOptions = {
+      challenge,
+      rp: {
+        name: 'Osobní docházka',
+        id: window.location.hostname || 'localhost'
+      },
+      user: {
+        id: userId,
+        name: currentUser.username,
+        displayName: currentUser.displayName || currentUser.username
+      },
+      pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+        residentKey: 'preferred'
+      },
+      timeout: 60000,
+      attestation: 'none'
+    };
+
+    const credential = await navigator.credentials.create({
+      publicKey: publicKeyCredentialCreationOptions
+    });
+
+    if (credential) {
+      const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+      saveBiometricsCredentials({
+        id: rawId,
+        username: currentUser.username,
+        pinHash: currentUser.pinHash,
+        displayName: currentUser.displayName,
+        role: currentUser.role || 'employee',
+        userKey: currentUser.userKey,
+        enabledAt: new Date().toISOString()
+      });
+      return true;
+    }
+    return false;
+  }
+
+  async function authenticateWithBiometrics() {
+    if (!isBiometricsSupported()) throw new Error('Biometrické ověření není podporováno.');
+    const saved = getSavedBiometricsCredentials();
+    if (!saved || !saved.id || !saved.username) {
+      throw new Error('Na tomto zařízení dosud není zaregistrována žádná biometrika. Přihlas se nejdříve jménem a PINem a biometriku povol v Nastavení.');
+    }
+
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    const credentialId = Uint8Array.from(atob(saved.id), c => c.charCodeAt(0));
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{
+          id: credentialId,
+          type: 'public-key',
+          transports: ['internal']
+        }],
+        userVerification: 'required',
+        timeout: 60000
+      }
+    });
+
+    if (assertion) {
+      // Úspěšné biometrické ověření uživatele -> obnovíme přihlášenou relaci
+      const candidateUser = {
+        userKey: saved.userKey,
+        username: saved.username,
+        displayName: saved.displayName,
+        pinHash: saved.pinHash,
+        role: saved.role || 'employee'
+      };
+
+      saveCurrentUser(candidateUser, true);
+      renderAll();
+      if (isCloudReady()) {
+        syncWithSupabase(false).catch(console.warn);
+      }
+      return `Vítej zpět, ${candidateUser.displayName}! (Ověřeno biometrikou)`;
+    }
+    throw new Error('Biometrické ověření selhalo.');
   }
 
   function isCloudReady() {
@@ -700,9 +747,9 @@ create policy "Secure access to own attendance days"
     if (!isCloudReady()) return;
     setSyncState('syncing');
     const row = profileRowFromSettings(currentUser);
-    await sbFetch('/rest/v1/attendance_profiles?on_conflict=user_key', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    await sbFetch(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
       body: JSON.stringify(row)
     });
     setSyncState('online');
@@ -731,7 +778,7 @@ create policy "Secure access to own attendance days"
   // ============================================================================
   // SAMOSTATNÉ PŘIHLÁŠENÍ & REGISTRACE
   // ============================================================================
-  async function performLogin(usernameInput, pinInput) {
+  async function performLogin(usernameInput, pinInput, rememberMe = true) {
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
@@ -758,7 +805,7 @@ create policy "Secure access to own attendance days"
           displayName: profile.display_name || cleanUser,
           pinHash,
           role: profile.role || 'employee'
-        });
+        }, rememberMe);
         applySettingsFromProfileRow(profile);
         await saveSettings(true);
         applyTheme();
@@ -776,7 +823,7 @@ create policy "Secure access to own attendance days"
         displayName: cleanUser,
         pinHash,
         role: 'admin'
-      });
+      }, rememberMe);
       setSyncState('local');
       renderAll();
       return `Přihlášen lokální profil ${cleanUser}.`;
@@ -797,6 +844,18 @@ create policy "Secure access to own attendance days"
     if (isSupabaseConfigured()) {
       setSyncState('syncing');
       try {
+        const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
+
+        // Kontrola, zda v DB již existují uživatelé – pokud ano, kód pozvánky je povinný!
+        try {
+          const checkUsers = await sbFetch('/rest/v1/attendance_profiles?select=user_key&limit=1');
+          if (checkUsers && checkUsers.length > 0 && !cleanInvite) {
+            throw new Error('Registrace nových uživatelů je v režimu Invite-Only. Zadej platný kód pozvánky od správce.');
+          }
+        } catch (checkErr) {
+          if (checkErr.message && checkErr.message.includes('Invite-Only')) throw checkErr;
+        }
+
         // Registrace přes zabezpečenou RPC funkci s kontrolou pozvánky
         const rpcRes = await sbFetch('/rest/v1/rpc/register_user_with_invite', {
           method: 'POST',
@@ -805,7 +864,7 @@ create policy "Secure access to own attendance days"
             p_username: cleanUser,
             p_display_name: displayNameInput.trim(),
             p_pin_hash: pinHash,
-            p_invite_code: (inviteCodeInput || '').trim()
+            p_invite_code: cleanInvite
           })
         });
 
@@ -913,12 +972,40 @@ create policy "Secure access to own attendance days"
       );
       if (profRows?.[0]) {
         applySettingsFromProfileRow(profRows[0]);
-        if (profRows[0].display_name) {
+        let userUpdated = false;
+        if (profRows[0].display_name && currentUser.displayName !== profRows[0].display_name) {
           currentUser.displayName = profRows[0].display_name;
+          userUpdated = true;
+        }
+        if (profRows[0].role && currentUser.role !== profRows[0].role) {
+          currentUser.role = profRows[0].role;
+          userUpdated = true;
+        }
+
+        // Pokud uživatel dosud nemá roli 'admin', zkusíme automaticky zjistit, zda v DB
+        // existuje nějaký správce. Pokud ne, uživatel je povýšen na Správce!
+        if (currentUser.role !== 'admin') {
+          try {
+            const claimRes = await sbFetch('/rest/v1/rpc/claim_initial_admin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}'
+            });
+            if (claimRes && claimRes.role === 'admin') {
+              currentUser.role = 'admin';
+              userUpdated = true;
+            }
+          } catch {
+            // Ignorováno – neběží v admin claim režimu
+          }
+        }
+
+        if (userUpdated) {
           saveCurrentUser(currentUser);
         }
         await saveSettings(true);
         applyTheme();
+        renderAuthAndSyncUI();
       }
 
       const remoteRows = await sbFetch(
@@ -982,6 +1069,25 @@ create policy "Secure access to own attendance days"
       else if (day.type === 'halfVacation') used += 0.5;
     }
     return used;
+  }
+
+  function monthVacationDays(monthDate) {
+    const y = monthDate.getFullYear();
+    const m = String(monthDate.getMonth() + 1).padStart(2, '0');
+    const prefix = `${y}-${m}-`;
+    let used = 0;
+    for (const [key, day] of records.entries()) {
+      if (!key.startsWith(prefix)) continue;
+      if (day.type === 'vacation') used += 1;
+      else if (day.type === 'halfVacation') used += 0.5;
+    }
+    return used;
+  }
+
+  function formatVacationDays(n) {
+    if (n === 1) return '1 den';
+    if (n >= 2 && n <= 4) return `${n} dny`;
+    return `${n.toLocaleString('cs-CZ')} dnů`;
   }
 
   function monthStats(monthDate) {
@@ -1135,7 +1241,7 @@ create policy "Secure access to own attendance days"
         cloudWidget.classList.add('online');
         sideStatusPill.classList.add('online');
         accSyncBadge.classList.add('online');
-        cloudLabel.textContent = 'Supabase Online';
+        cloudLabel.textContent = 'Online';
         sideStatusText.textContent = 'Cloud aktivní';
         accSyncBadge.textContent = 'Supabase synchronizováno';
       }
@@ -1158,10 +1264,37 @@ create policy "Secure access to own attendance days"
     $('#openChangePinModalBtn')?.classList.toggle('hidden', !currentUser);
     $('#logoutUserBtn')?.classList.toggle('hidden', !currentUser);
 
+    // Tlačítko pro biometrii v nastavení (pouze když je uživatel přihlášen a biometrika podporována)
+    const canBiometric = isBiometricsSupported() && !!currentUser;
+    $('#enableBiometricsBtn')?.classList.toggle('hidden', !canBiometric);
+
+    // V dialogu přihlášení zobrazit tlačítko biometrie, pokud existuje uložená registrace
+    const savedBio = getSavedBiometricsCredentials();
+    $('#biometricLoginRow')?.classList.toggle('hidden', !savedBio);
+
     // Správa týmu (pouze pro roli admin)
     const isAdmin = currentUser?.role === 'admin';
     $('#navItemTeam')?.classList.toggle('hidden', !isAdmin);
     $('#mNavItemTeam')?.classList.toggle('hidden', !isAdmin);
+    $('#openTeamFromSettingsBtn')?.classList.toggle('hidden', !isAdmin);
+    $('#settingsTeamCard')?.classList.toggle('hidden', !isAdmin);
+    $('#claimAdminBtn')?.classList.toggle('hidden', !currentUser || isAdmin);
+
+    const roleBadge = $('#accountRoleBadge');
+    if (roleBadge) {
+      if (currentUser) {
+        roleBadge.classList.remove('hidden');
+        if (isAdmin) {
+          roleBadge.className = 'role-badge admin';
+          roleBadge.textContent = 'Správce (Admin)';
+        } else {
+          roleBadge.className = 'role-badge employee';
+          roleBadge.textContent = 'Zaměstnanec';
+        }
+      } else {
+        roleBadge.classList.add('hidden');
+      }
+    }
 
     if (isAdmin) {
       $('#sidebarUserStatus')?.classList.remove('local');
@@ -1175,6 +1308,11 @@ create policy "Secure access to own attendance days"
     $('#sidebarPlanDays').textContent = formatScheduleDaysSummary();
     $('#sidebarPlanHours').textContent = `${settings.workStart} – ${settings.workEnd}`;
     $('#sidebarPlanTarget').textContent = `Denní fond: ${formatDuration(settings.dailyTargetMinutes)}`;
+  }
+
+  // Alias pro zpětnou kompatibilitu a bezpečnost (hoisted)
+  function renderProfile() {
+    renderAuthAndSyncUI();
   }
 
   function renderTodayDashboard() {
@@ -1488,11 +1626,19 @@ create policy "Secure access to own attendance days"
     $('#tsBreaksTotal').textContent = formatDuration(s.totalBreaks);
 
     const year = timesheetMonth.getFullYear();
-    const usedVac = yearVacationUsed(year);
-    const allowance = Number(settings.vacationAllowanceDays) || 20;
-    const remainingVac = Math.max(0, allowance - usedVac);
-    $('#tsVacationRemaining').textContent = `${remainingVac.toLocaleString('cs-CZ')} dnů`;
-    $('#tsVacationUsed').textContent = `vyčerpáno ${usedVac.toLocaleString('cs-CZ')} z ${allowance} dnů (${year})`;
+    const usedVacYear = yearVacationUsed(year);
+    const usedVacMonth = monthVacationDays(timesheetMonth);
+
+    const vacDaysEl = $('#tsVacationDays') || $('#tsVacationRemaining');
+    if (vacDaysEl) {
+      vacDaysEl.textContent = formatVacationDays(usedVacYear);
+    }
+    const vacInfoEl = $('#tsVacationInfo') || $('#tsVacationUsed');
+    if (vacInfoEl) {
+      vacInfoEl.textContent = usedVacMonth > 0
+        ? `${usedVacMonth.toLocaleString('cs-CZ')} d. v tomto měsíci (rok ${year}: celkem ${usedVacYear.toLocaleString('cs-CZ')} d.)`
+        : `rok ${year}: celkem zadaných ${usedVacYear.toLocaleString('cs-CZ')} d.`;
+    }
 
     $('#printFundTotal').textContent = formatDuration(s.fund);
     $('#printWorkedTotal').textContent = formatDuration(s.worked + s.credited);
@@ -1556,7 +1702,9 @@ create policy "Secure access to own attendance days"
     $('#setDailyTarget').value = minutesToTime(settings.dailyTargetMinutes);
     $('#setBreakMinutes').value = settings.breakMinutes;
     $('#setBreakAfterMinutes').value = settings.breakAfterMinutes;
-    $('#setVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
+    if ($('#setVacationAllowance')) {
+      $('#setVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
+    }
     $('#setAutoFill').checked = !!settings.autoFill;
     $('#setThemeMode').value = settings.theme;
 
@@ -1578,6 +1726,11 @@ create policy "Secure access to own attendance days"
     $('#setSbUrl').value = supabaseConfig.url || '';
     $('#setSbKey').value = supabaseConfig.anonKey || '';
 
+    // Verze aplikace
+    if ($('#appVersionLabel')) $('#appVersionLabel').textContent = APP_VERSION;
+    if ($('#appBuildDateLabel')) $('#appBuildDateLabel').textContent = APP_BUILD_DATE;
+    if ($('#appCacheVersionLabel')) $('#appCacheVersionLabel').textContent = `${APP_SW_CACHE} (Aktivní)`;
+
     renderAuthAndSyncUI();
   }
 
@@ -1595,7 +1748,10 @@ create policy "Secure access to own attendance days"
   function switchView(viewName) {
     $$('.win11-view').forEach(v => v.classList.remove('active'));
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
-    $$('.m-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+    $$('.m-nav-btn').forEach(b => {
+      const match = (viewName === 'team') ? (b.dataset.view === 'settings') : (b.dataset.view === viewName);
+      b.classList.toggle('active', match);
+    });
 
     const viewEl = $(`#view${viewName[0].toUpperCase()}${viewName.slice(1)}`);
     if (viewEl) viewEl.classList.add('active');
@@ -2227,30 +2383,145 @@ create policy "Secure access to own attendance days"
       $('#monthPickerModal').close();
     });
 
+    async function updateRegisterModalState() {
+      const inviteInput = $('#regInviteCode');
+      const banner = $('#registerModeBanner');
+      const title = $('#registerModeTitle');
+      const desc = $('#registerModeDesc');
+      const hint = $('#regInviteHint');
+
+      if (!isSupabaseConfigured()) {
+        if (banner) banner.className = 'win-infobar neutral';
+        if (title) title.textContent = 'Lokální režim';
+        if (desc) desc.textContent = 'Databáze není připojena. Účet bude vytvořen lokálně v tomto prohlížeči.';
+        if (inviteInput) inviteInput.required = false;
+        return;
+      }
+
+      try {
+        const rows = await sbFetch('/rest/v1/attendance_profiles?select=user_key&limit=1');
+        const hasUsers = rows && rows.length > 0;
+
+        if (!hasUsers) {
+          if (banner) banner.className = 'win-infobar success';
+          if (title) title.textContent = 'První instalace aplikace (Hlavní správce)';
+          if (desc) desc.textContent = 'V databázi dosud není žádný účet. Váš profil bude vytvořen jako hlavní Správce (Admin) bez nutnosti pozvánky.';
+          if (inviteInput) {
+            inviteInput.required = false;
+            inviteInput.value = '';
+            inviteInput.placeholder = '(První účet – kód není potřeba)';
+          }
+          if (hint) hint.textContent = 'Kód pozvánky není vyžadován pro prvního správce.';
+        } else {
+          if (banner) banner.className = 'win-infobar info';
+          if (title) title.textContent = 'Registrace pouze na pozvánku (Invite-Only)';
+          if (desc) desc.textContent = 'Pro vytvoření účtu je vyžadován platný kód pozvánky od správce docházky.';
+          if (inviteInput) {
+            inviteInput.required = true;
+            inviteInput.placeholder = 'např. INV-8X2K9M';
+          }
+          if (hint) hint.textContent = 'Registrace nových uživatelů je uzamčena. Zadej kód pozvánky od správce.';
+        }
+      } catch (err) {
+        console.warn('Nelze ověřit stav registrace:', err);
+      }
+    }
+
     // PŘIHLÁŠENÍ & REGISTRACE MODALY
     $('#openLoginModalBtn')?.addEventListener('click', () => $('#loginModal').showModal());
     $('#closeLoginModalBtn')?.addEventListener('click', () => $('#loginModal').close());
     $('#switchToRegisterBtn')?.addEventListener('click', () => {
       $('#loginModal').close();
       $('#registerModal').showModal();
+      updateRegisterModalState();
     });
 
-    $('#openRegisterModalBtn')?.addEventListener('click', () => $('#registerModal').showModal());
+    $('#openRegisterModalBtn')?.addEventListener('click', () => {
+      $('#registerModal').showModal();
+      updateRegisterModalState();
+    });
     $('#closeRegisterModalBtn')?.addEventListener('click', () => $('#registerModal').close());
     $('#switchToLoginBtn')?.addEventListener('click', () => {
       $('#registerModal').close();
       $('#loginModal').showModal();
     });
 
+    $('#openTeamFromSettingsBtn')?.addEventListener('click', () => {
+      switchView('team');
+    });
+
+    $('#openTeamFromSettingsCardBtn')?.addEventListener('click', () => {
+      switchView('team');
+    });
+
+    $('#backToSettingsBtn')?.addEventListener('click', () => {
+      switchView('settings');
+    });
+
+    $('#claimAdminBtn')?.addEventListener('click', async () => {
+      if (!isCloudReady()) {
+        toast('Musíte být přihlášeni ke cloudové databázi.', '⚠️');
+        return;
+      }
+      try {
+        const res = await sbFetch('/rest/v1/rpc/claim_initial_admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        });
+        if (res && res.role === 'admin') {
+          currentUser.role = 'admin';
+          saveCurrentUser(currentUser);
+          renderAuthAndSyncUI();
+          toast('Role Správce byla úspěšně aktivována!', '✓');
+          switchView('team');
+        } else {
+          toast('V databázi již existuje jiný správce. Požádejte jej o přidělení role.', 'ℹ');
+        }
+      } catch (err) {
+        alert(err.message || 'Nepodařilo se aktivovat roli správce.');
+      }
+    });
+
     $('#loginUserForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const msg = await performLogin($('#loginUsername').value, $('#loginPin').value);
+        const rememberMe = $('#loginRememberMe') ? $('#loginRememberMe').checked : true;
+        const msg = await performLogin($('#loginUsername').value, $('#loginPin').value, rememberMe);
         $('#loginModal').close();
         renderAll();
         toast(msg, '✓');
       } catch (err) {
         alert(err.message || 'Přihlášení se nezdařilo.');
+      }
+    });
+
+    // Přihlášení přes biometriku
+    $('#loginBiometricBtn')?.addEventListener('click', async () => {
+      try {
+        const msg = await authenticateWithBiometrics();
+        $('#loginModal').close();
+        renderAll();
+        toast(msg, '✓');
+      } catch (err) {
+        alert(err.message || 'Biometrické ověření se nezdařilo.');
+      }
+    });
+
+    // Povolení biometrie v nastavení profilu
+    $('#enableBiometricsBtn')?.addEventListener('click', async () => {
+      if (!currentUser) return;
+      try {
+        const confirmed = confirm(`Chcete pro účet "${currentUser.username}" povolit biometrické přihlášení (Windows Hello / Otisk prstu / Face ID)?`);
+        if (!confirmed) return;
+
+        const success = await registerBiometricsForCurrentUser();
+        if (success) {
+          toast('Biometrické přihlašování bylo úspěšně aktivováno pro toto zařízení.', '✓');
+          renderAuthAndSyncUI();
+        }
+      } catch (err) {
+        alert(err.message || 'Povolení biometrie selhalo.');
       }
     });
 
@@ -2390,6 +2661,7 @@ create policy "Secure access to own attendance days"
     $('#logoutUserBtn')?.addEventListener('click', () => {
       if (!confirm('Odhlásit uživatele z tohoto zařízení?')) return;
       saveCurrentUser(null);
+      saveBiometricsCredentials(null);
       setSyncState('local');
       renderAll();
       toast('Uživatel byl odhlášen', 'ℹ️');
@@ -2449,7 +2721,7 @@ create policy "Secure access to own attendance days"
         dailyTargetMinutes: target ?? 510,
         breakMinutes: clamp(Number($('#setBreakMinutes').value) || 0, 0, 240),
         breakAfterMinutes: clamp(Number($('#setBreakAfterMinutes').value) || 0, 0, 1440),
-        vacationAllowanceDays: clamp(Number($('#setVacationAllowance').value) || 20, 0, 60),
+        vacationAllowanceDays: $('#setVacationAllowance') ? clamp(Number($('#setVacationAllowance').value) || 20, 0, 60) : (settings.vacationAllowanceDays || 20),
         autoFill: $('#setAutoFill').checked,
         workDays: checkedDays.length > 0 ? checkedDays : [1, 2, 3, 4, 5],
         weekendMode: $('#setWeekendMode').value,
@@ -2508,32 +2780,6 @@ create policy "Secure access to own attendance days"
         .catch(err => alert(`Synchronizace selhala: ${err.message}`));
     });
 
-    // SQL Viewer Dialog
-    $('#openSqlViewerBtn')?.addEventListener('click', async () => {
-      try {
-        const res = await fetch('./supabase-schema.sql');
-        if (res.ok) {
-          $('#sqlTextContainer').textContent = await res.text();
-        } else {
-          $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
-        }
-      } catch {
-        $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
-      }
-      $('#sqlSchemaDialog').showModal();
-    });
-    $('#closeSqlDialogBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
-    $('#closeSqlFooterBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
-    $('#copySqlCodeBtn')?.addEventListener('click', async () => {
-      try {
-        const txt = $('#sqlTextContainer').textContent || SQL_SCHEMA_TEXT;
-        await navigator.clipboard.writeText(txt);
-        toast('SQL skript zkopírován do schránky', '📋');
-      } catch {
-        toast('Zkopírujte text z okna ručně', 'ℹ️');
-      }
-    });
-
     // Dialog editace dne
     $('#closeDayDialogBtn')?.addEventListener('click', () => $('#dayEditDialog').close());
     $('#cancelDayDialogBtn')?.addEventListener('click', () => $('#dayEditDialog').close());
@@ -2589,8 +2835,31 @@ create policy "Secure access to own attendance days"
     });
     $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
 
+    // O aplikaci – kontrola aktualizací a nápověda PWA
+    $('#checkAppUpdateBtn')?.addEventListener('click', async () => {
+      if ('serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update();
+            toast('Kontrola dokončena – aplikace je aktuální', '✓');
+          } else {
+            toast('Aplikace je v nejnovější verzi', '✓');
+          }
+        } catch {
+          toast('Aplikace je v nejnovější verzi', '✓');
+        }
+      } else {
+        toast('Aplikace je v nejnovější verzi', '✓');
+      }
+    });
+
+    $('#aboutPwaHelpBtn')?.addEventListener('click', () => {
+      $('#pwaHelpDialog')?.showModal();
+    });
+
     // Zavření modálu klikem na backdrop
-    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal', 'createInviteModal', 'adminResetPinModal'].forEach(id => {
+    ['dayEditDialog', 'loginModal', 'registerModal', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal', 'createInviteModal', 'adminResetPinModal'].forEach(id => {
       const dlg = $(`#${id}`);
       dlg?.addEventListener('click', (e) => {
         if (e.target === dlg) dlg.close();

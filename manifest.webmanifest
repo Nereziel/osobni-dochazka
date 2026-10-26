@@ -1,15 +1,25 @@
 {
   "name": "Osobní docházka",
   "short_name": "Docházka",
-  "description": "Soukromá offline evidence osobní docházky.",
+  "description": "Evidence osobní docházky",
   "lang": "cs",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0b1220",
+  "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "icons": [
-    {"src":"./icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
-    {"src":"./icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+    {
+      "src": "./android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }

@@ -228,6 +228,9 @@ button svg,
 html, body {
   min-height: 100%;
   margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
   font-family: var(--font-sans);
   background: var(--bg-app);
   background-image: var(--bg-gradient);
@@ -236,6 +239,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 button, input, select, textarea {
@@ -269,7 +273,7 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-bottom: calc(72px + var(--safe-bottom));
+  padding-bottom: calc(88px + var(--safe-bottom));
 }
 
 /* Header (Windows 11 Mica Titlebar) */
@@ -1745,6 +1749,44 @@ input:focus, .win-select:focus, textarea:focus {
   margin-top: 14px;
 }
 
+/* App About & Version Card */
+.app-version-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  background: var(--surface-card-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+
+.app-version-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.app-version-item .muted {
+  font-size: 11px;
+}
+
+.app-version-item strong,
+.app-version-item span:not(.muted) {
+  font-size: 13px;
+}
+
+.about-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.about-card-actions button {
+  min-height: 36px;
+}
+
 .cloud-tools-buttons button {
   justify-content: flex-start;
   padding: 8px 16px;
@@ -1979,6 +2021,179 @@ input:focus, .win-select:focus, textarea:focus {
 }
 
 /* ============================================================================
+   VIEW 5: SPRÁVA TÝMU & POZVÁNKY (BASE DESKTOP)
+   ============================================================================ */
+.team-back-row {
+  margin-bottom: 12px;
+}
+
+.team-back-row #backToSettingsBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+}
+
+#viewTeam .win-toolbar-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+#viewTeam .toolbar-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-layout-grid {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 24px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.team-col-main,
+.team-col-side {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.team-card {
+  padding: 24px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.team-header-info h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.team-header-info span {
+  font-size: 12.5px;
+}
+
+.team-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.team-summary-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: var(--surface-card-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  transition: all 0.12s ease;
+}
+
+.team-summary-item:hover {
+  background: var(--surface-card);
+  border-color: var(--line-strong);
+}
+
+.team-user-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-user-meta strong {
+  display: block;
+  font-size: 13.5px;
+}
+
+.team-user-meta small {
+  color: var(--text-secondary);
+  font-size: 11.5px;
+}
+
+.team-user-stats {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.team-user-stats strong {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.team-user-stats small {
+  font-size: 11px;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.role-badge.admin {
+  background: var(--accent-light);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.role-badge.employee {
+  background: var(--surface-card-subtle);
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+}
+
+.invite-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.invite-status-badge.unused {
+  background: var(--positive-bg);
+  color: var(--positive-text);
+  border: 1px solid var(--positive);
+}
+
+.invite-status-badge.used {
+  background: var(--surface-card-subtle);
+  color: var(--text-tertiary);
+  border: 1px solid var(--line);
+}
+
+.table-action-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ============================================================================
    RESPONSIVE: MOBILE NAVIGATION & VIEWPORTS
    ============================================================================ */
 .win-mobile-nav {
@@ -1989,24 +2204,26 @@ input:focus, .win-select:focus, textarea:focus {
   bottom: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  padding: 6px 12px calc(6px + var(--safe-bottom));
+  padding: 6px 8px max(14px, calc(var(--safe-bottom) + 6px));
   background: var(--surface-acrylic);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(28px) saturate(180%);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
 }
 
 .m-nav-btn {
-  min-height: 52px;
+  min-height: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   background: transparent;
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   transition: all 0.12s ease;
+  padding: 4px 2px;
 }
 
 .m-nav-btn svg {
@@ -2017,6 +2234,8 @@ input:focus, .win-select:focus, textarea:focus {
 .m-nav-btn small {
   font-size: 11px;
   font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.2px;
 }
 
 .m-nav-btn.active {
@@ -2026,7 +2245,7 @@ input:focus, .win-select:focus, textarea:focus {
 
 @media (max-width: 979px) {
   .win11-content-area {
-    padding: 16px 16px 36px;
+    padding: 16px 16px calc(92px + var(--safe-bottom));
   }
   .win11-header {
     padding-left: 16px;
@@ -2057,6 +2276,165 @@ input:focus, .win-select:focus, textarea:focus {
 }
 
 @media (max-width: 768px) {
+  /* Responzivní aktivní směna (tlačítko se nikdy nevytlačí mimo obrazovku) */
+  .win-active-shift-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+
+  .shift-live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .shift-live-meta {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: var(--radius-sm);
+  }
+
+  .shift-live-actions {
+    width: 100%;
+  }
+
+  .shift-live-actions #shiftEndNowBtn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    font-size: 13.5px;
+    font-weight: 650;
+    box-sizing: border-box;
+  }
+
+  /* Responzivní správa týmu */
+  #viewTeam .win-toolbar-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  #viewTeam .toolbar-nav-group {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  #viewTeam .team-header-info h2 {
+    font-size: 18px;
+    margin: 0 0 2px 0;
+  }
+
+  #viewTeam .toolbar-actions-group {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  #viewTeam .toolbar-actions-group #openCreateInviteBtn {
+    flex: 1;
+    min-height: 42px;
+    justify-content: center;
+  }
+
+  #viewTeam .toolbar-actions-group #refreshTeamDataBtn {
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .team-layout-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .team-col-main,
+  .team-col-side {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    gap: 16px;
+  }
+
+  .team-card {
+    padding: 16px 14px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .table-responsive-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+    margin-top: 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+    box-sizing: border-box;
+  }
+
+  .win11-datagrid {
+    min-width: 480px;
+    font-size: 12px;
+  }
+
+  .win11-datagrid th,
+  .win11-datagrid td {
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+
+  .win11-datagrid td .win-btn-subtle,
+  .win11-datagrid td .win-btn-standard {
+    padding: 4px 8px;
+    font-size: 11px;
+    min-height: 30px;
+  }
+
+  .team-summary-item {
+    padding: 10px 12px;
+  }
+
+  .team-user-meta {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .team-user-meta strong {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .team-user-stats {
+    flex-shrink: 0;
+  }
+
+  .team-user-stats strong {
+    font-size: 13px;
+  }
+
   .win-toolbar-bar {
     flex-direction: column;
     align-items: stretch;
@@ -2194,6 +2572,16 @@ input:focus, .win-select:focus, textarea:focus {
   }
   .cal-day-time {
     font-size: 9px;
+  }
+  #viewTeam .team-header-info h2 {
+    font-size: 16px;
+  }
+  #viewTeam .toolbar-actions-group #openCreateInviteBtn {
+    font-size: 12.5px;
+    padding: 0 10px;
+  }
+  .app-version-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2454,143 +2842,6 @@ input:focus, .win-select:focus, textarea:focus {
     grid-template-columns: 1.7fr 1fr;
     gap: 32px;
   }
-}
-
-/* ============================================================================
-   VIEW 5: SPRÁVA TÝMU & POZVÁNKY
-   ============================================================================ */
-.team-layout-grid {
-  display: grid;
-  grid-template-columns: 1.55fr 1fr;
-  gap: 24px;
-}
-
-.team-col-main,
-.team-col-side {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.team-card {
-  padding: 24px;
-}
-
-.team-header-info h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.team-header-info span {
-  font-size: 12.5px;
-}
-
-.team-summary-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 520px;
-  overflow-y: auto;
-}
-
-.team-summary-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  background: var(--surface-card-subtle);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  transition: all 0.12s ease;
-}
-
-.team-summary-item:hover {
-  background: var(--surface-card);
-  border-color: var(--line-strong);
-}
-
-.team-user-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.team-user-meta strong {
-  display: block;
-  font-size: 13.5px;
-}
-
-.team-user-meta small {
-  color: var(--text-secondary);
-  font-size: 11.5px;
-}
-
-.team-user-stats {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.team-user-stats strong {
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.team-user-stats small {
-  font-size: 11px;
-}
-
-.role-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: var(--radius-full);
-  font-size: 10.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.role-badge.admin {
-  background: var(--accent-light);
-  color: var(--accent);
-  border: 1px solid var(--accent);
-}
-
-.role-badge.employee {
-  background: var(--surface-card-subtle);
-  color: var(--text-secondary);
-  border: 1px solid var(--line);
-}
-
-.invite-status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: var(--radius-full);
-  font-size: 11px;
-  font-weight: 650;
-}
-
-.invite-status-badge.unused {
-  background: var(--positive-bg);
-  color: var(--positive-text);
-  border: 1px solid var(--positive);
-}
-
-.invite-status-badge.used {
-  background: var(--surface-card-subtle);
-  color: var(--text-tertiary);
-  border: 1px solid var(--line);
-}
-
-.table-action-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
 }
 
 /* ============================================================================
