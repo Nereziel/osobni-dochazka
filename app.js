@@ -19,7 +19,7 @@
   const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
   const APP_VERSION = 'v2.4.0';
   const APP_BUILD_DATE = '2026.10';
-  const APP_SW_CACHE = 'Cache v7';
+  const APP_SW_CACHE = 'Cache v8';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -1636,8 +1636,8 @@
     const vacInfoEl = $('#tsVacationInfo') || $('#tsVacationUsed');
     if (vacInfoEl) {
       vacInfoEl.textContent = usedVacMonth > 0
-        ? `${usedVacMonth.toLocaleString('cs-CZ')} d. v tomto měsíci (rok ${year}: celkem ${usedVacYear.toLocaleString('cs-CZ')} d.)`
-        : `rok ${year}: celkem zadaných ${usedVacYear.toLocaleString('cs-CZ')} d.`;
+        ? `${usedVacMonth.toLocaleString('cs-CZ')} d. tento měsíc · rok ${year}: celkem dovolená ${formatVacationDays(usedVacYear)}`
+        : `rok ${year}: celkem dovolená ${formatVacationDays(usedVacYear)}`;
     }
 
     $('#printFundTotal').textContent = formatDuration(s.fund);
@@ -2286,7 +2286,6 @@
     $('#sidebarSyncBtn')?.addEventListener('click', () => $('#headerSyncBtn').click());
 
     // PWA Instalace nápověda
-    $('#headerInstallBtn')?.addEventListener('click', () => $('#pwaHelpDialog').showModal());
     $('#sidebarHelpBtn')?.addEventListener('click', () => $('#pwaHelpDialog').showModal());
     $('#closePwaHelpBtn')?.addEventListener('click', () => $('#pwaHelpDialog').close());
 
