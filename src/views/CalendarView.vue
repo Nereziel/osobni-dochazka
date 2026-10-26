@@ -117,27 +117,24 @@
           </div>
 
           <div class="cal-records-scroll">
-            <div
+            <button
               v-for="rec in monthRecordsList"
               :key="rec.date"
+              type="button"
               class="cal-record-item"
               @click="$emit('edit-day', rec.date)"
             >
-              <div class="rec-date-badge">
-                <strong>{{ rec.dayNumber }}</strong>
-                <small>{{ rec.weekday }}</small>
+              <div class="cal-rec-left">
+                <strong>{{ rec.dayNumber }}. {{ rec.monthNumber }}. · {{ rec.typeLabel }}</strong>
+                <small>{{ rec.timeSpan }}<template v-if="rec.note"> · {{ rec.note }}</template></small>
               </div>
-              <div class="rec-info">
-                <strong>{{ rec.typeLabel }}</strong>
-                <span class="muted">{{ rec.timeSpan }}</span>
-              </div>
-              <div class="rec-metric">
-                <strong>{{ formatDuration(rec.metrics.worked) }}</strong>
+              <div class="cal-rec-right">
+                <strong>{{ formatDuration(rec.metrics.worked || rec.metrics.credited) }}</strong>
                 <small :class="rec.metrics.balance > 0 ? 'positive' : rec.metrics.balance < 0 ? 'negative' : ''">
                   {{ formatDuration(rec.metrics.balance, true) }}
                 </small>
               </div>
-            </div>
+            </button>
 
             <p v-if="monthRecordsList.length === 0" class="muted" style="margin: 8px 0; font-size: 13px;">
               V tomto měsíci zatím nejsou žádné záznamy.
@@ -243,7 +240,7 @@ const calendarCells = computed(() => {
     if (rec) {
       if (m && m.worked > 0) {
         timeText = rec.start && rec.end ? `${rec.start}–${rec.end}` : formatDuration(m.worked);
-        tagText = m.balance !== 0 ? formatDuration(m.balance, true) : formatDuration(m.worked);
+        tagText = formatDuration(m.worked);
         if (m.balance > 0) balanceClass = 'positive';
         else if (m.balance < 0) balanceClass = 'negative';
       } else {
@@ -301,9 +298,11 @@ const monthRecordsList = computed(() => {
       list.push({
         date: dateKey,
         dayNumber: d,
+        monthNumber: month + 1,
         weekday: fmtWeekdayShort(curDate),
         typeLabel: TYPE_LABELS[rec.type] || rec.type,
         timeSpan,
+        note: rec.note || '',
         metrics
       });
     }
