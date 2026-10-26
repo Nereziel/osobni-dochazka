@@ -92,6 +92,13 @@ begin
   select has_table_privilege('anon', 'public.attendance_profiles', 'update') into v_has_priv;
   if v_has_priv then raise exception 'TEST 1 SELHAL: přímý REST UPDATE do attendance_profiles musí být zakázán.'; end if;
 
+  -- v_monthly_attendance_summary: POUZE SELECT pro REST
+  select has_table_privilege('anon', 'public.v_monthly_attendance_summary', 'select') into v_has_priv;
+  if not v_has_priv then raise exception 'TEST 1 SELHAL: anon musí mít SELECT na v_monthly_attendance_summary.'; end if;
+
+  select has_table_privilege('anon', 'public.v_monthly_attendance_summary', 'insert') into v_has_priv;
+  if v_has_priv then raise exception 'TEST 1 SELHAL: INSERT do v_monthly_attendance_summary musí být zakázán.'; end if;
+
   raise notice '✓ TEST 1 PROŠEL: Přísná tabulková oprávnění pro REST role jsou 100%% v pořádku.';
 
   -- --------------------------------------------------------------------------

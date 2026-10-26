@@ -3,13 +3,13 @@ import { performFullSync } from '../services/sync.js';
 import { getPendingSyncActions } from '../services/indexedDb.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 
-export const FOREGROUND_SYNC_INTERVAL_MS = 5000;
+export const FOREGROUND_SYNC_INTERVAL_MS = 10000;
 
 const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error'
 const syncError = ref(null);
 const pendingCount = ref(0);
 
-// Řízení synchronizace a 5s foreground pollingu
+// Řízení synchronizace a 10s foreground pollingu
 let syncInProgress = false;
 let pendingFollowupSync = false;
 let pollingTimer = null;

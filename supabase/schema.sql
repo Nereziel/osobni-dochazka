@@ -1194,6 +1194,10 @@ grant select on public.attendance_invites to anon, authenticated;
 revoke insert, update, delete on public.attendance_invites from public, anon;
 grant insert, update, delete on public.attendance_invites to authenticated;
 
+-- v_monthly_attendance_summary: POUZE SELECT pro REST klienty (zabezpečeno přes security_invoker = true a underlying RLS)
+grant select on public.v_monthly_attendance_summary to anon, authenticated;
+revoke insert, update, delete on public.v_monthly_attendance_summary from public, anon, authenticated;
+
 -- ----------------------------------------------------------------------------
 -- 11. OPRÁVNĚNÍ K FUNKCÍM (EXPLICITNÍ REVOKE + POUZE VYŽADOVANÉ GRANTS)
 -- ----------------------------------------------------------------------------
