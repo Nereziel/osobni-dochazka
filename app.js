@@ -19,7 +19,7 @@
   const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
   const APP_VERSION = 'v2.4.0';
   const APP_BUILD_DATE = '2026.10';
-  const APP_SW_CACHE = 'Cache v9';
+  const APP_SW_CACHE = 'Cache v10';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -1273,7 +1273,6 @@
     const isAdmin = currentUser?.role === 'admin';
     $('#navItemTeam')?.classList.toggle('hidden', !isAdmin);
     $('#mNavItemTeam')?.classList.toggle('hidden', !isAdmin);
-    $('#openTeamFromSettingsBtn')?.classList.toggle('hidden', !isAdmin);
     $('#settingsTeamCard')?.classList.toggle('hidden', !isAdmin);
     $('#claimAdminBtn')?.classList.toggle('hidden', !currentUser || isAdmin);
 
@@ -2437,10 +2436,6 @@
     $('#switchToLoginBtn')?.addEventListener('click', () => {
       $('#registerModal').close();
       $('#loginModal').showModal();
-    });
-
-    $('#openTeamFromSettingsBtn')?.addEventListener('click', () => {
-      switchView('team');
     });
 
     $('#openTeamFromSettingsCardBtn')?.addEventListener('click', () => {
