@@ -19,7 +19,7 @@
   const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
   const APP_VERSION = 'v2.4.0';
   const APP_BUILD_DATE = '2026.10';
-  const APP_SW_CACHE = 'Cache v8';
+  const APP_SW_CACHE = 'Cache v12';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -38,7 +38,6 @@
     weekendEnd: '15:30',
     weekendTargetMinutes: 480, // 8:00
     workOnHolidays: false,
-    vacationAllowanceDays: 20,
     theme: 'system'
   };
 
@@ -673,7 +672,6 @@
       weekend_end: settings.weekendEnd || '15:30',
       weekend_target_minutes: Number.isFinite(settings.weekendTargetMinutes) ? settings.weekendTargetMinutes : 480,
       work_on_holidays: !!settings.workOnHolidays,
-      vacation_allowance_days: Number(settings.vacationAllowanceDays) || 20,
       theme: settings.theme || 'system',
       settings_json: settings
     };
@@ -698,7 +696,6 @@
       weekendEnd: row.weekend_end || '15:30',
       weekendTargetMinutes: Number.isFinite(row.weekend_target_minutes) ? row.weekend_target_minutes : 480,
       workOnHolidays: !!row.work_on_holidays,
-      vacationAllowanceDays: Number(row.vacation_allowance_days) || 20,
       theme: row.theme || 'system'
     });
   }
@@ -1276,9 +1273,7 @@
     const isAdmin = currentUser?.role === 'admin';
     $('#navItemTeam')?.classList.toggle('hidden', !isAdmin);
     $('#mNavItemTeam')?.classList.toggle('hidden', !isAdmin);
-    $('#openTeamFromSettingsBtn')?.classList.toggle('hidden', !isAdmin);
     $('#settingsTeamCard')?.classList.toggle('hidden', !isAdmin);
-    $('#claimAdminBtn')?.classList.toggle('hidden', !currentUser || isAdmin);
 
     const roleBadge = $('#accountRoleBadge');
     if (roleBadge) {
@@ -1702,9 +1697,6 @@
     $('#setDailyTarget').value = minutesToTime(settings.dailyTargetMinutes);
     $('#setBreakMinutes').value = settings.breakMinutes;
     $('#setBreakAfterMinutes').value = settings.breakAfterMinutes;
-    if ($('#setVacationAllowance')) {
-      $('#setVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
-    }
     $('#setAutoFill').checked = !!settings.autoFill;
     $('#setThemeMode').value = settings.theme;
 
@@ -2445,41 +2437,12 @@
       $('#loginModal').showModal();
     });
 
-    $('#openTeamFromSettingsBtn')?.addEventListener('click', () => {
-      switchView('team');
-    });
-
     $('#openTeamFromSettingsCardBtn')?.addEventListener('click', () => {
       switchView('team');
     });
 
     $('#backToSettingsBtn')?.addEventListener('click', () => {
       switchView('settings');
-    });
-
-    $('#claimAdminBtn')?.addEventListener('click', async () => {
-      if (!isCloudReady()) {
-        toast('Musíte být přihlášeni ke cloudové databázi.', '⚠️');
-        return;
-      }
-      try {
-        const res = await sbFetch('/rest/v1/rpc/claim_initial_admin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: '{}'
-        });
-        if (res && res.role === 'admin') {
-          currentUser.role = 'admin';
-          saveCurrentUser(currentUser);
-          renderAuthAndSyncUI();
-          toast('Role Správce byla úspěšně aktivována!', '✓');
-          switchView('team');
-        } else {
-          toast('V databázi již existuje jiný správce. Požádejte jej o přidělení role.', 'ℹ');
-        }
-      } catch (err) {
-        alert(err.message || 'Nepodařilo se aktivovat roli správce.');
-      }
     });
 
     $('#loginUserForm')?.addEventListener('submit', async (e) => {
@@ -2720,7 +2683,6 @@
         dailyTargetMinutes: target ?? 510,
         breakMinutes: clamp(Number($('#setBreakMinutes').value) || 0, 0, 240),
         breakAfterMinutes: clamp(Number($('#setBreakAfterMinutes').value) || 0, 0, 1440),
-        vacationAllowanceDays: $('#setVacationAllowance') ? clamp(Number($('#setVacationAllowance').value) || 20, 0, 60) : (settings.vacationAllowanceDays || 20),
         autoFill: $('#setAutoFill').checked,
         workDays: checkedDays.length > 0 ? checkedDays : [1, 2, 3, 4, 5],
         weekendMode: $('#setWeekendMode').value,

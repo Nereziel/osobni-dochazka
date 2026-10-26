@@ -2631,8 +2631,11 @@ input:focus, .win-select:focus, textarea:focus {
     justify-content: space-between;
     width: 270px;
     flex-shrink: 0;
-    position: sticky;
+    position: fixed;
     top: 0;
+    bottom: 0;
+    left: 0;
+    height: 100vh;
     height: 100dvh;
     padding: 18px 14px;
     background: var(--surface-acrylic);
@@ -2640,6 +2643,10 @@ input:focus, .win-select:focus, textarea:focus {
     backdrop-filter: blur(28px) saturate(180%);
     -webkit-backdrop-filter: blur(28px) saturate(180%);
     z-index: 35;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+    box-sizing: border-box;
   }
 
   .sidebar-brand {
@@ -2849,7 +2856,11 @@ input:focus, .win-select:focus, textarea:focus {
     display: none;
   }
   .win11-main-wrapper {
+    margin-left: 270px;
+    width: calc(100% - 270px);
+    min-width: 0;
     padding-bottom: 24px;
+    box-sizing: border-box;
   }
 }
 
@@ -2857,6 +2868,10 @@ input:focus, .win-select:focus, textarea:focus {
 @media (min-width: 1400px) {
   .win11-sidebar {
     width: 290px;
+  }
+  .win11-main-wrapper {
+    margin-left: 290px;
+    width: calc(100% - 290px);
   }
   .dashboard-grid-layout {
     grid-template-columns: 1.4fr 1fr;
@@ -2897,6 +2912,8 @@ input:focus, .win-select:focus, textarea:focus {
   }
   .win11-main-wrapper {
     padding: 0 !important;
+    margin-left: 0 !important;
+    width: 100% !important;
   }
   .win11-content-area {
     padding: 0 !important;

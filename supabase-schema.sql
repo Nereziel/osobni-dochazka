@@ -48,8 +48,7 @@ create table if not exists public.attendance_profiles (
   weekend_target_minutes integer not null default 480 check (weekend_target_minutes between 0 and 1440),
   work_on_holidays boolean not null default false,
 
-  -- Dovolená a vzhled
-  vacation_allowance_days numeric(4,1) not null default 20.0,
+  -- Vzhled
   theme text not null default 'system' check (theme in ('system', 'light', 'dark')),
 
   -- Doplňující JSON nastavení
@@ -62,6 +61,10 @@ create table if not exists public.attendance_profiles (
 -- Zajištění sloupce role pro případ aktualizace již existující tabulky
 alter table public.attendance_profiles 
   add column if not exists role text not null default 'employee' check (role in ('admin', 'manager', 'employee'));
+
+-- Odstranění zrušeného limitu dovolené (pokud v existující tabulce ještě existuje)
+alter table public.attendance_profiles 
+  drop column if exists vacation_allowance_days cascade;
 
 -- Pokud již v databázi existují uživatelé, ale žádný z nich nemá roli 'admin',
 -- automaticky povýšíme nejstaršího (prvního) uživatele na Správce ('admin'),
@@ -237,48 +240,8 @@ as $$
   );
 $$;
 
--- Funkce umožňující uživateli aktivovat roli Správce, pokud v databázi dosud žádný admin není
-create or replace function public.claim_initial_admin()
-returns jsonb
-language plpgsql
-security definer
-as $$
-declare
-  v_admin_count integer;
-  v_user_key text := public.req_user_key();
-  v_pin_hash text := public.req_pin_hash();
-begin
-  if v_user_key = '' then
-    raise exception 'Neplatná identita uživatele.';
-  end if;
-
-  if not exists (
-    select 1 from public.attendance_profiles
-    where user_key = v_user_key and pin_hash = v_pin_hash
-  ) then
-    raise exception 'Neplatné ověření PINu.';
-  end if;
-
-  select count(*) into v_admin_count
-  from public.attendance_profiles
-  where role = 'admin';
-
-  if v_admin_count = 0 then
-    update public.attendance_profiles
-    set role = 'admin',
-        updated_at = now()
-    where user_key = v_user_key;
-
-    return jsonb_build_object('success', true, 'role', 'admin', 'promoted', true);
-  end if;
-
-  if exists (select 1 from public.attendance_profiles where user_key = v_user_key and role = 'admin') then
-    return jsonb_build_object('success', true, 'role', 'admin', 'promoted', false);
-  end if;
-
-  return jsonb_build_object('success', false, 'role', 'employee', 'promoted', false);
-end;
-$$;
+-- Smazání již nepotřebné pomocné funkce pro claim admina
+drop function if exists public.claim_initial_admin();
 
 -- ----------------------------------------------------------------------------
 -- 7. RPC FUNKCE PRO REGISTRACI A SPRÁVU TÝMU
@@ -616,7 +579,6 @@ grant execute on function public.admin_reset_user_pin(text, text) to anon, authe
 grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;
 grant execute on function public.admin_delete_user(text) to anon, authenticated;
 grant execute on function public.is_admin() to anon, authenticated;
-grant execute on function public.claim_initial_admin() to anon, authenticated;
 grant execute on function public.req_user_key() to anon, authenticated;
 grant execute on function public.req_pin_hash() to anon, authenticated;
 
