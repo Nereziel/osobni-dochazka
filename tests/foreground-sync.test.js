@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useSync } from '../src/composables/useSync.js';
+import { useSync, FOREGROUND_SYNC_INTERVAL_MS } from '../src/composables/useSync.js';
 import * as syncService from '../src/services/sync.js';
 import * as supabaseService from '../src/services/supabase.js';
 import * as idbService from '../src/services/indexedDb.js';
@@ -72,7 +72,7 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
     globalThis.window = origWin;
   });
 
-  it('runs periodic sync every 5 seconds when visible and online', async () => {
+  it('runs periodic sync every 10 seconds when visible and online', async () => {
     const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
       status: 'online',
       recordsMap: new Map()
@@ -83,8 +83,8 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
 
     expect(syncSpy).not.toHaveBeenCalled();
 
-    // Po 5 sekundách proběhne 1. periodický sync
-    await vi.advanceTimersByTimeAsync(5000);
+    // Po 10 sekundách proběhne 1. periodický sync
+    await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
     expect(syncSpy).toHaveBeenCalledTimes(1);
     expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
       pushLocalDays: false,
@@ -92,14 +92,14 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
       fetchProfile: false
     });
 
-    // Po dalších 5 sekundách proběhne 2. periodický sync
-    await vi.advanceTimersByTimeAsync(5000);
+    // Po dalších 10 sekundách proběhne 2. periodický sync
+    await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
     expect(syncSpy).toHaveBeenCalledTimes(2);
 
     stopForegroundSync();
   });
 
-  it('pauses 5s periodic sync when document becomes hidden, resumes on visible', async () => {
+  it('pauses 10s periodic sync when document becomes hidden, resumes on visible', async () => {
     const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
       status: 'online',
       recordsMap: new Map()
@@ -112,19 +112,19 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
     globalThis.document.visibilityState = 'hidden';
     globalThis.document.dispatchEvent({ type: 'visibilitychange' });
 
-    // Uplyne 15 sekund na pozadí -> žádný sync neproběhne
-    await vi.advanceTimersByTimeAsync(15000);
+    // Uplyne 20 sekund na pozadí -> žádný sync neproběhne
+    await vi.advanceTimersByTimeAsync(20000);
     expect(syncSpy).not.toHaveBeenCalled();
 
-    // Návrat do popředí -> okamžitý sync a obnova 5s intervalu
+    // Návrat do popředí -> okamžitý sync a obnova intervalu
     globalThis.document.visibilityState = 'visible';
     globalThis.document.dispatchEvent({ type: 'visibilitychange' });
 
     // Okamžitý sync po návratu do foreground
     expect(syncSpy).toHaveBeenCalledTimes(1);
 
-    // Po dalších 5 s proběhne další tick
-    await vi.advanceTimersByTimeAsync(5000);
+    // Po dalších 10 s proběhne další tick
+    await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
     expect(syncSpy).toHaveBeenCalledTimes(2);
 
     stopForegroundSync();

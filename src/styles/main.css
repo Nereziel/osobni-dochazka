@@ -367,10 +367,28 @@ button {
   font-size: 14px;
   line-height: 1;
   color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.2s ease;
 }
 
 .icon-tiny-btn:hover {
   color: var(--accent);
+}
+
+.icon-tiny-btn.spinning {
+  animation: spinSync 0.9s linear infinite;
+  color: var(--accent);
+}
+
+@keyframes spinSync {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* User Pill Button */

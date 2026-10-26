@@ -3,7 +3,13 @@ import { performFullSync } from '../services/sync.js';
 import { getPendingSyncActions } from '../services/indexedDb.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 
-export const FOREGROUND_SYNC_INTERVAL_MS = 10000;
+const rawEnvInterval = typeof import.meta !== 'undefined' && import.meta?.env?.VITE_SYNC_INTERVAL_MS
+  ? Number(import.meta.env.VITE_SYNC_INTERVAL_MS)
+  : (typeof process !== 'undefined' && process?.env?.VITE_SYNC_INTERVAL_MS ? Number(process.env.VITE_SYNC_INTERVAL_MS) : NaN);
+
+export const FOREGROUND_SYNC_INTERVAL_MS = !Number.isNaN(rawEnvInterval) && rawEnvInterval > 0
+  ? rawEnvInterval
+  : 10000;
 
 const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error'
 const syncError = ref(null);

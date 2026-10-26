@@ -10,7 +10,13 @@
       <div class="cloud-status-widget" :class="statusClass" :title="statusTooltip">
         <span class="status-pulse-dot"></span>
         <span>{{ statusLabel }}</span>
-        <button class="icon-tiny-btn" type="button" title="Synchronizovat nyní" @click="$emit('sync')">
+        <button
+          class="icon-tiny-btn"
+          :class="{ spinning: syncState === 'syncing' }"
+          type="button"
+          title="Synchronizovat nyní"
+          @click="$emit('sync')"
+        >
           ↻
         </button>
       </div>
@@ -86,19 +92,21 @@ const statusClass = computed(() => {
 
 const statusLabel = computed(() => {
   if (!props.isOnline) {
-    return props.pendingCount > 0 ? `Offline (${props.pendingCount} změn)` : 'Offline';
+    return props.pendingCount > 0 ? `Offline (${props.pendingCount})` : 'Offline';
   }
-  if (props.syncState === 'syncing') return 'Synchronizace...';
-  if (props.syncState === 'error') return 'Chyba synchronizace';
-  if (props.pendingCount > 0) return `Čeká ${props.pendingCount} změn`;
-  if (props.syncState === 'online') return 'Synchronizováno';
-  return 'Lokální režim';
+  if (props.syncState === 'error') return 'Chyba';
+  if (props.pendingCount > 0) return `Čeká (${props.pendingCount})`;
+  if (props.syncState === 'online' || props.syncState === 'syncing') return 'Cloud';
+  return 'Lokální';
 });
 
 const statusTooltip = computed(() => {
   if (!props.isOnline) return 'Připojení k internetu je nedostupné. Změny se ukládají lokálně.';
-  if (props.pendingCount > 0) return `${props.pendingCount} položek čeká ve frontě na odeslání do Supabase.`;
-  return 'Stav cloudové synchronizace';
+  if (props.syncState === 'syncing') return 'Probíhá synchronizace...';
+  if (props.syncState === 'error') return 'Poslední synchronizace selhala. Kliknutím spustíte synchronizaci znovu.';
+  if (props.pendingCount > 0) return `${props.pendingCount} položek čeká ve frontě na odeslání do cloudu.`;
+  if (props.syncState === 'online') return 'Cloud synchronizován (aktuální stav)';
+  return 'Lokální režim';
 });
 </script>
 
