@@ -4,26 +4,36 @@
 -- Tento skript spusť v Supabase SQL Editoru PO aplikaci supabase/schema.sql.
 -- Vytvoří výchozího administrátora systému s rolí 'admin'.
 --
--- Výchozí přihlašovací údaje:
---   Uživatelské jméno: admin
---   PIN: 1234
---
--- DŮLEŽITÉ:
--- Po prvním přihlášení doporučujeme PIN administrátora okamžitě změnit
--- v nastavení profilu.
+-- DŮLEŽITÉ BEZPEČNOSTNÍ POKYNY:
+-- 1. Před spuštěním upravte hodnoty v_username a v_pin níže na vlastní hodnoty!
+-- 2. Tento soubor po nastavení nikdy necommitujte se skutečným heslem do Gitu.
 -- ============================================================================
 
 create extension if not exists pgcrypto;
 
 do $$
 declare
-  v_username text := 'admin';
-  v_pin text := '1234';
+  -- ==========================================================================
+  -- NASTAVTE SI VLASTNÍ PŘIHLAŠOVACÍ ÚDAJE SPRÁVCE PŘED SPUŠTĚNÍM:
+  -- ==========================================================================
+  v_username text := 'CHANGE_ME_ADMIN_USERNAME'; -- např. 'spravce'
+  v_pin text := 'CHANGE_ME_ADMIN_PIN';           -- např. '9876' (min. 4 znaky)
   v_display_name text := 'Hlavní správce';
+  -- ==========================================================================
+
   v_user_key text;
   v_bcrypt text;
 begin
-  v_user_key := 'user:' || v_username;
+  -- Bezpečnostní pojistka proti spuštění s výchozím placeholderem
+  if v_username = 'CHANGE_ME_ADMIN_USERNAME' or v_pin = 'CHANGE_ME_ADMIN_PIN' then
+    raise exception 'BEZPEČNOSTNÍ POJISTKA: Upravte prosím proměnné v_username a v_pin na vlastní hodnoty před spuštěním skriptu bootstrap_admin.sql.';
+  end if;
+
+  if length(v_pin) < 4 then
+    raise exception 'PIN administrátora musí mít alespoň 4 znaky.';
+  end if;
+
+  v_user_key := 'user:' || lower(trim(v_username));
   v_bcrypt := crypt(v_pin, gen_salt('bf', 10));
 
   -- 1. Vložení veřejného profilu správce
@@ -41,7 +51,7 @@ begin
     theme
   ) values (
     v_user_key,
-    v_username,
+    lower(trim(v_username)),
     v_display_name,
     'admin',
     '06:30',
@@ -77,7 +87,6 @@ begin
       locked_until = null,
       updated_at = now();
 
-  raise notice 'Administrátor "%" (PIN: %) byl úspěšně zinicializován.', v_username, v_pin;
+  raise notice 'Administrátor "%" byl úspěšně zinicializován.', v_username;
 end;
 $$;
-

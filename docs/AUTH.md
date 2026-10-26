@@ -8,7 +8,7 @@ Tento dokument popisuje autentizaci, autorizaci a bezpečnostní model aplikace 
 
 1. **Uživatelská přívětivost (Username + PIN)**:
    - Uživatel se přihlašuje výhradně kombinací `uživatelské jméno + PIN / heslo`.
-   - Není vyžadován e-mail, magic link ani účet u Supabase Auth (`auth.users`).
+   - Není vyžadován e-mail, magic link ani externí cloudový účet (`auth.users`).
 
 2. **Kryptografická bezpečnost**:
    - PIN se na klientovi neposílá jako trvalá identity ani bearer token.

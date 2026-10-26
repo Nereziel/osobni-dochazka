@@ -86,7 +86,11 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
     // Po 5 sekundách proběhne 1. periodický sync
     await vi.advanceTimersByTimeAsync(5000);
     expect(syncSpy).toHaveBeenCalledTimes(1);
-    expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, { pushLocalDays: false });
+    expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
+      pushLocalDays: false,
+      incremental: true,
+      fetchProfile: false
+    });
 
     // Po dalších 5 sekundách proběhne 2. periodický sync
     await vi.advanceTimersByTimeAsync(5000);
@@ -174,8 +178,13 @@ describe('Foreground 5s periodic sync, visibility and serialization', () => {
     // Simulace online události
     globalThis.window.dispatchEvent({ type: 'online' });
 
-    expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, { pushLocalDays: true });
+    expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
+      pushLocalDays: true,
+      incremental: false,
+      fetchProfile: true
+    });
 
     stopForegroundSync();
   });
 });
+

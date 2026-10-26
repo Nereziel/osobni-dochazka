@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { easterSunday, czechHolidayMap, isPublicHoliday, holidayName } from '../src/utils/holidays.js';
+import { easterSunday, isPublicHoliday, holidayName } from '../src/utils/holidays.js';
 
 describe('Czech Holidays and Easter calculation', () => {
   it('calculates Easter Sunday correctly across multiple years', () => {

@@ -4,8 +4,7 @@ import {
   minutesToTime,
   durationMinutes,
   overlapMinutes,
-  formatDuration,
-  timeIntervals
+  formatDuration
 } from '../src/utils/time.js';
 import { isValidTimeString } from '../src/utils/validation.js';
 

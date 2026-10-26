@@ -5,12 +5,12 @@
 --
 -- 1. AUTENTIZACE:
 --    - Přihlašování pouze přes: uživatelské jméno + PIN
---    - Žádný e-mail, žádný Supabase Auth účet
+--    - Žádný externí uživatelský účet ani e-mail
 --    - Serverové hashování PINu pomocí bcrypt (pgcrypto)
 --    - Oddělené citlivé tabulky: attendance_credentials a attendance_sessions
 --    - 256-bitové náhodné session tokeny (v DB se ukládá pouze SHA-256 hash)
 --    - Klient posílá session token v HTTP hlavičce X-Attendance-Session
---    - Ochrana proti brute-force (lockout counter se ukládá i při chybě)
+--    - Ochrana proti brute-force (lockout counter se ukládá i při chybě, sjednocený timing)
 --
 -- 2. AUTORIZACE A OMEZENÍ REST PŘÍSTUPU:
 --    - Přímý zápis (INSERT/UPDATE/DELETE) do attendance_days a attendance_profiles přes REST je ZAKÁZÁN
@@ -111,7 +111,7 @@ create index if not exists idx_attendance_sessions_active
 -- ----------------------------------------------------------------------------
 create table if not exists public.attendance_invites (
   code text primary key,
-  created_by text references public.attendance_profiles(user_key) on delete set null,
+  created_by text references public.attendance_profiles(user_key) on delete cascade,
   target_role text not null default 'employee' check (target_role in ('employee', 'admin')),
   is_used boolean not null default false,
   used_by text references public.attendance_profiles(user_key) on delete set null,
@@ -169,6 +169,9 @@ create index if not exists idx_attendance_days_user_date
 
 create index if not exists idx_attendance_days_deleted
   on public.attendance_days (user_key, deleted_at);
+
+create index if not exists idx_attendance_days_updated
+  on public.attendance_days (user_key, updated_at);
 
 -- ----------------------------------------------------------------------------
 -- 6. POHLED: MĚSÍČNÍ SOUHRN PRO REPORTING
@@ -228,7 +231,7 @@ returns text
 language plpgsql
 stable
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_raw_token text;
@@ -260,7 +263,7 @@ returns boolean
 language plpgsql
 stable
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_user_key text;
@@ -286,7 +289,7 @@ $$;
 -- 8. SESSION A AUTH RPC FUNKCE
 -- ----------------------------------------------------------------------------
 
--- Přihlášení: ověření PINu přes bcrypt, brute-force ochrana s persistencí counteru
+-- Přihlášení: ověření PINu přes bcrypt, brute-force ochrana a ochrana proti timing útokům
 create or replace function public.login_attendance_user(
   p_username text,
   p_pin text,
@@ -295,7 +298,7 @@ create or replace function public.login_attendance_user(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_clean_user text;
@@ -317,6 +320,8 @@ begin
   where user_key = v_user_key;
 
   if not found then
+    -- Timing attack equalizace: spustíme bcrypt simulaci, aby nebylo možné odlišit existujícího uživatele podle času odezvy
+    perform crypt(p_pin, '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUUWXYZ123456');
     return jsonb_build_object(
       'success', false,
       'error', 'invalid_credentials',
@@ -330,6 +335,7 @@ begin
   for update;
 
   if not found then
+    perform crypt(p_pin, '$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUUWXYZ123456');
     return jsonb_build_object(
       'success', false,
       'error', 'invalid_credentials',
@@ -391,7 +397,7 @@ begin
       updated_at = now()
   where user_key = v_user_key;
 
-  -- Vygenerování kryptograficky náhodného session tokenu
+  -- Vygenerování kryptograficky náhodného session tokenu (256-bit entropy)
   v_raw_token := encode(gen_random_bytes(32), 'hex');
   v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
 
@@ -436,7 +442,7 @@ create or replace function public.logout_attendance_session(
 returns boolean
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_raw_token text;
@@ -469,12 +475,12 @@ begin
 end;
 $$;
 
--- Ověření session při načtení PWA
+-- Ověření session při načtení PWA (optimalizovaná aktualizace last_used_at max 1x za hodinu)
 create or replace function public.verify_attendance_session()
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_raw_token text;
@@ -500,9 +506,11 @@ begin
     return jsonb_build_object('success', false, 'error', 'invalid_session', 'message', 'Session expirovala nebo byla odhlášena.');
   end if;
 
+  -- Aktualizujeme last_used_at maximálně jednou za hodinu, aby se nezatěžovala databáze
   update public.attendance_sessions
   set last_used_at = now()
-  where token_hash = v_token_hash;
+  where token_hash = v_token_hash
+    and last_used_at < now() - interval '1 hour';
 
   return jsonb_build_object(
     'success', true,
@@ -514,7 +522,7 @@ begin
 end;
 $$;
 
--- Změna PINu přihlášeným uživatelem
+-- Změna PINu: ověří původní PIN a revokuje všechny ostatní aktivní sessions
 create or replace function public.change_attendance_pin(
   p_old_pin text,
   p_new_pin text,
@@ -523,7 +531,7 @@ create or replace function public.change_attendance_pin(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_user_key text;
@@ -566,6 +574,7 @@ begin
       updated_at = now()
   where user_key = v_user_key;
 
+  -- Bezpečnostní revokace sessions: zneplatníme ostatní relace uživatele
   if p_revoke_others then
     v_raw_token := public.current_session_token();
     v_current_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
@@ -574,6 +583,12 @@ begin
     set revoked_at = now()
     where user_key = v_user_key
       and token_hash <> v_current_token_hash
+      and revoked_at is null;
+  else
+    -- Revokovat úplně všechny
+    update public.attendance_sessions
+    set revoked_at = now()
+    where user_key = v_user_key
       and revoked_at is null;
   end if;
 
@@ -595,7 +610,7 @@ create or replace function public.register_user_with_invite(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_clean_user text;
@@ -714,13 +729,13 @@ begin
 end;
 $$;
 
--- Anonymní stav registrace pro nepřihlášené návštěvníky
+-- Anonymní stav registrace pro návštěvníky
 create or replace function public.registration_status()
 returns jsonb
 language plpgsql
 stable
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 begin
   return jsonb_build_object(
@@ -737,7 +752,7 @@ create or replace function public.update_own_settings(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_user_key text;
@@ -791,7 +806,7 @@ create or replace function public.admin_create_invite(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_code text;
@@ -831,7 +846,7 @@ begin
 end;
 $$;
 
--- Správce: reset PINu uživatele
+-- Správce: reset PINu uživatele (okamžitě revokuje VŠECHNY aktivní sessions daného uživatele)
 drop function if exists public.admin_reset_user_pin(text, text);
 create or replace function public.admin_reset_user_pin(
   p_target_user_key text,
@@ -840,7 +855,7 @@ create or replace function public.admin_reset_user_pin(
 returns boolean
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_bcrypt text;
@@ -866,9 +881,11 @@ begin
     raise exception 'Uživatel nebyl nalezen.';
   end if;
 
+  -- Bezpečnostní revokace VŠECH relací cílového uživatele (žádný token nesmí zůstat funkční)
   update public.attendance_sessions
   set revoked_at = now()
-  where user_key = p_target_user_key and revoked_at is null;
+  where user_key = p_target_user_key
+    and revoked_at is null;
 
   return true;
 end;
@@ -882,7 +899,7 @@ create or replace function public.admin_change_user_role(
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 begin
   if not public.is_admin() then
@@ -902,14 +919,14 @@ begin
 end;
 $$;
 
--- Správce: smazání uživatele
+-- Správce: smazání uživatele (čistý kaskádový úklid profilu, credentials, sessions i pozvánek)
 create or replace function public.admin_delete_user(
   p_target_user_key text
 )
 returns boolean
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions, pg_temp
 as $$
 begin
   if not public.is_admin() then
@@ -920,6 +937,11 @@ begin
     raise exception 'Nemůžeš smazat svůj vlastní přihlášený administrátorský účet.';
   end if;
 
+  -- Úklid pozvánek vytvořených tímto uživatelem
+  delete from public.attendance_invites
+  where created_by = p_target_user_key;
+
+  -- Kaskádové smazání profilu (díky ON DELETE CASCADE smaže credentials, sessions a attendance_days)
   delete from public.attendance_profiles
   where user_key = p_target_user_key;
 
@@ -934,7 +956,7 @@ create or replace function public.admin_cleanup_old_tombstones(
 returns integer
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
 declare
   v_deleted_count integer;
@@ -962,7 +984,7 @@ create or replace function public.upsert_attendance_day_lww(
 returns jsonb
 language plpgsql
 security definer
-set search_path = public, extensions
+set search_path = public, extensions, pg_temp
 as $$
 declare
   v_caller_user_key text;
@@ -1101,7 +1123,7 @@ create policy "Secure read profiles"
     or public.is_admin()
   );
 
--- POZVÁNKY (attendance_invites)
+-- POZVÁNKY (attendance_invites): správce spravuje pozvánky
 drop policy if exists "Admin manage invites" on public.attendance_invites;
 create policy "Admin manage invites"
   on public.attendance_invites
@@ -1122,7 +1144,7 @@ create policy "Secure read own attendance days"
   );
 
 -- ----------------------------------------------------------------------------
--- 10. OPRÁVNĚNÍ K TABULKÁM A FUNKCÍM (PRINCIPLE OF LEAST PRIVILEGE)
+-- 10. OPRÁVNĚNÍ K TABULKÁM (PRINCIPLE OF LEAST PRIVILEGE)
 -- ----------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated;
 
@@ -1140,23 +1162,55 @@ revoke insert, update, delete on public.attendance_days from public, anon, authe
 
 -- attendance_invites: SELECT a administrátorská správa
 grant select on public.attendance_invites to anon, authenticated;
-revoke insert, update, delete on public.attendance_invites from anon;
+revoke insert, update, delete on public.attendance_invites from public, anon;
 grant insert, update, delete on public.attendance_invites to authenticated;
 
--- Spouštění RPC funkcí
+-- ----------------------------------------------------------------------------
+-- 11. OPRÁVNĚNÍ K FUNKCÍM (EXPLICITNÍ REVOKE + POUZE VYŽADOVANÉ GRANTS)
+-- ----------------------------------------------------------------------------
+
+-- P0.1 Explicitní REVOKE ALL ze všech funkcí pro PUBLIC, anon i authenticated
+revoke all on function public.current_client_user_agent() from public, anon, authenticated;
+revoke all on function public.current_session_token() from public, anon, authenticated;
+revoke all on function public.current_session_user_key() from public, anon, authenticated;
+revoke all on function public.is_admin() from public, anon, authenticated;
+revoke all on function public.login_attendance_user(text, text, boolean) from public, anon, authenticated;
+revoke all on function public.logout_attendance_session(boolean) from public, anon, authenticated;
+revoke all on function public.verify_attendance_session() from public, anon, authenticated;
+revoke all on function public.change_attendance_pin(text, text, boolean) from public, anon, authenticated;
+revoke all on function public.register_user_with_invite(text, text, text, text) from public, anon, authenticated;
+revoke all on function public.registration_status() from public, anon, authenticated;
+revoke all on function public.update_own_settings(jsonb) from public, anon, authenticated;
+revoke all on function public.admin_create_invite(text) from public, anon, authenticated;
+revoke all on function public.admin_reset_user_pin(text, text) from public, anon, authenticated;
+revoke all on function public.admin_change_user_role(text, text) from public, anon, authenticated;
+revoke all on function public.admin_delete_user(text) from public, anon, authenticated;
+revoke all on function public.admin_cleanup_old_tombstones(integer) from public, anon, authenticated;
+revoke all on function public.upsert_attendance_day_lww(jsonb) from public, anon, authenticated;
+
+-- P0.1 Udělení EXECUTE pouze pro funkce vyžadované klientem:
+
+-- 1. Veřejné (anonymní) vstupní brány:
+grant execute on function public.login_attendance_user(text, text, boolean) to anon, authenticated;
+grant execute on function public.register_user_with_invite(text, text, text, text) to anon, authenticated;
+grant execute on function public.registration_status() to anon, authenticated;
+
+-- 2. Pomocné funkce pro RLS a zjištění identity:
+grant execute on function public.current_client_user_agent() to anon, authenticated;
 grant execute on function public.current_session_token() to anon, authenticated;
 grant execute on function public.current_session_user_key() to anon, authenticated;
 grant execute on function public.is_admin() to anon, authenticated;
-grant execute on function public.login_attendance_user(text, text, boolean) to anon, authenticated;
+
+-- 3. Běžné uživatelské operace (vyžadují uvnitř platný session token v X-Attendance-Session):
 grant execute on function public.logout_attendance_session(boolean) to anon, authenticated;
 grant execute on function public.verify_attendance_session() to anon, authenticated;
 grant execute on function public.change_attendance_pin(text, text, boolean) to anon, authenticated;
-grant execute on function public.register_user_with_invite(text, text, text, text) to anon, authenticated;
-grant execute on function public.registration_status() to anon, authenticated;
 grant execute on function public.update_own_settings(jsonb) to anon, authenticated;
+grant execute on function public.upsert_attendance_day_lww(jsonb) to anon, authenticated;
+
+-- 4. Administrátorské operace (vyžadují uvnitř session token s rolí admin):
 grant execute on function public.admin_create_invite(text) to anon, authenticated;
 grant execute on function public.admin_reset_user_pin(text, text) to anon, authenticated;
 grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;
 grant execute on function public.admin_delete_user(text) to anon, authenticated;
 grant execute on function public.admin_cleanup_old_tombstones(integer) to anon, authenticated;
-grant execute on function public.upsert_attendance_day_lww(jsonb) to anon, authenticated;

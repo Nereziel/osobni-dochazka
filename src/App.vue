@@ -367,7 +367,7 @@ async function handleDaySave(day) {
     await saveDay(day, currentUser.value, settings.value);
     showToast('Den byl úspěšně uložen', '✓');
     await refreshPendingCount(currentUser.value?.userKey || 'user:local');
-  } catch (err) {
+  } catch {
     showToast('Uložení selhalo', '⚠️');
   }
 }
@@ -377,7 +377,7 @@ async function handleDayDelete(dateKey) {
     await deleteDay(dateKey, currentUser.value);
     showToast('Záznam byl smazán', '🗑️');
     await refreshPendingCount(currentUser.value?.userKey || 'user:local');
-  } catch (err) {
+  } catch {
     showToast('Smazání selhalo', '⚠️');
   }
 }

@@ -213,10 +213,28 @@ export async function drainOutboxQueue(currentUser) {
   return successCount;
 }
 
+let lastSuccessfulPullTimestamps = new Map();
+
+export function getLastSuccessfulPullAt(userKey) {
+  return lastSuccessfulPullTimestamps.get(userKey) || null;
+}
+
+export function setLastSuccessfulPullAt(userKey, timestamp) {
+  if (timestamp) {
+    lastSuccessfulPullTimestamps.set(userKey, timestamp);
+  } else {
+    lastSuccessfulPullTimestamps.delete(userKey);
+  }
+}
+
 /**
- * Plná synchronizace: Outbox -> Supabase Fetch -> Conflict Resolution (Last-Write-Wins + Tombstones)
+ * Plná nebo inkrementální synchronizace: Outbox -> Supabase Fetch -> Conflict Resolution (Last-Write-Wins + Tombstones)
  */
-export async function performFullSync(currentUser, currentSettings, options = { pushLocalDays: true }) {
+export async function performFullSync(
+  currentUser,
+  currentSettings,
+  options = { pushLocalDays: true, incremental: false, fetchProfile: true }
+) {
   if (!isSupabaseConfigured() || !currentUser?.userKey) {
     return { status: 'local' };
   }
@@ -224,25 +242,44 @@ export async function performFullSync(currentUser, currentSettings, options = { 
   // 1. Nejprve atomicky zpracovat frontu outboxu (LWW na serveru)
   await drainOutboxQueue(currentUser);
 
-  // 2. Načíst profil ze serveru
+  // 2. Načíst profil ze serveru (pouze pokud je výslovně požadován nebo při full syncu)
   let serverProfile = null;
-  try {
-    const profRows = await supabaseRequest(
-      `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*`,
-      {},
-      currentUser
-    );
-    if (profRows?.[0]) serverProfile = profRows[0];
-  } catch (err) {
-    console.warn('Nelze načíst profil ze serveru:', err);
+  const shouldFetchProfile = options.fetchProfile !== false && !options.incremental;
+  if (shouldFetchProfile) {
+    try {
+      const profRows = await supabaseRequest(
+        `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*`,
+        {},
+        currentUser
+      );
+      if (profRows?.[0]) serverProfile = profRows[0];
+    } catch (err) {
+      console.warn('Nelze načíst profil ze serveru:', err);
+    }
   }
 
-  // 3. Načíst dny z cloudu (včetně záznamů s deleted_at pro tombstones)
-  const remoteRows = await supabaseRequest(
-    `/rest/v1/attendance_days?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*&order=date.asc`,
-    {},
-    currentUser
-  );
+  // 3. Dotaz na dny: plný vs inkrementální s 15s bezpečnostním překrytím (overlap window)
+  const lastPull = getLastSuccessfulPullAt(currentUser.userKey);
+  const isIncremental = Boolean(options.incremental && lastPull);
+  let daysUrl = `/rest/v1/attendance_days?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*&order=date.asc`;
+
+  if (isIncremental) {
+    const overlapIso = new Date(Date.parse(lastPull) - 15000).toISOString();
+    daysUrl += `&updated_at=gte.${encodeURIComponent(overlapIso)}`;
+  }
+
+  const remoteRows = await supabaseRequest(daysUrl, {}, currentUser);
+
+  // Rychlá optimalizace: pokud při 5s pollingu nepřibyla žádná změna na serveru
+  if (isIncremental && (!remoteRows || remoteRows.length === 0) && !options.pushLocalDays) {
+    setLastSuccessfulPullAt(currentUser.userKey, new Date().toISOString());
+    const localList = await getUserDays(currentUser.userKey);
+    return {
+      status: 'online',
+      recordsMap: new Map(localList.map(d => [d.date, d])),
+      serverProfile
+    };
+  }
 
   const remoteMap = new Map();
   for (const r of (remoteRows || [])) {
@@ -343,6 +380,8 @@ export async function performFullSync(currentUser, currentSettings, options = { 
       }
     }
   }
+
+  setLastSuccessfulPullAt(currentUser.userKey, new Date().toISOString());
 
   return {
     status: 'online',

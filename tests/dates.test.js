@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   localDateKey,
   parseDateKey,
-  isSameMonth,
   isWeekendDate,
   addMonths,
   getDaysInMonth

@@ -87,7 +87,7 @@ Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./su
 ## 📊 Přehled stavu funkcí
 
 ### Plně implementováno
-- **Vlastní bezpečný session systém (bez Supabase Auth)**: Uživatel nepotřebuje e-mail ani externí účet. Přihlášení probíhá přes `username + PIN`. Server vystavuje 256-bitový session token odesílaný v hlavičce `X-Attendance-Session`.
+- **Vlastní bezpečný session systém**: Uživatel nepotřebuje e-mail ani externí účet. Přihlášení probíhá přes `username + PIN`. Server vystavuje 256-bitový session token odesílaný v hlavičce `X-Attendance-Session`.
 - **Bcrypt hashování na serveru**: PIN je v databázi chráněn funkcí `crypt(pin, gen_salt('bf', 10))`.
 - **5s synchronizace v popředí**: Namísto Realtime kanálu aplikace periodicky synchronizuje data každých 5 sekund, pokud je otevřená v popředí a online. Při minimalizaci (hidden) se polling zastaví; po návratu do popředí se okamžitě provede synchronizace.
 - **Vue 3 + Vite + Composition API**: Moderní architektura bez starého vanilkového kódu.

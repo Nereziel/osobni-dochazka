@@ -47,7 +47,11 @@ export function useSync() {
     }
 
     try {
-      const res = await sync(activeUser, activeSettings, { pushLocalDays: false });
+      const res = await sync(activeUser, activeSettings, {
+        pushLocalDays: false,
+        incremental: true,
+        fetchProfile: false
+      });
       if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
         onSyncCompletedCallback(res.recordsMap);
       }
@@ -148,11 +152,18 @@ export function useSync() {
    * Hlavní synchronizace:
    * Zajišťuje, že neběží dvě plné synchronizace paralelně (syncInProgress).
    */
-  async function sync(currentUser, currentSettings, options = { pushLocalDays: true }) {
+  async function sync(currentUser, currentSettings, options = {}) {
     if (!isSupabaseConfigured() || !currentUser?.userKey) {
       syncState.value = isSupabaseConfigured() ? 'online' : 'local';
       return { status: 'local' };
     }
+
+    const syncOptions = {
+      pushLocalDays: true,
+      incremental: false,
+      fetchProfile: true,
+      ...options
+    };
 
     if (syncInProgress) {
       pendingFollowupSync = true;
@@ -164,7 +175,7 @@ export function useSync() {
     syncError.value = null;
 
     try {
-      const result = await performFullSync(currentUser, currentSettings, options);
+      const result = await performFullSync(currentUser, currentSettings, syncOptions);
       syncState.value = 'online';
       await refreshPendingCount(currentUser.userKey);
       return result;

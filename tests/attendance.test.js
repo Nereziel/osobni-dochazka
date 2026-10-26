@@ -8,8 +8,7 @@ import {
   workedMinutes,
   creditedMinutes,
   dayMetrics,
-  monthStats,
-  normalizeSettings
+  monthStats
 } from '../src/utils/attendance.js';
 
 describe('Attendance calculations and business logic', () => {

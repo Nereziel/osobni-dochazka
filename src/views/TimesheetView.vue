@@ -145,7 +145,6 @@ import { computed } from 'vue';
 import {
   fmtMonthTitle,
   localDateKey,
-  parseDateKey,
   isWeekendDate,
   fmtWeekdayShort,
   addMonths,
