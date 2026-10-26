@@ -700,9 +700,9 @@ create policy "Secure access to own attendance days"
     if (!isCloudReady()) return;
     setSyncState('syncing');
     const row = profileRowFromSettings(currentUser);
-    await sbFetch('/rest/v1/attendance_profiles?on_conflict=user_key', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    await sbFetch(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
       body: JSON.stringify(row)
     });
     setSyncState('online');
