@@ -17,6 +17,9 @@
   const LS_USER_KEY = 'dochazka_active_user_v2';
   const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
   const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
+  const APP_VERSION = 'v2.4.0';
+  const APP_BUILD_DATE = '2026.10';
+  const APP_SW_CACHE = 'Cache v7';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -1068,6 +1071,25 @@
     return used;
   }
 
+  function monthVacationDays(monthDate) {
+    const y = monthDate.getFullYear();
+    const m = String(monthDate.getMonth() + 1).padStart(2, '0');
+    const prefix = `${y}-${m}-`;
+    let used = 0;
+    for (const [key, day] of records.entries()) {
+      if (!key.startsWith(prefix)) continue;
+      if (day.type === 'vacation') used += 1;
+      else if (day.type === 'halfVacation') used += 0.5;
+    }
+    return used;
+  }
+
+  function formatVacationDays(n) {
+    if (n === 1) return '1 den';
+    if (n >= 2 && n <= 4) return `${n} dny`;
+    return `${n.toLocaleString('cs-CZ')} dnů`;
+  }
+
   function monthStats(monthDate) {
     const year = monthDate.getFullYear(), month = monthDate.getMonth();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -1604,11 +1626,19 @@
     $('#tsBreaksTotal').textContent = formatDuration(s.totalBreaks);
 
     const year = timesheetMonth.getFullYear();
-    const usedVac = yearVacationUsed(year);
-    const allowance = Number(settings.vacationAllowanceDays) || 20;
-    const remainingVac = Math.max(0, allowance - usedVac);
-    $('#tsVacationRemaining').textContent = `${remainingVac.toLocaleString('cs-CZ')} dnů`;
-    $('#tsVacationUsed').textContent = `vyčerpáno ${usedVac.toLocaleString('cs-CZ')} z ${allowance} dnů (${year})`;
+    const usedVacYear = yearVacationUsed(year);
+    const usedVacMonth = monthVacationDays(timesheetMonth);
+
+    const vacDaysEl = $('#tsVacationDays') || $('#tsVacationRemaining');
+    if (vacDaysEl) {
+      vacDaysEl.textContent = formatVacationDays(usedVacYear);
+    }
+    const vacInfoEl = $('#tsVacationInfo') || $('#tsVacationUsed');
+    if (vacInfoEl) {
+      vacInfoEl.textContent = usedVacMonth > 0
+        ? `${usedVacMonth.toLocaleString('cs-CZ')} d. v tomto měsíci (rok ${year}: celkem ${usedVacYear.toLocaleString('cs-CZ')} d.)`
+        : `rok ${year}: celkem zadaných ${usedVacYear.toLocaleString('cs-CZ')} d.`;
+    }
 
     $('#printFundTotal').textContent = formatDuration(s.fund);
     $('#printWorkedTotal').textContent = formatDuration(s.worked + s.credited);
@@ -1672,7 +1702,9 @@
     $('#setDailyTarget').value = minutesToTime(settings.dailyTargetMinutes);
     $('#setBreakMinutes').value = settings.breakMinutes;
     $('#setBreakAfterMinutes').value = settings.breakAfterMinutes;
-    $('#setVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
+    if ($('#setVacationAllowance')) {
+      $('#setVacationAllowance').value = settings.vacationAllowanceDays ?? 20;
+    }
     $('#setAutoFill').checked = !!settings.autoFill;
     $('#setThemeMode').value = settings.theme;
 
@@ -1693,6 +1725,11 @@
     // Supabase
     $('#setSbUrl').value = supabaseConfig.url || '';
     $('#setSbKey').value = supabaseConfig.anonKey || '';
+
+    // Verze aplikace
+    if ($('#appVersionLabel')) $('#appVersionLabel').textContent = APP_VERSION;
+    if ($('#appBuildDateLabel')) $('#appBuildDateLabel').textContent = APP_BUILD_DATE;
+    if ($('#appCacheVersionLabel')) $('#appCacheVersionLabel').textContent = `${APP_SW_CACHE} (Aktivní)`;
 
     renderAuthAndSyncUI();
   }
@@ -2684,7 +2721,7 @@
         dailyTargetMinutes: target ?? 510,
         breakMinutes: clamp(Number($('#setBreakMinutes').value) || 0, 0, 240),
         breakAfterMinutes: clamp(Number($('#setBreakAfterMinutes').value) || 0, 0, 1440),
-        vacationAllowanceDays: clamp(Number($('#setVacationAllowance').value) || 20, 0, 60),
+        vacationAllowanceDays: $('#setVacationAllowance') ? clamp(Number($('#setVacationAllowance').value) || 20, 0, 60) : (settings.vacationAllowanceDays || 20),
         autoFill: $('#setAutoFill').checked,
         workDays: checkedDays.length > 0 ? checkedDays : [1, 2, 3, 4, 5],
         weekendMode: $('#setWeekendMode').value,
@@ -2797,6 +2834,11 @@
       e.target.value = '';
     });
     $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
+
+    // O aplikaci – nápověda PWA
+    $('#aboutPwaHelpBtn')?.addEventListener('click', () => {
+      $('#pwaHelpDialog')?.showModal();
+    });
 
     // Zavření modálu klikem na backdrop
     ['dayEditDialog', 'loginModal', 'registerModal', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal', 'createInviteModal', 'adminResetPinModal'].forEach(id => {

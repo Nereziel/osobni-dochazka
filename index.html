@@ -480,9 +480,9 @@
               <small class="muted">dovolené, lékař, nemoc</small>
             </div>
             <div class="win-card ts-kpi-tile">
-              <span class="ts-kpi-label">Dovolená (tento rok)</span>
-              <strong id="tsVacationRemaining" class="ts-kpi-val">20 dnů</strong>
-              <small id="tsVacationUsed" class="muted">vyčerpáno 0 z 20 dnů</small>
+              <span class="ts-kpi-label">Dovolená</span>
+              <strong id="tsVacationDays" class="ts-kpi-val">0 dnů</strong>
+              <small id="tsVacationInfo" class="muted">0 d. v tomto měsíci</small>
             </div>
             <div class="win-card ts-kpi-tile">
               <span class="ts-kpi-label">Celkem přestávky</span>
@@ -558,13 +558,6 @@
                     <div class="win-input-suffix">
                       <input id="setBreakAfterMinutes" type="number" min="0" max="1440" step="15" required>
                       <span>min</span>
-                    </div>
-                  </label>
-                  <label class="win-field">
-                    <span>Roční nárok na dovolenou</span>
-                    <div class="win-input-suffix">
-                      <input id="setVacationAllowance" type="number" min="0" max="60" step="0.5" required>
-                      <span>dnů</span>
                     </div>
                   </label>
                 </div>
@@ -795,6 +788,42 @@
                 </div>
               </article>
 
+              <!-- INFORMACE O APLIKACI A VERZE -->
+              <article class="win-card settings-group-card app-about-card">
+                <div class="settings-group-header">
+                  <div class="icon-wrap" style="background: var(--accent-light); color: var(--accent); font-size: 18px;">ℹ️</div>
+                  <div>
+                    <h3>O aplikaci</h3>
+                    <p>Osobní docházka · Windows 11 Enterprise Cloud</p>
+                  </div>
+                </div>
+
+                <div class="app-version-grid">
+                  <div class="app-version-item">
+                    <span class="muted">Verze aplikace:</span>
+                    <strong id="appVersionLabel">v2.4.0</strong>
+                  </div>
+                  <div class="app-version-item">
+                    <span class="muted">Sestavení (Build):</span>
+                    <span id="appBuildDateLabel">2026.10</span>
+                  </div>
+                  <div class="app-version-item">
+                    <span class="muted">PWA Service Worker:</span>
+                    <span class="win-badge neutral" id="appCacheVersionLabel">Cache v5 (Aktivní)</span>
+                  </div>
+                  <div class="app-version-item">
+                    <span class="muted">Režim běhu:</span>
+                    <span class="win-badge positive">PWA Offline Ready</span>
+                  </div>
+                </div>
+
+                <div class="about-card-actions">
+                  <button id="aboutPwaHelpBtn" class="win-btn-subtle" type="button">
+                    <span>Návod k instalaci aplikace</span>
+                  </button>
+                </div>
+              </article>
+
             </div>
           </div>
         </section>
@@ -804,9 +833,9 @@
              ================================================================ -->
         <section id="viewTeam" class="win11-view">
           <div class="team-back-row">
-            <button id="backToSettingsBtn" class="win-btn-subtle" type="button" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; margin-bottom: 8px;">
+            <button id="backToSettingsBtn" class="win-btn-subtle" type="button">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16"><polyline points="15 18 9 12 15 6"/></svg>
-              <span>← Zpět do Nastavení</span>
+              <span>Zpět do Nastavení</span>
             </button>
           </div>
 
