@@ -129,12 +129,14 @@ Pozvánky pro nové uživatele.
 
 ## 5. Registrace a Inicializace Správce
 
-- **Invite-Only model**:
-  Registrace běžného uživatele přes `register_user_with_invite` vyžaduje platný kód pozvánky vytvořený administrátorem (`INV-...`).
+- **Automatické vytvoření prvního správce (Bootstrap)**:
+  Pokud je databáze prázdná (neexistuje žádný profil v `attendance_profiles`), první registrovaný uživatel automaticky získá roli `admin` a nepotřebuje kód pozvánky.
+- **Invite-Only model pro další uživatele**:
+  Jakmile v systému existuje alespoň jeden profil, každá další registrace striktně vyžaduje platný kód pozvánky vytvořený administrátorem (`INV-...`) a novému uživateli je přiřazena role `employee`.
+- **Ochrana proti souběhu (Advisory Lock)**:
+  Registrační RPC `register_user_with_invite` používá transakční zámek `pg_advisory_xact_lock`, který garantuje, že ani při současných paralelních registracích do prázdné DB nemohou vzniknout dva administrátoři.
 - **Prevence Enumeration útoků**:
-  Kód pozvánky je validován jako první. Pokud je neplatný nebo chybí, server neprozradí, zda zadané uživatelské jméno v systému existuje.
-- **Vytvoření prvního správce**:
-  První administrátorský účet se zakládá spuštěním skriptu `supabase/bootstrap_admin.sql` přímo v Supabase SQL Editoru.
+  Při registraci do neprázdné DB je kód pozvánky validován před kontrolou existence uživatelského jména. Pokud je pozvánka neplatná nebo chybí, server neprozradí, zda uživatelské jméno již existuje.
 
 ---
 

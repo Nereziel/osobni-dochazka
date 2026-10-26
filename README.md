@@ -76,11 +76,11 @@ Tento skript obsahuje:
 - **Zákaz přímého zápisu přes REST**: Zápis docházky probíhá přes RPC `upsert_attendance_day_lww` a nastavení přes RPC `update_own_settings`.
 - **Pohled `v_monthly_attendance_summary`**: S volbou `security_invoker = true` pro respektování RLS politik a kanonickými typy docházky.
 - **Session systém**: Ověřování relací přes HTTP hlavičku `X-Attendance-Session`, serverový lockout counter s garancí uložení.
-- **Invite-only registrace**: Registrace nových uživatelů vyžaduje platný kód pozvánky. První administrátor se inicializuje skriptem [`supabase/bootstrap_admin.sql`](./supabase/bootstrap_admin.sql).
+- **Automatický první administrátor a Invite-only registrace**: Pokud je databáze prázdná, první registrovaný uživatel se automaticky stává správcem systému (role `admin`) bez nutnosti pozvánky. Každá další registrace striktně vyžaduje platný kód pozvánky vytvořený správcem a získává roli `employee`. Souběh prvních registrací je ošetřen transakčním advisory lockem.
 - **Atomický LWW upsert**: RPC funkce `upsert_attendance_day_lww` pro spolehlivou synchronizaci a řešení souběžných konfliktů.
 - **Row Level Security (RLS)**: Striktní autorizace pro všechny operace.
 
-Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./supabase/schema.sql) vložit do **Supabase SQL Editoru** a spustit, následovaný spuštěním [`supabase/bootstrap_admin.sql`](./supabase/bootstrap_admin.sql).
+Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./supabase/schema.sql) vložit do **Supabase SQL Editoru** a spustit. Prvního administrátora si následně zaregistrujete přímo přes registrační formulář aplikace.
 
 ---
 

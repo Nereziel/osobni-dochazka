@@ -4,7 +4,7 @@
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Nový profil</span>
-          <h2>Registrace uživatele</h2>
+          <h2>{{ isFirstUser ? 'První registrace (Správce)' : 'Registrace uživatele' }}</h2>
         </div>
         <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
           ×
@@ -12,7 +12,15 @@
       </header>
 
       <form class="dialog-body-scroll" @submit.prevent="handleSubmit">
-        <div class="win-infobar info" style="margin-bottom: 12px;">
+        <div v-if="isFirstUser" class="win-infobar success" style="margin-bottom: 12px;">
+          <div class="infobar-icon">🛡️</div>
+          <div class="infobar-body">
+            <strong>První registrace (Správce systému)</strong>
+            <p>V databázi dosud není vytvořen žádný uživatel. Tento účet získá roli administrátora a nepotřebuje pozvánku.</p>
+          </div>
+        </div>
+
+        <div v-else class="win-infobar info" style="margin-bottom: 12px;">
           <div class="infobar-icon">🔒</div>
           <div class="infobar-body">
             <strong>Registrace na pozvánku (Invite-Only)</strong>
@@ -72,7 +80,7 @@
           </label>
         </div>
 
-        <label class="win-field" style="margin-top: 6px;">
+        <label v-if="!isFirstUser" class="win-field" style="margin-top: 6px;">
           <span>Kód pozvánky od správce (Invite code) *</span>
           <input
             v-model="inviteCode"
@@ -118,6 +126,7 @@ import { ref } from 'vue';
 const emit = defineEmits(['register-submit', 'switch-to-login']);
 
 const dialogRef = ref(null);
+const isFirstUser = ref(false);
 const username = ref('');
 const displayName = ref('');
 const pin = ref('');
@@ -131,6 +140,7 @@ function open(firstArg = false, secondArg = '') {
   displayName.value = '';
   pin.value = '';
   pinConfirm.value = '';
+  isFirstUser.value = typeof firstArg === 'boolean' ? firstArg : false;
   // Podpora volání open(prefilledInvite) i legacy open(isFirst, prefilledInvite)
   const prefilled = typeof firstArg === 'string' ? firstArg : (secondArg || '');
   inviteCode.value = prefilled;

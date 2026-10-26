@@ -147,18 +147,31 @@ begin
   raise notice '✓ TEST 4 PROŠEL: Přihlášení vyresetovalo counter a uložilo pouze bezpečný SHA-256 hash tokenu.';
 
   -- --------------------------------------------------------------------------
-  -- TEST 5: REGISTRACE JE STRIKTNĚ POUZE NA POZVÁNKU
+  -- TEST 5: REGISTRACE: ZÁKAZ BEZ POZVÁNKY PŘI EXISTUJÍCÍCH PROFILECH A EMPLOYEE ROLE
   -- --------------------------------------------------------------------------
   v_reg_res := public.register_user_with_invite('intruder', 'Intruder', '1234', '');
-  if (v_reg_res->>'success')::boolean is not false then
-    raise exception 'TEST 5 SELHAL: Registrace bez kódu pozvánky nesmí projít.';
+  if (v_reg_res->>'success')::boolean is not false or (v_reg_res->>'error') <> 'missing_invite' then
+    raise exception 'TEST 5 SELHAL: Registrace bez kódu pozvánky do neprázdné DB nesmí projít (očekáváno missing_invite).';
   end if;
 
   v_reg_res := public.register_user_with_invite('intruder', 'Intruder', '1234', 'INV-FAKE-999');
-  if (v_reg_res->>'success')::boolean is not false then
-    raise exception 'TEST 5 SELHAL: Registrace s neplatnou pozvánkou nesmí projít.';
+  if (v_reg_res->>'success')::boolean is not false or (v_reg_res->>'error') <> 'invalid_invite' then
+    raise exception 'TEST 5 SELHAL: Registrace s neplatnou pozvánkou nesmí projít (očekáváno invalid_invite).';
   end if;
-  raise notice '✓ TEST 5 PROŠEL: Registrace striktně odmítá neautorizované požadavky bez platné pozvánky.';
+
+  -- Vygenerování platné pozvánky administrátorem a ověření vytvoření s rolí employee
+  insert into public.attendance_invites (code, target_role, is_used)
+  values ('INV-SEC-TEST1', 'employee', false);
+
+  v_reg_res := public.register_user_with_invite('sec_newbie', 'Sec Newbie', '1234', 'INV-SEC-TEST1');
+  if (v_reg_res->>'success')::boolean is not true or (v_reg_res->>'role') <> 'employee' then
+    raise exception 'TEST 5 SELHAL: Registrace s platnou pozvánkou selhala nebo nepřiřadila roli employee: %', v_reg_res;
+  end if;
+
+  delete from public.attendance_profiles where user_key = 'user:sec_newbie';
+  delete from public.attendance_invites where code = 'INV-SEC-TEST1';
+
+  raise notice '✓ TEST 5 PROŠEL: Registrace striktně vyžaduje pozvánku pro další uživatele a přiřazuje roli employee.';
 
   -- --------------------------------------------------------------------------
   -- TEST 6: AUTORIZACE A IZOLACE DAT: UŽIVATEL A NESMÍ ZAPISOVAT PRO UŽIVATELE B

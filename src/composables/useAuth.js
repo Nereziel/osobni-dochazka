@@ -88,9 +88,6 @@ export function useAuth() {
     if (pinInput !== pinConfirmInput) throw new Error('Zadaná hesla/PINy se neshodují.');
 
     const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
-    if (!cleanInvite) {
-      throw new Error('Registrace vyžaduje platný kód pozvánky od správce.');
-    }
 
     if (!isSupabaseConfigured()) {
       throw new Error('Supabase databáze není nakonfigurována. Pro registraci je nutné nastavit spojení s databází.');

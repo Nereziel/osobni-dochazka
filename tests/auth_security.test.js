@@ -331,77 +331,101 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     });
   }
 
-  // 9. Registrace VÝHRADNĚ na pozvánky (žádný auto-admin fallback)
-  function register_user_with_invite(username, displayName, pin, inviteCode) {
-    const cleanUser = (username || '').toLowerCase().trim().replace(/[^a-zA-Z0-9._-]/g, '');
-    if (cleanUser.length < 3) {
-      return { success: false, error: 'invalid_username', message: 'Uživatelské jméno musí mít alespoň 3 znaky.' };
+  // 9. Registrace uživatele:
+  // - První uživatel v prázdné DB -> role 'admin', nepotřebuje invite kód
+  // - Každý další uživatel -> vyžaduje platný invite kód, získá roli 'employee'
+  // - Transakční advisory lock zaručuje atomicitu a prevenci race condition
+  let registrationLock = Promise.resolve();
+
+  async function register_user_with_invite(username, displayName, pin, inviteCode) {
+    // Simulace transakčního advisory locku (pg_advisory_xact_lock)
+    let releaseLock;
+    const lockPromise = new Promise(resolve => { releaseLock = resolve; });
+    const currentLock = registrationLock;
+    registrationLock = registrationLock.then(() => lockPromise);
+    await currentLock;
+
+    try {
+      const cleanUser = (username || '').toLowerCase().trim().replace(/[^a-zA-Z0-9._-]/g, '');
+      if (cleanUser.length < 3) {
+        return { success: false, error: 'invalid_username', message: 'Uživatelské jméno musí mít alespoň 3 znaky.' };
+      }
+      if (!pin || pin.length < 4) {
+        return { success: false, error: 'pin_too_short', message: 'PIN/heslo musí mít alespoň 4 znaky.' };
+      }
+      const userKey = `user:${cleanUser}`;
+
+      const isFirstUser = profilesTable.length === 0;
+      let assignedRole = 'employee';
+      let invite = null;
+
+      if (isFirstUser) {
+        assignedRole = 'admin';
+      } else {
+        const trimmedInvite = (inviteCode || '').trim();
+        if (!trimmedInvite) {
+          return { success: false, error: 'missing_invite', message: 'Registrace vyžaduje platný kód pozvánky.' };
+        }
+
+        invite = invitesTable.find(i => i.code.toUpperCase() === trimmedInvite.toUpperCase());
+        if (!invite) {
+          return { success: false, error: 'invalid_invite', message: `Kód pozvánky "${trimmedInvite}" neexistuje nebo je neplatný.` };
+        }
+        if (invite.is_used) {
+          return { success: false, error: 'invite_used', message: 'Tento kód pozvánky již byl využit.' };
+        }
+        if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+          return { success: false, error: 'invite_expired', message: 'Platnost tohoto kódu pozvánky vypršela.' };
+        }
+        assignedRole = 'employee';
+      }
+
+      if (profilesTable.some(p => p.user_key === userKey)) {
+        return { success: false, error: 'username_taken', message: `Uživatelské jméno "${cleanUser}" je již obsazeno.` };
+      }
+
+      // Veřejný profil
+      profilesTable.push({
+        user_key: userKey,
+        username: cleanUser,
+        display_name: displayName || cleanUser,
+        role: assignedRole,
+        work_start: '06:30',
+        work_end: '15:30',
+        daily_target_minutes: 510,
+        break_minutes: 30,
+        theme: 'system'
+      });
+
+      // Privátní credentials
+      credentialsTable.push({
+        user_key: userKey,
+        pin_password_hash: `bcrypt:${pin}`,
+        failed_login_count: 0,
+        locked_until: null
+      });
+
+      if (invite) {
+        invite.is_used = true;
+        invite.used_by = userKey;
+        invite.used_at = new Date().toISOString();
+      }
+
+      // Okamžitě vystavíme session token
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      sessionsTable.push({
+        id: crypto.randomUUID(),
+        user_key: userKey,
+        token_hash: sha256(rawToken),
+        created_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
+        revoked_at: null
+      });
+
+      return { success: true, session_token: rawToken, user_key: userKey, role: assignedRole };
+    } finally {
+      releaseLock();
     }
-    if (!pin || pin.length < 4) {
-      return { success: false, error: 'pin_too_short', message: 'PIN/heslo musí mít alespoň 4 znaky.' };
-    }
-    const userKey = `user:${cleanUser}`;
-
-    // 1. Ověření pozvánky VŽDY před kontrolou dostupnosti jména (prevence enumeration)
-    const trimmedInvite = (inviteCode || '').trim();
-    if (!trimmedInvite) {
-      return { success: false, error: 'missing_invite', message: 'Registrace vyžaduje platný kód pozvánky.' };
-    }
-
-    const invite = invitesTable.find(i => i.code.toUpperCase() === trimmedInvite.toUpperCase());
-    if (!invite) {
-      return { success: false, error: 'invalid_invite', message: `Kód pozvánky "${trimmedInvite}" neexistuje nebo je neplatný.` };
-    }
-    if (invite.is_used) {
-      return { success: false, error: 'invite_used', message: 'Tento kód pozvánky již byl využit.' };
-    }
-    if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
-      return { success: false, error: 'invite_expired', message: 'Platnost tohoto kódu pozvánky vypršela.' };
-    }
-
-    if (profilesTable.some(p => p.user_key === userKey)) {
-      return { success: false, error: 'username_taken', message: `Uživatelské jméno "${cleanUser}" je již obsazeno.` };
-    }
-
-    const assignedRole = invite.target_role || 'employee';
-
-    // Veřejný profil
-    profilesTable.push({
-      user_key: userKey,
-      username: cleanUser,
-      display_name: displayName || cleanUser,
-      role: assignedRole,
-      work_start: '06:30',
-      work_end: '15:30',
-      daily_target_minutes: 510,
-      break_minutes: 30,
-      theme: 'system'
-    });
-
-    // Privátní credentials
-    credentialsTable.push({
-      user_key: userKey,
-      pin_password_hash: `bcrypt:${pin}`,
-      failed_login_count: 0,
-      locked_until: null
-    });
-
-    invite.is_used = true;
-    invite.used_by = userKey;
-    invite.used_at = new Date().toISOString();
-
-    // Okamžitě vystavíme session token
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    sessionsTable.push({
-      id: crypto.randomUUID(),
-      user_key: userKey,
-      token_hash: sha256(rawToken),
-      created_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + 30 * 86400 * 1000).toISOString(),
-      revoked_at: null
-    });
-
-    return { success: true, session_token: rawToken, user_key: userKey, role: assignedRole };
   }
 
   // ==========================================================================
@@ -519,22 +543,39 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     });
   });
 
-  describe('P2 & P2.1: Registrace VÝHRADNĚ s pozvánkou a prevence username enumeration', () => {
-    it('Útočník s neplatnou pozvánkou dostane chybu pozvánky, nikoliv o existenci jména "admin"', () => {
-      const res = register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INVALID_INVITE');
+  describe('P2 & P2.1: Registrace a automatický první správce (prázdná DB vs následné registrace)', () => {
+    it('první registrace → admin (prázdná DB nepotřebuje invite kód a vytvoří admina)', async () => {
+      // Vyprázdníme tabulky pro simulaci čisté databáze
+      profilesTable = [];
+      credentialsTable = [];
+      sessionsTable = [];
+
+      const res = await register_user_with_invite('first_boss', 'First Boss', 'admin1234', '');
+      expect(res.success).toBe(true);
+      expect(res.role).toBe('admin');
+
+      const prof = profilesTable.find(p => p.user_key === 'user:first_boss');
+      expect(prof).toBeTruthy();
+      expect(prof.role).toBe('admin');
+    });
+
+    it('druhá registrace bez invite → zamítnuta (missing_invite)', async () => {
+      // V DB už existují profily z beforeEach
+      const res = await register_user_with_invite('intruder', 'Intruder', 'pass1234', '');
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('missing_invite');
+    });
+
+    it('druhá registrace s neplatnou pozvánkou → zamítnuta (invalid_invite)', async () => {
+      const res = await register_user_with_invite('intruder', 'Intruder', 'pass1234', 'INV-FAKE-999');
       expect(res.success).toBe(false);
       expect(res.error).toBe('invalid_invite');
     });
 
-    it('Teprve s platnou pozvánkou se projeví obsazenost uživatelského jména', () => {
-      const res = register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INV-TEST1234');
-      expect(res.success).toBe(false);
-      expect(res.error).toBe('username_taken');
-    });
-
-    it('Úspěšná registrace vytvoří účet v profiles i credentials a ihned vrátí session token', () => {
-      const regRes = register_user_with_invite('new_employee', 'Newbie', 'secret1234', 'INV-TEST1234');
+    it('druhá registrace s validním invite → employee', async () => {
+      const regRes = await register_user_with_invite('new_employee', 'Newbie', 'secret1234', 'INV-TEST1234');
       expect(regRes.success).toBe(true);
+      expect(regRes.role).toBe('employee');
       expect(regRes.session_token).toBeTruthy();
 
       const newProf = profilesTable.find(p => p.user_key === 'user:new_employee');
@@ -547,6 +588,39 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       // Pozvánka je označena jako použitá
       const invite = invitesTable.find(i => i.code === 'INV-TEST1234');
       expect(invite.is_used).toBe(true);
+    });
+
+    it('dvě paralelní první registrace → pouze jeden admin (advisory lock race condition test)', async () => {
+      profilesTable = [];
+      credentialsTable = [];
+      sessionsTable = [];
+
+      // Spustíme dvě registrace současně do prázdné databáze bez invite kódu
+      const [res1, res2] = await Promise.all([
+        register_user_with_invite('candidate_a', 'Candidate A', 'pass1234', ''),
+        register_user_with_invite('candidate_b', 'Candidate B', 'pass1234', '')
+      ]);
+
+      const successes = [res1, res2].filter(r => r.success);
+      const failures = [res1, res2].filter(r => !r.success);
+
+      // Právě jedna uspěla a získala roli admin
+      expect(successes.length).toBe(1);
+      expect(successes[0].role).toBe('admin');
+
+      // Druhá registrace byla odmítnuta kvůli chybějícímu invite kódu
+      expect(failures.length).toBe(1);
+      expect(failures[0].error).toBe('missing_invite');
+
+      // V celé tabulce profilů je přesně jeden administrátor
+      const adminUsers = profilesTable.filter(p => p.role === 'admin');
+      expect(adminUsers.length).toBe(1);
+    });
+
+    it('Teprve s platnou pozvánkou se projeví obsazenost uživatelského jména (prevence enumeration)', async () => {
+      const res = await register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INV-TEST1234');
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('username_taken');
     });
   });
 

@@ -18,9 +18,10 @@
 --    - Zápis nastavení probíhá výhradně přes RPC update_own_settings
 --    - attendance_credentials a attendance_sessions jsou pro REST zcela nepřístupné
 --
--- 3. REGISTRACE NA POZVÁNKY (Invite-Only):
---    - Registrace vždy vyžaduje platný kód pozvánky (žádný auto-admin fallback)
---    - První administrátor se zakládá přes skript supabase/bootstrap_admin.sql
+-- 3. REGISTRACE A AUTOMATICKÝ PRVNÍ SPRÁVCE:
+--    - První uživatel v prázdné databázi je vytvořen automaticky jako administrátor (role 'admin') bez nutnosti pozvánky
+--    - Každá další registrace striktně vyžaduje platný kód pozvánky od správce a získává roli 'employee'
+--    - Registrace je chráněna transakčním advisory lockem (pg_advisory_xact_lock) proti souběžnému vytvoření více adminů
 --    - Podporované role: 'admin', 'employee'
 --
 -- 4. ATOMICKÝ LAST-WRITE-WINS A TOMBSTONES:
@@ -599,13 +600,16 @@ begin
 end;
 $$;
 
--- Registrace s VÝHRADNÍM ověřením pozvánky (žádný auto-admin fallback)
+-- Registrace uživatele:
+-- 1. Prázdná DB (žádný profil) -> první uživatel = 'admin', nepotřebuje invite kód
+-- 2. Další registrace -> vyžaduje platný kód pozvánky, role = 'employee'
+-- 3. Transakční advisory lock (pg_advisory_xact_lock) zaručuje, že při paralelních prvních registracích vznikne právě jeden admin
 drop function if exists public.register_user_with_invite(text, text, text, text);
 create or replace function public.register_user_with_invite(
   p_username text,
   p_display_name text,
   p_pin text,
-  p_invite_code text
+  p_invite_code text default ''
 )
 returns jsonb
 language plpgsql
@@ -615,6 +619,7 @@ as $$
 declare
   v_clean_user text;
   v_user_key text;
+  v_is_first_user boolean;
   v_invite public.attendance_invites%rowtype;
   v_assigned_role text;
   v_bcrypt text;
@@ -622,6 +627,11 @@ declare
   v_token_hash text;
   v_expires_at timestamptz;
 begin
+  -- 1. Transakční advisory lock pro atomické vyhodnocení první registrace a prevenci race condition.
+  -- Pokud dvě registrace dorazí současně do prázdné DB, druhá počká a po dokončení první transakce
+  -- uvidí již existujícího uživatele.
+  perform pg_advisory_xact_lock(hashtext('attendance_registration_lock'));
+
   v_clean_user := lower(trim(regexp_replace(p_username, '[^a-zA-Z0-9._-]', '', 'g')));
   if length(v_clean_user) < 3 then
     return jsonb_build_object('success', false, 'error', 'invalid_username', 'message', 'Uživatelské jméno musí mít alespoň 3 znaky.');
@@ -631,38 +641,48 @@ begin
   end if;
   v_user_key := 'user:' || v_clean_user;
 
-  -- 1. Ověření pozvánky VŽDY před kontrolou dostupnosti jména (prevence enumeration)
-  if coalesce(trim(p_invite_code), '') = '' then
-    return jsonb_build_object('success', false, 'error', 'missing_invite', 'message', 'Registrace vyžaduje platný kód pozvánky.');
+  -- 2. Atomické zjištění, zda v databázi existuje alespoň jeden profil
+  select not exists (
+    select 1 from public.attendance_profiles
+  ) into v_is_first_user;
+
+  if v_is_first_user then
+    -- První uživatel v prázdné DB je vždy administrátor a nepotřebuje invite kód
+    v_assigned_role := 'admin';
+  else
+    -- Každá další registrace musí vyžadovat platný invite kód a získá roli employee
+    if coalesce(trim(p_invite_code), '') = '' then
+      return jsonb_build_object('success', false, 'error', 'missing_invite', 'message', 'Registrace vyžaduje platný kód pozvánky.');
+    end if;
+
+    select * into v_invite
+    from public.attendance_invites
+    where upper(code) = upper(trim(p_invite_code))
+    for update;
+
+    if not found then
+      return jsonb_build_object('success', false, 'error', 'invalid_invite', 'message', 'Kód pozvánky neexistuje nebo je neplatný.');
+    end if;
+
+    if v_invite.is_used then
+      return jsonb_build_object('success', false, 'error', 'invite_used', 'message', 'Tento kód pozvánky již byl využit.');
+    end if;
+
+    if v_invite.expires_at is not null and v_invite.expires_at < now() then
+      return jsonb_build_object('success', false, 'error', 'invite_expired', 'message', 'Platnost tohoto kódu pozvánky vypršela.');
+    end if;
+
+    v_assigned_role := 'employee';
   end if;
 
-  select * into v_invite
-  from public.attendance_invites
-  where upper(code) = upper(trim(p_invite_code))
-  for update;
-
-  if not found then
-    return jsonb_build_object('success', false, 'error', 'invalid_invite', 'message', 'Kód pozvánky neexistuje nebo je neplatný.');
-  end if;
-
-  if v_invite.is_used then
-    return jsonb_build_object('success', false, 'error', 'invite_used', 'message', 'Tento kód pozvánky již byl využit.');
-  end if;
-
-  if v_invite.expires_at is not null and v_invite.expires_at < now() then
-    return jsonb_build_object('success', false, 'error', 'invite_expired', 'message', 'Platnost tohoto kódu pozvánky vypršela.');
-  end if;
-
-  v_assigned_role := coalesce(v_invite.target_role, 'employee');
-
-  -- 2. Kontrola unikátnosti uživatelského jména
+  -- 3. Kontrola unikátnosti uživatelského jména
   if exists (select 1 from public.attendance_profiles where user_key = v_user_key) then
     return jsonb_build_object('success', false, 'error', 'username_taken', 'message', 'Uživatelské jméno je již obsazeno.');
   end if;
 
   v_bcrypt := crypt(p_pin, gen_salt('bf', 10));
 
-  -- Vložení veřejného profilu
+  -- Vložení veřejného profilu (role je určena výhradně serverem)
   insert into public.attendance_profiles (
     user_key,
     username,
@@ -688,12 +708,14 @@ begin
     null
   );
 
-  -- Označení pozvánky za využitou
-  update public.attendance_invites
-  set is_used = true,
-      used_by = v_user_key,
-      used_at = now()
-  where code = v_invite.code;
+  -- Označení pozvánky za využitou (pokud byla použita)
+  if v_invite.code is not null then
+    update public.attendance_invites
+    set is_used = true,
+        used_by = v_user_key,
+        used_at = now()
+    where code = v_invite.code;
+  end if;
 
   -- Okamžité vystavení session tokenu pro automatické přihlášení
   v_raw_token := encode(gen_random_bytes(32), 'hex');
@@ -729,18 +751,25 @@ begin
 end;
 $$;
 
--- Anonymní stav registrace pro návštěvníky
+-- Anonymní stav registrace pro návštěvníky:
+-- requires_invite je false právě tehdy, když v databázi ještě není žádný profil (první uživatel)
 create or replace function public.registration_status()
 returns jsonb
 language plpgsql
 stable
 security definer
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
+declare
+  v_has_profiles boolean;
 begin
+  select exists (
+    select 1 from public.attendance_profiles
+  ) into v_has_profiles;
+
   return jsonb_build_object(
     'registration_enabled', true,
-    'requires_invite', true
+    'requires_invite', coalesce(v_has_profiles, false)
   );
 end;
 $$;
