@@ -11,7 +11,12 @@
 -- 7. Employee nemůže volat administrátorské RPC
 -- 8. Změna PINu revokuje ostatní sessions; Admin reset PINu revokuje všechny sessions
 -- 9. Atomický Last-Write-Wins (LWW) a šíření tombstones
+-- 10. Ochrana posledního administrátora (advisory lock)
+-- 11. Transakční izolace celého běhu (BEGIN ... ROLLBACK): žádná data nezůstanou v DB,
+--     žádné produkční tombstones nebudou reálně smazány.
 -- ============================================================================
+
+BEGIN;
 
 do $$
 declare
@@ -238,7 +243,7 @@ begin
   -- TEST 7: EMPLOYEE NEMŮŽE VOLAT ADMIN RPC FUNKCE
   -- --------------------------------------------------------------------------
   begin
-    perform public.admin_create_invite('employee');
+    perform public.admin_create_invite();
     raise exception 'TEST 7 SELHAL: Employee nesmí mít přístup k admin_create_invite.';
   exception
     when others then
@@ -400,3 +405,7 @@ begin
   raise notice '====================================================================';
 end;
 $$;
+
+-- Transakční rollback zaručí, že žádná testovací data nezůstanou v databázi
+-- a žádné produkční záznamy ani tombstones nebudou reálně smazány.
+ROLLBACK;

@@ -321,7 +321,7 @@ onMounted(async () => {
         await triggerSync(false);
         startSyncService();
       } else {
-        openLoginModal();
+        handleInvalidSession();
       }
     } else if (isSupabaseConfigured() && !currentUser.value) {
       openLoginModal();
@@ -347,8 +347,17 @@ async function handleSyncUpdate(recordsMap, serverProfile) {
   if (serverProfile) await applyServerProfile(serverProfile);
 }
 
-async function handleInvalidSession() {
-  await handleLogout();
+function performLocalLogout() {
+  stopForegroundSync();
+  logout();
+  const userKey = 'user:local';
+  loadSettings(userKey);
+  loadRecords(userKey);
+}
+
+function handleInvalidSession() {
+  performLocalLogout();
+  showToast('Relace vypršela nebo byla odvolána. Přihlaste se prosím znovu.', '⚠️');
   openLoginModal();
 }
 
@@ -604,11 +613,7 @@ async function handleEnableBiometrics() {
 
 function handleLogout() {
   if (!confirm('Opravdu se odhlásit z tohoto zařízení?')) return;
-  stopForegroundSync();
-  logout();
-  const userKey = 'user:local';
-  loadSettings(userKey);
-  loadRecords(userKey);
+  performLocalLogout();
   showToast('Uživatel odhlášen', 'ℹ️');
 }
 
@@ -690,12 +695,12 @@ function openCreateInviteModal() {
   createInviteModalRef.value?.open();
 }
 
-async function handleGenerateInvite(targetRole) {
+async function handleGenerateInvite() {
   createInviteModalRef.value?.setLoading(true);
   try {
     const res = await supabaseRequest('/rest/v1/rpc/admin_create_invite', {
       method: 'POST',
-      body: JSON.stringify({ p_target_role: targetRole })
+      body: JSON.stringify({})
     }, currentUser.value);
 
     if (res?.code) {

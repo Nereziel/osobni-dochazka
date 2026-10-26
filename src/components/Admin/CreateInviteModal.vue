@@ -48,13 +48,11 @@ import { ref } from 'vue';
 const emit = defineEmits(['generate-invite', 'toast']);
 
 const dialogRef = ref(null);
-const targetRole = ref('employee');
 const generatedUrl = ref('');
 const generatedCode = ref('');
 const loading = ref(false);
 
 function open() {
-  targetRole.value = 'employee';
   generatedUrl.value = '';
   generatedCode.value = '';
   loading.value = false;
@@ -71,7 +69,7 @@ function setGenerated(code, url) {
 }
 
 function generateInvite() {
-  emit('generate-invite', targetRole.value);
+  emit('generate-invite');
 }
 
 function copyUrl() {

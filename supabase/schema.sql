@@ -864,9 +864,8 @@ end;
 $$;
 
 -- Správce: generování pozvánky (vždy výhradně pro roli employee)
-create or replace function public.admin_create_invite(
-  p_target_role text default 'employee'
-)
+drop function if exists public.admin_create_invite(text);
+create or replace function public.admin_create_invite()
 returns jsonb
 language plpgsql
 security definer
@@ -900,7 +899,7 @@ begin
 
   return jsonb_build_object(
     'code', v_code,
-    'target_role', p_target_role,
+    'target_role', 'employee',
     'expires_at', v_expires,
     'created_at', now()
   );
@@ -973,6 +972,9 @@ begin
     raise exception 'Neplatná role. Podporované role: employee, admin.';
   end if;
 
+  -- Serializace změn administrátorských rolí pro zamezení souběžného sesazení posledního admina
+  perform pg_advisory_xact_lock(hashtext('attendance_admin_guard'));
+
   -- Ochrana posledního administrátora v systému: nelze odebrat roli admin, pokud by žádný admin nezbyl
   if p_new_role = 'employee' and exists (
     select 1 from public.attendance_profiles
@@ -1015,6 +1017,9 @@ begin
   if p_target_user_key = public.current_session_user_key() then
     raise exception 'Nemůžeš smazat svůj vlastní přihlášený administrátorský účet.';
   end if;
+
+  -- Serializace operací mazání administrátorů pro zamezení souběžného smazání posledního admina
+  perform pg_advisory_xact_lock(hashtext('attendance_admin_guard'));
 
   -- Ochrana posledního administrátora: nelze smazat účet, pokud by v systému nezbyl žádný administrátor
   if exists (
@@ -1281,7 +1286,7 @@ revoke all on function public.change_attendance_pin(text, text, boolean) from pu
 revoke all on function public.register_user_with_invite(text, text, text, text) from public, anon, authenticated;
 revoke all on function public.registration_status() from public, anon, authenticated;
 revoke all on function public.update_own_settings(jsonb) from public, anon, authenticated;
-revoke all on function public.admin_create_invite(text) from public, anon, authenticated;
+revoke all on function public.admin_create_invite() from public, anon, authenticated;
 revoke all on function public.admin_reset_user_pin(text, text) from public, anon, authenticated;
 revoke all on function public.admin_change_user_role(text, text) from public, anon, authenticated;
 revoke all on function public.admin_delete_user(text) from public, anon, authenticated;
@@ -1309,7 +1314,7 @@ grant execute on function public.update_own_settings(jsonb) to anon, authenticat
 grant execute on function public.upsert_attendance_day_lww(jsonb) to anon, authenticated;
 
 -- 4. Administrátorské operace (vyžadují uvnitř session token s rolí admin):
-grant execute on function public.admin_create_invite(text) to anon, authenticated;
+grant execute on function public.admin_create_invite() to anon, authenticated;
 grant execute on function public.admin_reset_user_pin(text, text) to anon, authenticated;
 grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;
 grant execute on function public.admin_delete_user(text) to anon, authenticated;
