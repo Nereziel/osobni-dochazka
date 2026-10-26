@@ -958,7 +958,7 @@ create policy "Secure access to own attendance days"
         }
         await saveSettings(true);
         applyTheme();
-        renderProfile();
+        renderAuthAndSyncUI();
       }
 
       const remoteRows = await sbFetch(
@@ -1233,6 +1233,11 @@ create policy "Secure access to own attendance days"
     $('#sidebarPlanDays').textContent = formatScheduleDaysSummary();
     $('#sidebarPlanHours').textContent = `${settings.workStart} – ${settings.workEnd}`;
     $('#sidebarPlanTarget').textContent = `Denní fond: ${formatDuration(settings.dailyTargetMinutes)}`;
+  }
+
+  // Alias pro zpětnou kompatibilitu a bezpečnost (hoisted)
+  function renderProfile() {
+    renderAuthAndSyncUI();
   }
 
   function renderTodayDashboard() {
@@ -2366,7 +2371,7 @@ create policy "Secure access to own attendance days"
         if (res && res.role === 'admin') {
           currentUser.role = 'admin';
           saveCurrentUser(currentUser);
-          renderProfile();
+          renderAuthAndSyncUI();
           toast('Role Správce byla úspěšně aktivována!', '✓');
           switchView('team');
         } else {
