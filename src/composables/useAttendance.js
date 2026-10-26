@@ -26,6 +26,7 @@ import {
   defaultHoursForDate,
   TYPE_LABELS
 } from '../utils/attendance.js';
+import { cloneDeep } from '../utils/validation.js';
 import { holidayName } from '../utils/holidays.js';
 import { formatDuration, pad, formatClock } from '../utils/time.js';
 
@@ -95,7 +96,7 @@ export function useAttendance() {
     const existing = records.value.get(key);
     const hours = defaultHoursForDate(key, settings);
 
-    const baseDay = existing ? structuredClone(existing) : {
+    const baseDay = existing ? cloneDeep(existing) : {
       date: key,
       type: 'work',
       start: settings.autoFill ? hours.start : '',

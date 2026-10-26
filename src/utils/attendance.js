@@ -4,7 +4,7 @@
 import { localDateKey, parseDateKey, isWeekendDate } from './dates.js';
 import { isPublicHoliday } from './holidays.js';
 import { durationMinutes, overlapMinutes, timeToMinutes } from './time.js';
-import { clampNumber } from './validation.js';
+import { clampNumber, cloneDeep } from './validation.js';
 
 export const DEFAULT_SETTINGS = {
   id: 'settings',
@@ -272,7 +272,7 @@ export function formatVacationDays(n) {
 }
 
 export function normalizeSettings(raw) {
-  const merged = { ...structuredClone(DEFAULT_SETTINGS), ...(raw || {}), id: 'settings' };
+  const merged = { ...cloneDeep(DEFAULT_SETTINGS), ...(raw || {}), id: 'settings' };
   if (!Array.isArray(merged.workDays) || merged.workDays.length === 0) {
     if (merged.weekendMode === 'saturday') merged.workDays = [1, 2, 3, 4, 5, 6];
     else if (merged.weekendMode === 'sunday') merged.workDays = [1, 2, 3, 4, 5, 0];

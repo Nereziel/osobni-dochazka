@@ -329,9 +329,9 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, toRaw } from 'vue';
 import { minutesToTime, timeToMinutes, durationMinutes } from '../utils/time.js';
-import { clampNumber } from '../utils/validation.js';
+import { clampNumber, cloneDeep } from '../utils/validation.js';
 import { getSupabaseConfig, saveManualSupabaseConfig } from '../services/supabase.js';
 
 const props = defineProps({
@@ -374,10 +374,10 @@ const emit = defineEmits([
   'toast'
 ]);
 
-const formSettings = ref(structuredClone(props.settings));
+const formSettings = ref(cloneDeep(toRaw(props.settings)));
 
 watch(() => props.settings, (newVal) => {
-  formSettings.value = structuredClone(newVal);
+  formSettings.value = cloneDeep(toRaw(newVal));
 }, { deep: true });
 
 const dailyTargetInput = computed({
@@ -440,7 +440,7 @@ function calcTargetAuto() {
 }
 
 function submitScheduleSettings() {
-  emit('save-settings', structuredClone(formSettings.value));
+  emit('save-settings', cloneDeep(formSettings.value));
 }
 
 // Účet info

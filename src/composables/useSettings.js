@@ -1,10 +1,11 @@
 import { ref } from 'vue';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../utils/attendance.js';
+import { cloneDeep } from '../utils/validation.js';
 import { getUserSettings, putUserSettings, enqueueSyncAction } from '../services/indexedDb.js';
 import { profileRowFromSettings } from '../services/sync.js';
 import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
 
-const settings = ref(structuredClone(DEFAULT_SETTINGS));
+const settings = ref(cloneDeep(DEFAULT_SETTINGS));
 
 export function useSettings() {
   function applyTheme(themeVal = settings.value.theme) {
@@ -25,7 +26,7 @@ export function useSettings() {
 
   async function loadSettings(userId) {
     if (!userId) {
-      settings.value = structuredClone(DEFAULT_SETTINGS);
+      settings.value = cloneDeep(DEFAULT_SETTINGS);
       applyTheme();
       return settings.value;
     }

@@ -168,6 +168,7 @@ import {
   calculatedBreak,
   isScheduledWorkday
 } from '../../utils/attendance.js';
+import { cloneDeep } from '../../utils/validation.js';
 import { formatDuration } from '../../utils/time.js';
 
 const props = defineProps({
@@ -277,7 +278,7 @@ function close() {
 }
 
 function submitSave() {
-  emit('save', structuredClone(formData.value));
+  emit('save', cloneDeep(formData.value));
   close();
 }
 

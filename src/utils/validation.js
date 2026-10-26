@@ -46,3 +46,13 @@ export function clampNumber(v, min, max, defaultVal = min) {
   return Math.min(max, Math.max(min, n));
 }
 
+export function cloneDeep(obj) {
+  if (obj === null || typeof obj !== 'object') return obj;
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch {
+    return Array.isArray(obj) ? [...obj] : { ...obj };
+  }
+}
+
+
