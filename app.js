@@ -15,6 +15,8 @@
   const DB_VERSION = 3;
   const LS_SUPABASE_KEY = 'dochazka_supabase_config_v2';
   const LS_USER_KEY = 'dochazka_active_user_v2';
+  const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
+  const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -67,97 +69,6 @@
     'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
     'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'
   ];
-
-  const SQL_SCHEMA_TEXT = `-- ============================================================================
--- OSOBNÍ DOCHÁZKA PWA – DATABÁZE PRO SUPABASE (PostgreSQL)
--- Spusť tento skript v Supabase -> SQL Editor -> New query -> Run
--- ============================================================================
-
-create extension if not exists pgcrypto;
-
-create table if not exists public.attendance_profiles (
-  user_key text primary key,
-  username text not null unique,
-  display_name text not null default '',
-  pin_hash text not null default '',
-  work_start text not null default '06:30',
-  work_end text not null default '15:30',
-  daily_target_minutes integer not null default 510 check (daily_target_minutes between 0 and 1440),
-  break_minutes integer not null default 30 check (break_minutes between 0 and 240),
-  break_after_minutes integer not null default 360 check (break_after_minutes between 0 and 1440),
-  auto_fill boolean not null default true,
-  work_days integer[] not null default '{1,2,3,4,5}',
-  work_weekends boolean not null default false,
-  weekend_mode text not null default 'none' check (weekend_mode in ('none', 'saturday', 'sunday', 'both', 'custom')),
-  weekend_custom_hours boolean not null default false,
-  weekend_start text not null default '07:00',
-  weekend_end text not null default '15:30',
-  weekend_target_minutes integer not null default 480 check (weekend_target_minutes between 0 and 1440),
-  work_on_holidays boolean not null default false,
-  vacation_allowance_days numeric(4,1) not null default 20.0,
-  theme text not null default 'system' check (theme in ('system', 'light', 'dark')),
-  settings_json jsonb not null default '{}'::jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.attendance_days (
-  id uuid primary key default gen_random_uuid(),
-  user_key text not null references public.attendance_profiles(user_key) on delete cascade,
-  date date not null,
-  type text not null default 'work' check (
-    type in ('work','homeOffice','businessTrip','vacation','halfVacation','doctor','sick','holiday','compTime','other')
-  ),
-  start_time text not null default '',
-  end_time text not null default '',
-  manual_break boolean not null default false,
-  break_minutes integer not null default 30,
-  doctor_full_day boolean not null default false,
-  doctor_start text not null default '',
-  doctor_end text not null default '',
-  other_minutes integer not null default 0,
-  worked_minutes integer not null default 0,
-  credited_minutes integer not null default 0,
-  target_minutes integer not null default 0,
-  balance_minutes integer not null default 0,
-  note text not null default '',
-  updated_at timestamptz not null default now(),
-  unique (user_key, date)
-);
-
-create index if not exists idx_attendance_days_user_date
-  on public.attendance_days (user_key, date desc);
-
-create or replace function public.req_user_key()
-returns text language sql stable as $$
-  select coalesce(nullif(split_part(current_setting('request.headers', true)::json->>'x-client-info', '|', 2), ''), '');
-$$;
-
-create or replace function public.req_pin_hash()
-returns text language sql stable as $$
-  select coalesce(nullif(split_part(current_setting('request.headers', true)::json->>'x-client-info', '|', 3), ''), '');
-$$;
-
-alter table public.attendance_profiles enable row level security;
-alter table public.attendance_days enable row level security;
-
-drop policy if exists "Secure access to own profile" on public.attendance_profiles;
-create policy "Secure access to own profile"
-  on public.attendance_profiles for all to anon, authenticated
-  using (user_key = public.req_user_key() and pin_hash = public.req_pin_hash())
-  with check (user_key = public.req_user_key() and pin_hash = public.req_pin_hash());
-
-drop policy if exists "Secure access to own attendance days" on public.attendance_days;
-create policy "Secure access to own attendance days"
-  on public.attendance_days for all to anon, authenticated
-  using (
-    user_key = public.req_user_key()
-    and exists (select 1 from public.attendance_profiles p where p.user_key = attendance_days.user_key and p.pin_hash = public.req_pin_hash())
-  )
-  with check (
-    user_key = public.req_user_key()
-    and exists (select 1 from public.attendance_profiles p where p.user_key = attendance_days.user_key and p.pin_hash = public.req_pin_hash())
-  );`;
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
@@ -537,16 +448,149 @@ create policy "Secure access to own attendance days"
 
   function loadCurrentUser() {
     try {
-      return JSON.parse(localStorage.getItem(LS_USER_KEY) || 'null');
+      const remember = localStorage.getItem(LS_REMEMBER_KEY);
+      if (remember === 'false') {
+        // Uživatel si nepřál trvalé uložení přihlášení
+        return JSON.parse(sessionStorage.getItem(LS_USER_KEY) || 'null');
+      }
+      return JSON.parse(localStorage.getItem(LS_USER_KEY) || sessionStorage.getItem(LS_USER_KEY) || 'null');
     } catch {
       return null;
     }
   }
 
-  function saveCurrentUser(user) {
+  function saveCurrentUser(user, remember = true) {
     currentUser = user;
-    if (user) localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
-    else localStorage.removeItem(LS_USER_KEY);
+    if (user) {
+      if (remember) {
+        localStorage.setItem(LS_REMEMBER_KEY, 'true');
+        localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+        sessionStorage.removeItem(LS_USER_KEY);
+      } else {
+        localStorage.setItem(LS_REMEMBER_KEY, 'false');
+        localStorage.removeItem(LS_USER_KEY);
+        sessionStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+      }
+    } else {
+      localStorage.removeItem(LS_USER_KEY);
+      sessionStorage.removeItem(LS_USER_KEY);
+    }
+  }
+
+  // ============================================================================
+  // BIOMETRICKÉ OVĚŘENÍ (WebAuthn / Windows Hello / Touch ID / Face ID)
+  // ============================================================================
+  function isBiometricsSupported() {
+    return Boolean(window.PublicKeyCredential && navigator.credentials);
+  }
+
+  function getSavedBiometricsCredentials() {
+    try {
+      return JSON.parse(localStorage.getItem(LS_BIOMETRICS_KEY) || 'null');
+    } catch {
+      return null;
+    }
+  }
+
+  function saveBiometricsCredentials(cred) {
+    if (cred) localStorage.setItem(LS_BIOMETRICS_KEY, JSON.stringify(cred));
+    else localStorage.removeItem(LS_BIOMETRICS_KEY);
+  }
+
+  async function registerBiometricsForCurrentUser(pin) {
+    if (!isBiometricsSupported()) {
+      throw new Error('Tento prohlížeč nebo zařízení nepodporuje biometrické ověření (WebAuthn).');
+    }
+    if (!currentUser) throw new Error('Musíš být přihlášen.');
+
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+    const userId = new TextEncoder().encode(currentUser.username);
+
+    const publicKeyCredentialCreationOptions = {
+      challenge,
+      rp: {
+        name: 'Osobní docházka',
+        id: window.location.hostname || 'localhost'
+      },
+      user: {
+        id: userId,
+        name: currentUser.username,
+        displayName: currentUser.displayName || currentUser.username
+      },
+      pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+        residentKey: 'preferred'
+      },
+      timeout: 60000,
+      attestation: 'none'
+    };
+
+    const credential = await navigator.credentials.create({
+      publicKey: publicKeyCredentialCreationOptions
+    });
+
+    if (credential) {
+      const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+      saveBiometricsCredentials({
+        id: rawId,
+        username: currentUser.username,
+        pinHash: currentUser.pinHash,
+        displayName: currentUser.displayName,
+        role: currentUser.role || 'employee',
+        userKey: currentUser.userKey,
+        enabledAt: new Date().toISOString()
+      });
+      return true;
+    }
+    return false;
+  }
+
+  async function authenticateWithBiometrics() {
+    if (!isBiometricsSupported()) throw new Error('Biometrické ověření není podporováno.');
+    const saved = getSavedBiometricsCredentials();
+    if (!saved || !saved.id || !saved.username) {
+      throw new Error('Na tomto zařízení dosud není zaregistrována žádná biometrika. Přihlas se nejdříve jménem a PINem a biometriku povol v Nastavení.');
+    }
+
+    const challenge = new Uint8Array(32);
+    crypto.getRandomValues(challenge);
+
+    const credentialId = Uint8Array.from(atob(saved.id), c => c.charCodeAt(0));
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{
+          id: credentialId,
+          type: 'public-key',
+          transports: ['internal']
+        }],
+        userVerification: 'required',
+        timeout: 60000
+      }
+    });
+
+    if (assertion) {
+      // Úspěšné biometrické ověření uživatele -> obnovíme přihlášenou relaci
+      const candidateUser = {
+        userKey: saved.userKey,
+        username: saved.username,
+        displayName: saved.displayName,
+        pinHash: saved.pinHash,
+        role: saved.role || 'employee'
+      };
+
+      saveCurrentUser(candidateUser, true);
+      renderAll();
+      if (isCloudReady()) {
+        syncWithSupabase(false).catch(console.warn);
+      }
+      return `Vítej zpět, ${candidateUser.displayName}! (Ověřeno biometrikou)`;
+    }
+    throw new Error('Biometrické ověření selhalo.');
   }
 
   function isCloudReady() {
@@ -731,7 +775,7 @@ create policy "Secure access to own attendance days"
   // ============================================================================
   // SAMOSTATNÉ PŘIHLÁŠENÍ & REGISTRACE
   // ============================================================================
-  async function performLogin(usernameInput, pinInput) {
+  async function performLogin(usernameInput, pinInput, rememberMe = true) {
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
@@ -758,7 +802,7 @@ create policy "Secure access to own attendance days"
           displayName: profile.display_name || cleanUser,
           pinHash,
           role: profile.role || 'employee'
-        });
+        }, rememberMe);
         applySettingsFromProfileRow(profile);
         await saveSettings(true);
         applyTheme();
@@ -776,7 +820,7 @@ create policy "Secure access to own attendance days"
         displayName: cleanUser,
         pinHash,
         role: 'admin'
-      });
+      }, rememberMe);
       setSyncState('local');
       renderAll();
       return `Přihlášen lokální profil ${cleanUser}.`;
@@ -1175,7 +1219,7 @@ create policy "Secure access to own attendance days"
         cloudWidget.classList.add('online');
         sideStatusPill.classList.add('online');
         accSyncBadge.classList.add('online');
-        cloudLabel.textContent = 'Supabase Online';
+        cloudLabel.textContent = 'Online';
         sideStatusText.textContent = 'Cloud aktivní';
         accSyncBadge.textContent = 'Supabase synchronizováno';
       }
@@ -1198,11 +1242,20 @@ create policy "Secure access to own attendance days"
     $('#openChangePinModalBtn')?.classList.toggle('hidden', !currentUser);
     $('#logoutUserBtn')?.classList.toggle('hidden', !currentUser);
 
+    // Tlačítko pro biometrii v nastavení (pouze když je uživatel přihlášen a biometrika podporována)
+    const canBiometric = isBiometricsSupported() && !!currentUser;
+    $('#enableBiometricsBtn')?.classList.toggle('hidden', !canBiometric);
+
+    // V dialogu přihlášení zobrazit tlačítko biometrie, pokud existuje uložená registrace
+    const savedBio = getSavedBiometricsCredentials();
+    $('#biometricLoginRow')?.classList.toggle('hidden', !savedBio);
+
     // Správa týmu (pouze pro roli admin)
     const isAdmin = currentUser?.role === 'admin';
     $('#navItemTeam')?.classList.toggle('hidden', !isAdmin);
     $('#mNavItemTeam')?.classList.toggle('hidden', !isAdmin);
     $('#openTeamFromSettingsBtn')?.classList.toggle('hidden', !isAdmin);
+    $('#settingsTeamCard')?.classList.toggle('hidden', !isAdmin);
     $('#claimAdminBtn')?.classList.toggle('hidden', !currentUser || isAdmin);
 
     const roleBadge = $('#accountRoleBadge');
@@ -1658,7 +1711,10 @@ create policy "Secure access to own attendance days"
   function switchView(viewName) {
     $$('.win11-view').forEach(v => v.classList.remove('active'));
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
-    $$('.m-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewName));
+    $$('.m-nav-btn').forEach(b => {
+      const match = (viewName === 'team') ? (b.dataset.view === 'settings') : (b.dataset.view === viewName);
+      b.classList.toggle('active', match);
+    });
 
     const viewEl = $(`#view${viewName[0].toUpperCase()}${viewName.slice(1)}`);
     if (viewEl) viewEl.classList.add('active');
@@ -2357,6 +2413,14 @@ create policy "Secure access to own attendance days"
       switchView('team');
     });
 
+    $('#openTeamFromSettingsCardBtn')?.addEventListener('click', () => {
+      switchView('team');
+    });
+
+    $('#backToSettingsBtn')?.addEventListener('click', () => {
+      switchView('settings');
+    });
+
     $('#claimAdminBtn')?.addEventListener('click', async () => {
       if (!isCloudReady()) {
         toast('Musíte být přihlášeni ke cloudové databázi.', '⚠️');
@@ -2385,12 +2449,42 @@ create policy "Secure access to own attendance days"
     $('#loginUserForm')?.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        const msg = await performLogin($('#loginUsername').value, $('#loginPin').value);
+        const rememberMe = $('#loginRememberMe') ? $('#loginRememberMe').checked : true;
+        const msg = await performLogin($('#loginUsername').value, $('#loginPin').value, rememberMe);
         $('#loginModal').close();
         renderAll();
         toast(msg, '✓');
       } catch (err) {
         alert(err.message || 'Přihlášení se nezdařilo.');
+      }
+    });
+
+    // Přihlášení přes biometriku
+    $('#loginBiometricBtn')?.addEventListener('click', async () => {
+      try {
+        const msg = await authenticateWithBiometrics();
+        $('#loginModal').close();
+        renderAll();
+        toast(msg, '✓');
+      } catch (err) {
+        alert(err.message || 'Biometrické ověření se nezdařilo.');
+      }
+    });
+
+    // Povolení biometrie v nastavení profilu
+    $('#enableBiometricsBtn')?.addEventListener('click', async () => {
+      if (!currentUser) return;
+      try {
+        const confirmed = confirm(`Chcete pro účet "${currentUser.username}" povolit biometrické přihlášení (Windows Hello / Otisk prstu / Face ID)?`);
+        if (!confirmed) return;
+
+        const success = await registerBiometricsForCurrentUser();
+        if (success) {
+          toast('Biometrické přihlašování bylo úspěšně aktivováno pro toto zařízení.', '✓');
+          renderAuthAndSyncUI();
+        }
+      } catch (err) {
+        alert(err.message || 'Povolení biometrie selhalo.');
       }
     });
 
@@ -2530,6 +2624,7 @@ create policy "Secure access to own attendance days"
     $('#logoutUserBtn')?.addEventListener('click', () => {
       if (!confirm('Odhlásit uživatele z tohoto zařízení?')) return;
       saveCurrentUser(null);
+      saveBiometricsCredentials(null);
       setSyncState('local');
       renderAll();
       toast('Uživatel byl odhlášen', 'ℹ️');
@@ -2648,32 +2743,6 @@ create policy "Secure access to own attendance days"
         .catch(err => alert(`Synchronizace selhala: ${err.message}`));
     });
 
-    // SQL Viewer Dialog
-    $('#openSqlViewerBtn')?.addEventListener('click', async () => {
-      try {
-        const res = await fetch('./supabase-schema.sql');
-        if (res.ok) {
-          $('#sqlTextContainer').textContent = await res.text();
-        } else {
-          $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
-        }
-      } catch {
-        $('#sqlTextContainer').textContent = SQL_SCHEMA_TEXT;
-      }
-      $('#sqlSchemaDialog').showModal();
-    });
-    $('#closeSqlDialogBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
-    $('#closeSqlFooterBtn')?.addEventListener('click', () => $('#sqlSchemaDialog').close());
-    $('#copySqlCodeBtn')?.addEventListener('click', async () => {
-      try {
-        const txt = $('#sqlTextContainer').textContent || SQL_SCHEMA_TEXT;
-        await navigator.clipboard.writeText(txt);
-        toast('SQL skript zkopírován do schránky', '📋');
-      } catch {
-        toast('Zkopírujte text z okna ručně', 'ℹ️');
-      }
-    });
-
     // Dialog editace dne
     $('#closeDayDialogBtn')?.addEventListener('click', () => $('#dayEditDialog').close());
     $('#cancelDayDialogBtn')?.addEventListener('click', () => $('#dayEditDialog').close());
@@ -2730,7 +2799,7 @@ create policy "Secure access to own attendance days"
     $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
 
     // Zavření modálu klikem na backdrop
-    ['dayEditDialog', 'loginModal', 'registerModal', 'sqlSchemaDialog', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal', 'createInviteModal', 'adminResetPinModal'].forEach(id => {
+    ['dayEditDialog', 'loginModal', 'registerModal', 'pwaHelpDialog', 'monthPickerModal', 'changePinModal', 'createInviteModal', 'adminResetPinModal'].forEach(id => {
       const dlg = $(`#${id}`);
       dlg?.addEventListener('click', (e) => {
         if (e.target === dlg) dlg.close();

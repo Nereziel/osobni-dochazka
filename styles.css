@@ -228,6 +228,9 @@ button svg,
 html, body {
   min-height: 100%;
   margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
   font-family: var(--font-sans);
   background: var(--bg-app);
   background-image: var(--bg-gradient);
@@ -236,6 +239,7 @@ html, body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
 }
 
 button, input, select, textarea {
@@ -269,7 +273,7 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding-bottom: calc(72px + var(--safe-bottom));
+  padding-bottom: calc(88px + var(--safe-bottom));
 }
 
 /* Header (Windows 11 Mica Titlebar) */
@@ -1989,24 +1993,26 @@ input:focus, .win-select:focus, textarea:focus {
   bottom: 0;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  padding: 6px 12px calc(6px + var(--safe-bottom));
+  padding: 6px 8px max(14px, calc(var(--safe-bottom) + 6px));
   background: var(--surface-acrylic);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(28px) saturate(180%);
   -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
 }
 
 .m-nav-btn {
-  min-height: 52px;
+  min-height: 48px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 3px;
   background: transparent;
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   transition: all 0.12s ease;
+  padding: 4px 2px;
 }
 
 .m-nav-btn svg {
@@ -2017,6 +2023,8 @@ input:focus, .win-select:focus, textarea:focus {
 .m-nav-btn small {
   font-size: 11px;
   font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.2px;
 }
 
 .m-nav-btn.active {
@@ -2026,7 +2034,7 @@ input:focus, .win-select:focus, textarea:focus {
 
 @media (max-width: 979px) {
   .win11-content-area {
-    padding: 16px 16px 36px;
+    padding: 16px 16px calc(92px + var(--safe-bottom));
   }
   .win11-header {
     padding-left: 16px;
@@ -2057,6 +2065,100 @@ input:focus, .win-select:focus, textarea:focus {
 }
 
 @media (max-width: 768px) {
+  /* Responzivní aktivní směna (tlačítko se nikdy nevytlačí mimo obrazovku) */
+  .win-active-shift-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+
+  .shift-live-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .shift-live-meta {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.08);
+    border-radius: var(--radius-sm);
+  }
+
+  .shift-live-actions {
+    width: 100%;
+  }
+
+  .shift-live-actions #shiftEndNowBtn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    font-size: 13.5px;
+    font-weight: 650;
+    box-sizing: border-box;
+  }
+
+  /* Responzivní správa týmu */
+  .team-layout-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .team-col-main,
+  .team-col-side {
+    gap: 16px;
+  }
+  .team-card {
+    padding: 16px 14px;
+  }
+  .table-responsive-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    margin-top: 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+  }
+  .win11-datagrid {
+    min-width: 480px;
+    font-size: 12px;
+  }
+  .win11-datagrid th,
+  .win11-datagrid td {
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+  .win11-datagrid td .win-btn-subtle,
+  .win11-datagrid td .win-btn-standard {
+    padding: 4px 8px;
+    font-size: 11px;
+    min-height: 30px;
+  }
+  .team-summary-item {
+    padding: 10px 12px;
+  }
+  .team-user-meta {
+    min-width: 0;
+    gap: 8px;
+  }
+  .team-user-meta strong {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .team-user-stats {
+    flex-shrink: 0;
+  }
+  .team-user-stats strong {
+    font-size: 13px;
+  }
+
   .win-toolbar-bar {
     flex-direction: column;
     align-items: stretch;
