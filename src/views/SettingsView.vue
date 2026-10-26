@@ -225,7 +225,7 @@
             <div class="infobar-icon">✓</div>
             <div class="infobar-body">
               <strong>Automaticky připojeno</strong>
-              <p>Aplikace používá sdílenou databázi nastavenou v konfiguraci. Není potřeba nic vyplňovat.</p>
+              <p>Aplikace používá cloudovou databázi nastavenou v konfiguraci.</p>
             </div>
           </div>
 
@@ -468,7 +468,7 @@ const syncBadgeClass = computed(() => {
 });
 
 const syncBadgeText = computed(() => {
-  if (props.currentUser && props.syncState === 'online') return 'Supabase synchronizováno';
+  if (props.currentUser && props.syncState === 'online') return 'Cloud synchronizováno';
   return 'Pouze lokální úložiště';
 });
 

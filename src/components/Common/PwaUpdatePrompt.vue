@@ -2,9 +2,9 @@
   <div v-if="needRefresh" class="pwa-update-bar" role="alert">
     <div class="pwa-update-content">
       <span class="pwa-update-icon">✨</span>
-      <span>Je dostupná nová verze aplikace.</span>
+      <span class="pwa-update-text">Je dostupná nová verze aplikace.</span>
     </div>
-    <button class="win-btn-accent compact-btn" type="button" @click="updateApp">
+    <button class="win-btn-accent compact-btn update-btn" type="button" @click="updateApp">
       Aktualizovat
     </button>
   </div>
@@ -64,30 +64,70 @@ function updateApp() {
   align-items: center;
   gap: 14px;
   padding: 12px 18px;
-  background: var(--surface-flyout, #1e293b);
-  color: var(--text-primary, #f8fafc);
-  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
-  border-radius: 10px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(20px);
+  background: var(--surface-card, #202020);
+  color: var(--text-primary, #ffffff);
+  border: 1px solid var(--line-strong, rgba(255, 255, 255, 0.18));
+  border-radius: var(--radius, 8px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  box-sizing: border-box;
 }
+
 .pwa-update-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  min-width: 0;
+  flex: 1;
 }
+
 .pwa-update-icon {
   font-size: 16px;
+  flex-shrink: 0;
 }
-@media (max-width: 640px) {
+
+.pwa-update-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #ffffff);
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.update-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Na mobilních zařízeních lištu umístíme bezpečně nad spodní navigační lištu */
+@media (max-width: 768px) {
   .pwa-update-bar {
-    left: 16px;
-    right: 16px;
-    bottom: 80px;
-    justify-content: space-between;
+    left: 12px;
+    right: 12px;
+    bottom: calc(76px + var(--safe-bottom, 0px));
+    padding: 12px 14px;
+    gap: 10px;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  }
+
+  .pwa-update-text {
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pwa-update-bar {
+    left: 8px;
+    right: 8px;
+    bottom: calc(74px + var(--safe-bottom, 0px));
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .pwa-update-text {
+    font-size: 12px;
   }
 }
 </style>
-

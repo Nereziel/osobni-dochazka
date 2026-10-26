@@ -4,7 +4,36 @@
  * Odstraňuje nebezpečnou injekci URL z query parametrů (?sb_url=, ?sb_key=).
  */
 
+import { createClient } from '@supabase/supabase-js';
+
 const LS_SUPABASE_CONFIG_KEY = 'dochazka_supabase_config_v2';
+let supabaseClientInstance = null;
+let currentClientKey = '';
+
+export function getSupabaseClient() {
+  const cfg = getSupabaseConfig();
+  if (!cfg.url || !cfg.anonKey) return null;
+
+  const key = `${cfg.url}|${cfg.anonKey}`;
+  if (supabaseClientInstance && currentClientKey === key) {
+    return supabaseClientInstance;
+  }
+
+  currentClientKey = key;
+  supabaseClientInstance = createClient(cfg.url, cfg.anonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true
+    },
+    realtime: {
+      params: {
+        eventsPerSecond: 10
+      }
+    }
+  });
+
+  return supabaseClientInstance;
+}
 
 export function getSupabaseConfig() {
   const envUrl = import.meta.env.VITE_SUPABASE_URL;

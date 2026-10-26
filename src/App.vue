@@ -235,7 +235,14 @@ const {
   calcYearVacation,
   calcMonthVacation
 } = useAttendance();
-const { syncState, pendingCount, refreshPendingCount, sync } = useSync();
+const {
+  syncState,
+  pendingCount,
+  refreshPendingCount,
+  sync,
+  subscribeRealtime,
+  unsubscribeRealtime
+} = useSync();
 
 // State
 const currentView = ref('dashboard');
@@ -308,6 +315,9 @@ onMounted(async () => {
       showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
     } else if (isSupabaseConfigured() && currentUser.value) {
       triggerSync(false);
+      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+        records.value = newMap;
+      });
     } else if (isSupabaseConfigured() && !currentUser.value) {
       openLoginModal();
     }
@@ -472,7 +482,12 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
     showToast(message, '✓');
     const userKey = currentUser.value?.userKey;
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
-    if (isSupabaseConfigured()) triggerSync(false);
+    if (isSupabaseConfigured()) {
+      triggerSync(false);
+      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+        records.value = newMap;
+      });
+    }
   } catch (err) {
     alert(err.message || 'Přihlášení selhalo');
   } finally {
@@ -487,7 +502,12 @@ async function handleBiometricLogin() {
     showToast(msg, '✓');
     const userKey = currentUser.value?.userKey;
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
-    if (isSupabaseConfigured()) triggerSync(false);
+    if (isSupabaseConfigured()) {
+      triggerSync(false);
+      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+        records.value = newMap;
+      });
+    }
   } catch (err) {
     alert(err.message || 'Biometrické přihlášení selhalo');
   }
@@ -519,7 +539,12 @@ async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, in
     const userKey = currentUser.value?.userKey;
     await loadSettings(userKey);
     await loadRecords(userKey);
-    if (isSupabaseConfigured()) triggerSync(mergeLocal);
+    if (isSupabaseConfigured()) {
+      triggerSync(mergeLocal);
+      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+        records.value = newMap;
+      });
+    }
   } catch (err) {
     alert(err.message || 'Registrace selhala');
   } finally {
@@ -556,6 +581,7 @@ async function handleEnableBiometrics() {
 
 function handleLogout() {
   if (!confirm('Opravdu se odhlásit z tohoto zařízení?')) return;
+  unsubscribeRealtime();
   logout();
   const userKey = 'user:local';
   loadSettings(userKey);
