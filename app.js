@@ -19,7 +19,7 @@
   const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
   const APP_VERSION = 'v2.4.0';
   const APP_BUILD_DATE = '2026.10';
-  const APP_SW_CACHE = 'Cache v11';
+  const APP_SW_CACHE = 'Cache v12';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
