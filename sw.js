@@ -1,4 +1,4 @@
-const CACHE = 'dochazka-pwa-v6';
+const CACHE = 'dochazka-pwa-v7';
 
 const files = [
   './',

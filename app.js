@@ -19,7 +19,7 @@
   const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
   const APP_VERSION = 'v2.4.0';
   const APP_BUILD_DATE = '2026.10';
-  const APP_SW_CACHE = 'Cache v6';
+  const APP_SW_CACHE = 'Cache v7';
 
   const DEFAULT_SETTINGS = {
     id: 'settings',
@@ -2835,25 +2835,7 @@
     });
     $('#resetLocalDbBtn')?.addEventListener('click', resetAll);
 
-    // O aplikaci – kontrola aktualizací a nápověda PWA
-    $('#checkAppUpdateBtn')?.addEventListener('click', async () => {
-      if ('serviceWorker' in navigator) {
-        try {
-          const reg = await navigator.serviceWorker.getRegistration();
-          if (reg) {
-            await reg.update();
-            toast('Kontrola dokončena – aplikace je aktuální', '✓');
-          } else {
-            toast('Aplikace je v nejnovější verzi', '✓');
-          }
-        } catch {
-          toast('Aplikace je v nejnovější verzi', '✓');
-        }
-      } else {
-        toast('Aplikace je v nejnovější verzi', '✓');
-      }
-    });
-
+    // O aplikaci – nápověda PWA
     $('#aboutPwaHelpBtn')?.addEventListener('click', () => {
       $('#pwaHelpDialog')?.showModal();
     });
