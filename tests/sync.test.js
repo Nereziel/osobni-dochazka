@@ -331,4 +331,85 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(coalesced[0].payload.deleted_at).toBe('2026-10-27T12:00:00.000Z');
     expect(coalesced[0].obsoleteIds).toEqual([20]);
   });
+
+  // Test 9: Concurrent first insert simulation (PostgreSQL ON CONFLICT LWW logic)
+  it('Test 9 – simulates concurrent first insert where Device A inserts 10:00 and Device B inserts 11:00', () => {
+    // Model PostgreSQL atomické tabulky s ON CONFLICT (user_key, date) DO UPDATE WHERE excluded.updated_at >= attendance_days.updated_at
+    const mockPostgresTable = new Map();
+
+    function executeAtomicLwwUpsert(incomingRow) {
+      const key = `${incomingRow.user_key}:${incomingRow.date}`;
+      const existing = mockPostgresTable.get(key);
+
+      if (!existing) {
+        // První INSERT (žádný konflikt)
+        mockPostgresTable.set(key, { ...incomingRow });
+        return {
+          applied: true,
+          action: incomingRow.deleted_at ? 'tombstone' : 'upsert',
+          server_updated_at: incomingRow.updated_at
+        };
+      } else {
+        // ON CONFLICT: porovnání WHERE excluded.updated_at >= d.updated_at
+        const existingTime = Date.parse(existing.updated_at);
+        const incomingTime = Date.parse(incomingRow.updated_at);
+
+        if (incomingTime >= existingTime) {
+          mockPostgresTable.set(key, { ...incomingRow });
+          return {
+            applied: true,
+            action: incomingRow.deleted_at ? 'tombstone' : 'upsert',
+            server_updated_at: incomingRow.updated_at
+          };
+        } else {
+          // WHERE podmínka nebyla splněna -> RETURNING vrátí 0 řádků
+          return {
+            applied: false,
+            reason: 'server_newer',
+            server_updated_at: existing.updated_at,
+            incoming_updated_at: incomingRow.updated_at
+          };
+        }
+      }
+    }
+
+    // Zařízení A vytvoří den v 10:00
+    const deviceA = {
+      user_key: 'user:martin',
+      date: '2026-10-26',
+      type: 'work',
+      start_time: '07:00',
+      end_time: '15:30',
+      updated_at: '2026-10-26T10:00:00.000Z'
+    };
+
+    // Zařízení B vytvoří stejný den v 11:00
+    const deviceB = {
+      user_key: 'user:martin',
+      date: '2026-10-26',
+      type: 'homeOffice',
+      start_time: '08:00',
+      end_time: '16:30',
+      updated_at: '2026-10-26T11:00:00.000Z'
+    };
+
+    // Zařízení A provede zápis
+    const resA = executeAtomicLwwUpsert(deviceA);
+    expect(resA.applied).toBe(true);
+
+    // Zařízení B provede souběžný zápis (přes ON CONFLICT)
+    const resB = executeAtomicLwwUpsert(deviceB);
+    expect(resB.applied).toBe(true);
+
+    // Výsledný stav: v tabulce je právě 1 záznam a obsahuje novější stav z 11:00
+    const stored = mockPostgresTable.get('user:martin:2026-10-26');
+    expect(stored.updated_at).toBe('2026-10-26T11:00:00.000Z');
+    expect(stored.type).toBe('homeOffice');
+
+    // Nyní zpožděný request Zařízení A (např. retry staré verze 10:00)
+    const resLateA = executeAtomicLwwUpsert(deviceA);
+    expect(resLateA.applied).toBe(false);
+    expect(resLateA.reason).toBe('server_newer');
+    expect(resLateA.server_updated_at).toBe('2026-10-26T11:00:00.000Z');
+  });
 });

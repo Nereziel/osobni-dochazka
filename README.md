@@ -98,6 +98,10 @@ Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supab
    - Vrací `TRUE` výhradně pro platně ověřeného uživatele (`auth.uid()` nebo ověřený PIN hash) s rolí `admin`.
    - Bootstrap prvního admina je možný pouze atomicky při registraci prvního profilu.
 
+7. **`007_atomic_lww_upsert.sql`**:
+   - Skutečně atomický server-side LWW upsert: nahrazuje dvoukrokový `SELECT ... FOR UPDATE` přímým atomickým `INSERT ... ON CONFLICT (user_key, date) DO UPDATE SET ... WHERE excluded.updated_at >= d.updated_at RETURNING *`.
+   - Zabraňuje race condition (unique violation) při souběžném prvním vytvoření záznamu stejného dne ze dvou zařízení.
+
 ---
 
 ## 📊 Přehled stavu funkcí
