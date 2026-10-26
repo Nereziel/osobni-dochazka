@@ -102,6 +102,12 @@ Všechny SQL skripty jsou uloženy v adresáři [`supabase/migrations/`](./supab
    - Skutečně atomický server-side LWW upsert: nahrazuje dvoukrokový `SELECT ... FOR UPDATE` přímým atomickým `INSERT ... ON CONFLICT (user_key, date) DO UPDATE SET ... WHERE excluded.updated_at >= d.updated_at RETURNING *`.
    - Zabraňuje race condition (unique violation) při souběžném prvním vytvoření záznamu stejného dne ze dvou zařízení.
 
+8. **`008_fix_legacy_auth_vulnerability.sql`**:
+   - **Oprava P0 autorizační zranitelnosti**: `current_profile_user_key()` již nikdy nekriticky nedůvěřuje hlavičce `req_user_key()`. Legacy identita je uznána výhradně při shodě `user_key` i odpovídajícího `pin_hash`.
+   - **Zabezpečení RLS politik**: Všechny politiky pro `attendance_days`, `attendance_profiles` a `attendance_invites` používají ověřenou identitu. Útočník s podvrženou hlavičkou získá 0 řádků na SELECT a odmítnutí na zápis/aktualizaci/smazání.
+   - **Autorizace v LWW RPC**: `upsert_attendance_day_lww` ověřuje volajícího přes `current_profile_user_key()` a zakazuje manipulaci s cizími daty (s výjimkou ověřeného administrátora).
+   - **Prevence Username Enumeration**: `register_user_with_invite` při běžné registraci nejdříve striktně validuje invite kód, teprve poté kontroluje existenci uživatelského jména. Anonymní útočník bez platné pozvánky nemůže zjišťovat registrovaná uživatelská jména.
+
 ---
 
 ## 📊 Přehled stavu funkcí
