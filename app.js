@@ -797,6 +797,18 @@ create policy "Secure access to own attendance days"
     if (isSupabaseConfigured()) {
       setSyncState('syncing');
       try {
+        const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
+
+        // Kontrola, zda v DB již existují uživatelé – pokud ano, kód pozvánky je povinný!
+        try {
+          const checkUsers = await sbFetch('/rest/v1/attendance_profiles?select=user_key&limit=1');
+          if (checkUsers && checkUsers.length > 0 && !cleanInvite) {
+            throw new Error('Registrace nových uživatelů je v režimu Invite-Only. Zadej platný kód pozvánky od správce.');
+          }
+        } catch (checkErr) {
+          if (checkErr.message && checkErr.message.includes('Invite-Only')) throw checkErr;
+        }
+
         // Registrace přes zabezpečenou RPC funkci s kontrolou pozvánky
         const rpcRes = await sbFetch('/rest/v1/rpc/register_user_with_invite', {
           method: 'POST',
@@ -805,7 +817,7 @@ create policy "Secure access to own attendance days"
             p_username: cleanUser,
             p_display_name: displayNameInput.trim(),
             p_pin_hash: pinHash,
-            p_invite_code: (inviteCodeInput || '').trim()
+            p_invite_code: cleanInvite
           })
         });
 
@@ -913,12 +925,40 @@ create policy "Secure access to own attendance days"
       );
       if (profRows?.[0]) {
         applySettingsFromProfileRow(profRows[0]);
-        if (profRows[0].display_name) {
+        let userUpdated = false;
+        if (profRows[0].display_name && currentUser.displayName !== profRows[0].display_name) {
           currentUser.displayName = profRows[0].display_name;
+          userUpdated = true;
+        }
+        if (profRows[0].role && currentUser.role !== profRows[0].role) {
+          currentUser.role = profRows[0].role;
+          userUpdated = true;
+        }
+
+        // Pokud uživatel dosud nemá roli 'admin', zkusíme automaticky zjistit, zda v DB
+        // existuje nějaký správce. Pokud ne, uživatel je povýšen na Správce!
+        if (currentUser.role !== 'admin') {
+          try {
+            const claimRes = await sbFetch('/rest/v1/rpc/claim_initial_admin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}'
+            });
+            if (claimRes && claimRes.role === 'admin') {
+              currentUser.role = 'admin';
+              userUpdated = true;
+            }
+          } catch {
+            // Ignorováno – neběží v admin claim režimu
+          }
+        }
+
+        if (userUpdated) {
           saveCurrentUser(currentUser);
         }
         await saveSettings(true);
         applyTheme();
+        renderProfile();
       }
 
       const remoteRows = await sbFetch(
@@ -1162,6 +1202,24 @@ create policy "Secure access to own attendance days"
     const isAdmin = currentUser?.role === 'admin';
     $('#navItemTeam')?.classList.toggle('hidden', !isAdmin);
     $('#mNavItemTeam')?.classList.toggle('hidden', !isAdmin);
+    $('#openTeamFromSettingsBtn')?.classList.toggle('hidden', !isAdmin);
+    $('#claimAdminBtn')?.classList.toggle('hidden', !currentUser || isAdmin);
+
+    const roleBadge = $('#accountRoleBadge');
+    if (roleBadge) {
+      if (currentUser) {
+        roleBadge.classList.remove('hidden');
+        if (isAdmin) {
+          roleBadge.className = 'role-badge admin';
+          roleBadge.textContent = 'Správce (Admin)';
+        } else {
+          roleBadge.className = 'role-badge employee';
+          roleBadge.textContent = 'Zaměstnanec';
+        }
+      } else {
+        roleBadge.classList.add('hidden');
+      }
+    }
 
     if (isAdmin) {
       $('#sidebarUserStatus')?.classList.remove('local');
@@ -2227,19 +2285,96 @@ create policy "Secure access to own attendance days"
       $('#monthPickerModal').close();
     });
 
+    async function updateRegisterModalState() {
+      const inviteInput = $('#regInviteCode');
+      const banner = $('#registerModeBanner');
+      const title = $('#registerModeTitle');
+      const desc = $('#registerModeDesc');
+      const hint = $('#regInviteHint');
+
+      if (!isSupabaseConfigured()) {
+        if (banner) banner.className = 'win-infobar neutral';
+        if (title) title.textContent = 'Lokální režim';
+        if (desc) desc.textContent = 'Databáze není připojena. Účet bude vytvořen lokálně v tomto prohlížeči.';
+        if (inviteInput) inviteInput.required = false;
+        return;
+      }
+
+      try {
+        const rows = await sbFetch('/rest/v1/attendance_profiles?select=user_key&limit=1');
+        const hasUsers = rows && rows.length > 0;
+
+        if (!hasUsers) {
+          if (banner) banner.className = 'win-infobar success';
+          if (title) title.textContent = 'První instalace aplikace (Hlavní správce)';
+          if (desc) desc.textContent = 'V databázi dosud není žádný účet. Váš profil bude vytvořen jako hlavní Správce (Admin) bez nutnosti pozvánky.';
+          if (inviteInput) {
+            inviteInput.required = false;
+            inviteInput.value = '';
+            inviteInput.placeholder = '(První účet – kód není potřeba)';
+          }
+          if (hint) hint.textContent = 'Kód pozvánky není vyžadován pro prvního správce.';
+        } else {
+          if (banner) banner.className = 'win-infobar info';
+          if (title) title.textContent = 'Registrace pouze na pozvánku (Invite-Only)';
+          if (desc) desc.textContent = 'Pro vytvoření účtu je vyžadován platný kód pozvánky od správce docházky.';
+          if (inviteInput) {
+            inviteInput.required = true;
+            inviteInput.placeholder = 'např. INV-8X2K9M';
+          }
+          if (hint) hint.textContent = 'Registrace nových uživatelů je uzamčena. Zadej kód pozvánky od správce.';
+        }
+      } catch (err) {
+        console.warn('Nelze ověřit stav registrace:', err);
+      }
+    }
+
     // PŘIHLÁŠENÍ & REGISTRACE MODALY
     $('#openLoginModalBtn')?.addEventListener('click', () => $('#loginModal').showModal());
     $('#closeLoginModalBtn')?.addEventListener('click', () => $('#loginModal').close());
     $('#switchToRegisterBtn')?.addEventListener('click', () => {
       $('#loginModal').close();
       $('#registerModal').showModal();
+      updateRegisterModalState();
     });
 
-    $('#openRegisterModalBtn')?.addEventListener('click', () => $('#registerModal').showModal());
+    $('#openRegisterModalBtn')?.addEventListener('click', () => {
+      $('#registerModal').showModal();
+      updateRegisterModalState();
+    });
     $('#closeRegisterModalBtn')?.addEventListener('click', () => $('#registerModal').close());
     $('#switchToLoginBtn')?.addEventListener('click', () => {
       $('#registerModal').close();
       $('#loginModal').showModal();
+    });
+
+    $('#openTeamFromSettingsBtn')?.addEventListener('click', () => {
+      switchView('team');
+    });
+
+    $('#claimAdminBtn')?.addEventListener('click', async () => {
+      if (!isCloudReady()) {
+        toast('Musíte být přihlášeni ke cloudové databázi.', '⚠️');
+        return;
+      }
+      try {
+        const res = await sbFetch('/rest/v1/rpc/claim_initial_admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        });
+        if (res && res.role === 'admin') {
+          currentUser.role = 'admin';
+          saveCurrentUser(currentUser);
+          renderProfile();
+          toast('Role Správce byla úspěšně aktivována!', '✓');
+          switchView('team');
+        } else {
+          toast('V databázi již existuje jiný správce. Požádejte jej o přidělení role.', 'ℹ');
+        }
+      } catch (err) {
+        alert(err.message || 'Nepodařilo se aktivovat roli správce.');
+      }
     });
 
     $('#loginUserForm')?.addEventListener('submit', async (e) => {
