@@ -1,43 +1,14 @@
 /**
- * Supabase klient a REST/RPC služby
- * Používá Vite environment proměnné (VITE_SUPABASE_URL a VITE_SUPABASE_ANON_KEY).
- * Odstraňuje nebezpečnou injekci URL z query parametrů (?sb_url=, ?sb_key=).
+ * Supabase HTTP REST a RPC klient
+ * Připojuje se přímo přes standardní fetch API bez nutnosti těžkých knihoven.
+ * Využívá HTTP hlavičku X-Attendance-Session pro bezpečnou autentizaci.
  */
 
-import { createClient } from '@supabase/supabase-js';
-
 const LS_SUPABASE_CONFIG_KEY = 'dochazka_supabase_config_v2';
-let supabaseClientInstance = null;
-let currentClientKey = '';
-
-export function getSupabaseClient() {
-  const cfg = getSupabaseConfig();
-  if (!cfg.url || !cfg.anonKey) return null;
-
-  const key = `${cfg.url}|${cfg.anonKey}`;
-  if (supabaseClientInstance && currentClientKey === key) {
-    return supabaseClientInstance;
-  }
-
-  currentClientKey = key;
-  supabaseClientInstance = createClient(cfg.url, cfg.anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true
-    },
-    realtime: {
-      params: {
-        eventsPerSecond: 10
-      }
-    }
-  });
-
-  return supabaseClientInstance;
-}
 
 export function getSupabaseConfig() {
-  const envUrl = import.meta.env.VITE_SUPABASE_URL;
-  const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const envUrl = import.meta.env?.VITE_SUPABASE_URL;
+  const envKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
   const globalConfig = typeof window !== 'undefined' ? window.DOCHAZKA_CONFIG : null;
 
   if (envUrl && envKey) {
@@ -113,7 +84,6 @@ export async function supabaseRequest(path, options = {}, authUser = null) {
   const headers = {
     apikey: cfg.anonKey,
     Authorization: `Bearer ${cfg.anonKey}`,
-    'X-Client-Info': 'dochazka-pwa',
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
@@ -144,4 +114,3 @@ export async function supabaseRequest(path, options = {}, authUser = null) {
   const text = await response.text();
   return text ? JSON.parse(text) : null;
 }
-

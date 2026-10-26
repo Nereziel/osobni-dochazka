@@ -7,30 +7,26 @@
 --    - Přihlašování pouze přes: uživatelské jméno + PIN
 --    - Žádný e-mail, žádný Supabase Auth účet
 --    - Serverové hashování PINu pomocí bcrypt (pgcrypto)
+--    - Oddělené citlivé tabulky: attendance_credentials a attendance_sessions
 --    - 256-bitové náhodné session tokeny (v DB se ukládá pouze SHA-256 hash)
 --    - Klient posílá session token v HTTP hlavičce X-Attendance-Session
---    - Ochrana proti brute-force (dočasný lockout po 5 a 10 chybných pokusech)
+--    - Ochrana proti brute-force (lockout counter se ukládá i při chybě)
 --
--- 2. ROW LEVEL SECURITY (RLS):
---    - Každý uživatel má přístup výhradně ke svým datům
---    - Správce (role = admin) má přístup ke správě týmu, pozvánkám a souhrnům
+-- 2. AUTORIZACE A OMEZENÍ REST PŘÍSTUPU:
+--    - Přímý zápis (INSERT/UPDATE/DELETE) do attendance_days a attendance_profiles přes REST je ZAKÁZÁN
+--    - Zápis docházky probíhá výhradně přes RPC upsert_attendance_day_lww
+--    - Zápis nastavení probíhá výhradně přes RPC update_own_settings
+--    - attendance_credentials a attendance_sessions jsou pro REST zcela nepřístupné
 --
 -- 3. REGISTRACE NA POZVÁNKY (Invite-Only):
---    - První uživatel v databázi se automaticky stává Správcem (admin) bez pozvánky
---    - Další uživatelé se mohou registrovat pouze s platným kódem pozvánky
---    - Prevence username enumeration: kód pozvánky je ověřen před kontrolou jména
+--    - Registrace vždy vyžaduje platný kód pozvánky (žádný auto-admin fallback)
+--    - První administrátor se zakládá přes skript supabase/bootstrap_admin.sql
+--    - Podporované role: 'admin', 'employee'
 --
 -- 4. ATOMICKÝ LAST-WRITE-WINS A TOMBSTONES:
 --    - Atomický LWW upsert dnů docházky (ON CONFLICT DO UPDATE WHERE newer)
 --    - Smazání vytváří soft tombstone (deleted_at), který se spolehlivě šíří
 -- ============================================================================
-
--- Volitelný reset existujících tabulek před čistou instalací (v případě potřeby odkomentujte):
--- drop view if exists public.v_monthly_attendance_summary cascade;
--- drop table if exists public.attendance_days cascade;
--- drop table if exists public.attendance_sessions cascade;
--- drop table if exists public.attendance_invites cascade;
--- drop table if exists public.attendance_profiles cascade;
 
 create extension if not exists pgcrypto;
 
@@ -41,11 +37,7 @@ create table if not exists public.attendance_profiles (
   user_key text primary key,
   username text not null unique,
   display_name text not null default '',
-  pin_password_hash text not null,
-  role text not null default 'employee' check (role in ('admin', 'manager', 'employee')),
-  failed_login_count integer not null default 0,
-  locked_until timestamptz default null,
-  last_failed_login_at timestamptz default null,
+  role text not null default 'employee' check (role in ('admin', 'employee')),
 
   -- Běžná pracovní doba
   work_start text not null default '06:30',
@@ -82,21 +74,30 @@ create index if not exists idx_attendance_profiles_role
   on public.attendance_profiles (role);
 
 -- ----------------------------------------------------------------------------
--- 2. TABULKA RELACÍ (attendance_sessions)
+-- 2. PŘIHLAŠOVACÍ ÚDAJE (attendance_credentials) - SERVER ONLY
+-- ----------------------------------------------------------------------------
+create table if not exists public.attendance_credentials (
+  user_key text primary key references public.attendance_profiles(user_key) on delete cascade,
+  pin_password_hash text not null,
+  failed_login_count integer not null default 0,
+  locked_until timestamptz default null,
+  last_failed_login_at timestamptz default null,
+  updated_at timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
+-- 3. TABULKA RELACÍ (attendance_sessions) - SERVER ONLY
 -- ----------------------------------------------------------------------------
 create table if not exists public.attendance_sessions (
   id uuid primary key default gen_random_uuid(),
   user_key text not null references public.attendance_profiles(user_key) on delete cascade,
-  token_hash text not null,
+  token_hash text not null unique,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   last_used_at timestamptz not null default now(),
   revoked_at timestamptz default null,
   user_agent text default null
 );
-
-create unique index if not exists idx_attendance_sessions_token_hash
-  on public.attendance_sessions (token_hash);
 
 create index if not exists idx_attendance_sessions_user_key
   on public.attendance_sessions (user_key);
@@ -106,12 +107,12 @@ create index if not exists idx_attendance_sessions_active
   where revoked_at is null;
 
 -- ----------------------------------------------------------------------------
--- 3. SYSTÉM POZVÁNEK (attendance_invites)
+-- 4. SYSTÉM POZVÁNEK (attendance_invites)
 -- ----------------------------------------------------------------------------
 create table if not exists public.attendance_invites (
   code text primary key,
   created_by text references public.attendance_profiles(user_key) on delete set null,
-  target_role text not null default 'employee' check (target_role in ('employee', 'manager', 'admin')),
+  target_role text not null default 'employee' check (target_role in ('employee', 'admin')),
   is_used boolean not null default false,
   used_by text references public.attendance_profiles(user_key) on delete set null,
   used_at timestamptz,
@@ -123,12 +124,25 @@ create index if not exists idx_attendance_invites_code
   on public.attendance_invites (upper(code));
 
 -- ----------------------------------------------------------------------------
--- 4. DNY DOCHÁZKY (attendance_days)
+-- 5. DNY DOCHÁZKY (attendance_days)
 -- ----------------------------------------------------------------------------
 create table if not exists public.attendance_days (
   user_key text not null references public.attendance_profiles(user_key) on delete cascade,
   date date not null,
-  type text not null default 'work' check (type in ('work', 'doctor', 'vacation', 'sick', 'holiday', 'trip', 'homeoffice', 'weekend')),
+  type text not null default 'work' check (
+    type in (
+      'work',
+      'homeOffice',
+      'businessTrip',
+      'vacation',
+      'halfVacation',
+      'doctor',
+      'sick',
+      'holiday',
+      'compTime',
+      'other'
+    )
+  ),
   start_time text not null default '',
   end_time text not null default '',
   manual_break boolean not null default false,
@@ -157,7 +171,7 @@ create index if not exists idx_attendance_days_deleted
   on public.attendance_days (user_key, deleted_at);
 
 -- ----------------------------------------------------------------------------
--- 5. POHLED: MĚSÍČNÍ SOUHRN PRO REPORTING
+-- 6. POHLED: MĚSÍČNÍ SOUHRN PRO REPORTING
 -- ----------------------------------------------------------------------------
 create or replace view public.v_monthly_attendance_summary
 with (security_invoker = true)
@@ -172,7 +186,7 @@ select
   sum(d.credited_minutes) filter (where d.deleted_at is null) as total_credited_minutes,
   sum(d.target_minutes) filter (where d.deleted_at is null) as total_target_minutes,
   sum(d.balance_minutes) filter (where d.deleted_at is null) as total_balance_minutes,
-  count(d.date) filter (where d.type = 'vacation' and d.deleted_at is null) as vacation_days_count,
+  count(d.date) filter (where d.type in ('vacation', 'halfVacation') and d.deleted_at is null) as vacation_days_count,
   count(d.date) filter (where d.type = 'doctor' and d.deleted_at is null) as doctor_days_count,
   count(d.date) filter (where d.type = 'sick' and d.deleted_at is null) as sick_days_count,
   max(d.updated_at) as last_updated_at
@@ -181,8 +195,20 @@ join public.attendance_profiles p on p.user_key = d.user_key
 group by d.user_key, p.username, p.display_name, to_char(d.date, 'YYYY-MM');
 
 -- ----------------------------------------------------------------------------
--- 6. POMOCNÉ AUTENTIZAČNÍ FUNKCE
+-- 7. POMOCNÉ AUTENTIZAČNÍ FUNKCE
 -- ----------------------------------------------------------------------------
+
+-- Získání user-agent hlavičky klienta
+create or replace function public.current_client_user_agent()
+returns text
+language sql
+stable
+as $$
+  select coalesce(
+    nullif(current_setting('request.headers', true)::json->>'user-agent', ''),
+    'unknown'
+  );
+$$;
 
 -- Získání RAW session tokenu z HTTP hlavičky X-Attendance-Session
 create or replace function public.current_session_token()
@@ -257,10 +283,10 @@ end;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 7. SESSION A AUTH RPC FUNKCE
+-- 8. SESSION A AUTH RPC FUNKCE
 -- ----------------------------------------------------------------------------
 
--- Přihlášení: ověření PINu přes bcrypt, brute-force ochrana a vystavení session tokenu
+-- Přihlášení: ověření PINu přes bcrypt, brute-force ochrana s persistencí counteru
 create or replace function public.login_attendance_user(
   p_username text,
   p_pin text,
@@ -275,7 +301,10 @@ declare
   v_clean_user text;
   v_user_key text;
   v_profile public.attendance_profiles%rowtype;
+  v_cred public.attendance_credentials%rowtype;
   v_is_valid boolean := false;
+  v_new_failed integer;
+  v_lock_until timestamptz;
   v_raw_token text;
   v_token_hash text;
   v_expires_at timestamptz;
@@ -288,34 +317,81 @@ begin
   where user_key = v_user_key;
 
   if not found then
-    raise exception 'Neplatné uživatelské jméno nebo PIN.';
+    return jsonb_build_object(
+      'success', false,
+      'error', 'invalid_credentials',
+      'message', 'Neplatné uživatelské jméno nebo PIN.'
+    );
   end if;
 
-  if v_profile.locked_until is not null and v_profile.locked_until > now() then
-    raise exception 'Účet je dočasně uzamčen z bezpečnostních důvodů. Zkuste to za chvíli.';
+  select * into v_cred
+  from public.attendance_credentials
+  where user_key = v_user_key
+  for update;
+
+  if not found then
+    return jsonb_build_object(
+      'success', false,
+      'error', 'invalid_credentials',
+      'message', 'Neplatné uživatelské jméno nebo PIN.'
+    );
   end if;
 
-  v_is_valid := (crypt(p_pin, v_profile.pin_password_hash) = v_profile.pin_password_hash);
+  -- Kontrola dočasného zámku účtu
+  if v_cred.locked_until is not null and v_cred.locked_until > now() then
+    return jsonb_build_object(
+      'success', false,
+      'error', 'account_locked',
+      'message', 'Účet je dočasně uzamčen z bezpečnostních důvodů. Zkuste to za chvíli.',
+      'locked_until', v_cred.locked_until
+    );
+  end if;
+
+  -- Ověření PINu přes bcrypt
+  v_is_valid := (crypt(p_pin, v_cred.pin_password_hash) = v_cred.pin_password_hash);
 
   if not v_is_valid then
-    update public.attendance_profiles
-    set failed_login_count = failed_login_count + 1,
-        last_failed_login_at = now(),
-        locked_until = case
-          when failed_login_count + 1 >= 10 then now() + interval '5 minutes'
-          when failed_login_count + 1 >= 5 then now() + interval '1 minute'
-          else null
-        end
-    where user_key = v_profile.user_key;
+    v_new_failed := v_cred.failed_login_count + 1;
+    v_lock_until := null;
 
-    raise exception 'Neplatné uživatelské jméno nebo PIN.';
+    if v_new_failed >= 10 then
+      v_lock_until := now() + interval '15 minutes';
+    elsif v_new_failed >= 5 then
+      v_lock_until := now() + interval '2 minutes';
+    end if;
+
+    update public.attendance_credentials
+    set failed_login_count = v_new_failed,
+        last_failed_login_at = now(),
+        locked_until = v_lock_until,
+        updated_at = now()
+    where user_key = v_user_key;
+
+    if v_lock_until is not null then
+      return jsonb_build_object(
+        'success', false,
+        'error', 'account_locked',
+        'message', 'Příliš mnoho neúspěšných pokusů. Účet byl dočasně uzamčen.',
+        'locked_until', v_lock_until
+      );
+    end if;
+
+    return jsonb_build_object(
+      'success', false,
+      'error', 'invalid_credentials',
+      'message', 'Neplatné uživatelské jméno nebo PIN.',
+      'failed_attempts', v_new_failed
+    );
   end if;
 
-  update public.attendance_profiles
+  -- Úspěšné ověření -> vyresetujeme čítač chyb
+  update public.attendance_credentials
   set failed_login_count = 0,
-      locked_until = null
-  where user_key = v_profile.user_key;
+      locked_until = null,
+      updated_at = now()
+  where user_key = v_user_key;
 
+  -- Vygenerování kryptograficky náhodného session tokenu
   v_raw_token := encode(gen_random_bytes(32), 'hex');
   v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
 
@@ -330,16 +406,19 @@ begin
     token_hash,
     expires_at,
     created_at,
-    last_used_at
+    last_used_at,
+    user_agent
   ) values (
-    v_profile.user_key,
+    v_user_key,
     v_token_hash,
     v_expires_at,
     now(),
-    now()
+    now(),
+    public.current_client_user_agent()
   );
 
   return jsonb_build_object(
+    'success', true,
     'session_token', v_raw_token,
     'user_key', v_profile.user_key,
     'username', v_profile.username,
@@ -404,7 +483,7 @@ declare
 begin
   v_raw_token := public.current_session_token();
   if v_raw_token = '' then
-    raise exception 'Neplatná nebo chybějící session.';
+    return jsonb_build_object('success', false, 'error', 'missing_session', 'message', 'Chybí session token.');
   end if;
 
   v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
@@ -418,7 +497,7 @@ begin
   limit 1;
 
   if not found then
-    raise exception 'Session expirovala nebo byla odhlášena.';
+    return jsonb_build_object('success', false, 'error', 'invalid_session', 'message', 'Session expirovala nebo byla odhlášena.');
   end if;
 
   update public.attendance_sessions
@@ -426,6 +505,7 @@ begin
   where token_hash = v_token_hash;
 
   return jsonb_build_object(
+    'success', true,
     'user_key', v_profile.user_key,
     'username', v_profile.username,
     'display_name', v_profile.display_name,
@@ -449,37 +529,40 @@ declare
   v_user_key text;
   v_raw_token text;
   v_current_token_hash text;
-  v_profile public.attendance_profiles%rowtype;
+  v_cred public.attendance_credentials%rowtype;
   v_old_valid boolean := false;
   v_new_bcrypt text;
 begin
   v_user_key := public.current_session_user_key();
   if v_user_key = '' then
-    raise exception 'Neautorizovaný přístup: Uživatel není přihlášen.';
+    return jsonb_build_object('success', false, 'error', 'unauthorized', 'message', 'Uživatel není přihlášen.');
   end if;
 
   if length(p_new_pin) < 4 then
-    raise exception 'Nový PIN musí mít alespoň 4 znaky.';
+    return jsonb_build_object('success', false, 'error', 'pin_too_short', 'message', 'Nový PIN musí mít alespoň 4 znaky.');
   end if;
 
-  select * into v_profile
-  from public.attendance_profiles
-  where user_key = v_user_key;
+  select * into v_cred
+  from public.attendance_credentials
+  where user_key = v_user_key
+  for update;
 
   if not found then
-    raise exception 'Uživatel nebyl nalezen.';
+    return jsonb_build_object('success', false, 'error', 'not_found', 'message', 'Uživatel nebyl nalezen.');
   end if;
 
-  v_old_valid := (crypt(p_old_pin, v_profile.pin_password_hash) = v_profile.pin_password_hash);
+  v_old_valid := (crypt(p_old_pin, v_cred.pin_password_hash) = v_cred.pin_password_hash);
 
   if not v_old_valid then
-    raise exception 'Původní PIN není správný.';
+    return jsonb_build_object('success', false, 'error', 'invalid_old_pin', 'message', 'Původní PIN není správný.');
   end if;
 
   v_new_bcrypt := crypt(p_new_pin, gen_salt('bf', 10));
 
-  update public.attendance_profiles
+  update public.attendance_credentials
   set pin_password_hash = v_new_bcrypt,
+      failed_login_count = 0,
+      locked_until = null,
       updated_at = now()
   where user_key = v_user_key;
 
@@ -501,13 +584,13 @@ begin
 end;
 $$;
 
--- Registrace s ověřením pozvánky, bcrypt hashem a okamžitým session tokenem
+-- Registrace s VÝHRADNÍM ověřením pozvánky (žádný auto-admin fallback)
 drop function if exists public.register_user_with_invite(text, text, text, text);
 create or replace function public.register_user_with_invite(
   p_username text,
   p_display_name text,
   p_pin text,
-  p_invite_code text default ''
+  p_invite_code text
 )
 returns jsonb
 language plpgsql
@@ -515,11 +598,10 @@ security definer
 set search_path = public, extensions
 as $$
 declare
-  v_user_count integer;
   v_clean_user text;
   v_user_key text;
   v_invite public.attendance_invites%rowtype;
-  v_assigned_role text := 'employee';
+  v_assigned_role text;
   v_bcrypt text;
   v_raw_token text;
   v_token_hash text;
@@ -527,70 +609,78 @@ declare
 begin
   v_clean_user := lower(trim(regexp_replace(p_username, '[^a-zA-Z0-9._-]', '', 'g')));
   if length(v_clean_user) < 3 then
-    raise exception 'Uživatelské jméno musí mít alespoň 3 znaky.';
+    return jsonb_build_object('success', false, 'error', 'invalid_username', 'message', 'Uživatelské jméno musí mít alespoň 3 znaky.');
   end if;
   if length(p_pin) < 4 then
-    raise exception 'PIN/heslo musí mít alespoň 4 znaky.';
+    return jsonb_build_object('success', false, 'error', 'pin_too_short', 'message', 'PIN/heslo musí mít alespoň 4 znaky.');
   end if;
   v_user_key := 'user:' || v_clean_user;
 
-  select count(*) into v_user_count from public.attendance_profiles;
-
-  if v_user_count = 0 then
-    v_assigned_role := 'admin';
-  else
-    if coalesce(trim(p_invite_code), '') = '' then
-      raise exception 'Registrace nových uživatelů je pouze na pozvánky. Zadej platný kód pozvánky.';
-    end if;
-
-    select * into v_invite
-    from public.attendance_invites
-    where upper(code) = upper(trim(p_invite_code))
-    for update;
-
-    if not found then
-      raise exception 'Kód pozvánky "%" neexistuje nebo je neplatný.', p_invite_code;
-    end if;
-
-    if v_invite.is_used then
-      raise exception 'Tento kód pozvánky již byl využit.';
-    end if;
-
-    if v_invite.expires_at is not null and v_invite.expires_at < now() then
-      raise exception 'Platnost tohoto kódu pozvánky vypršela.';
-    end if;
-
-    v_assigned_role := coalesce(v_invite.target_role, 'employee');
+  -- 1. Ověření pozvánky VŽDY před kontrolou dostupnosti jména (prevence enumeration)
+  if coalesce(trim(p_invite_code), '') = '' then
+    return jsonb_build_object('success', false, 'error', 'missing_invite', 'message', 'Registrace vyžaduje platný kód pozvánky.');
   end if;
 
+  select * into v_invite
+  from public.attendance_invites
+  where upper(code) = upper(trim(p_invite_code))
+  for update;
+
+  if not found then
+    return jsonb_build_object('success', false, 'error', 'invalid_invite', 'message', 'Kód pozvánky neexistuje nebo je neplatný.');
+  end if;
+
+  if v_invite.is_used then
+    return jsonb_build_object('success', false, 'error', 'invite_used', 'message', 'Tento kód pozvánky již byl využit.');
+  end if;
+
+  if v_invite.expires_at is not null and v_invite.expires_at < now() then
+    return jsonb_build_object('success', false, 'error', 'invite_expired', 'message', 'Platnost tohoto kódu pozvánky vypršela.');
+  end if;
+
+  v_assigned_role := coalesce(v_invite.target_role, 'employee');
+
+  -- 2. Kontrola unikátnosti uživatelského jména
   if exists (select 1 from public.attendance_profiles where user_key = v_user_key) then
-    raise exception 'Uživatelské jméno "%" je již obsazeno.', v_clean_user;
+    return jsonb_build_object('success', false, 'error', 'username_taken', 'message', 'Uživatelské jméno je již obsazeno.');
   end if;
 
   v_bcrypt := crypt(p_pin, gen_salt('bf', 10));
 
+  -- Vložení veřejného profilu
   insert into public.attendance_profiles (
     user_key,
     username,
     display_name,
-    pin_password_hash,
     role
   ) values (
     v_user_key,
     v_clean_user,
     coalesce(nullif(trim(p_display_name), ''), v_clean_user),
-    v_bcrypt,
     v_assigned_role
   );
 
-  if v_user_count > 0 and v_invite.code is not null then
-    update public.attendance_invites
-    set is_used = true,
-        used_by = v_user_key,
-        used_at = now()
-    where code = v_invite.code;
-  end if;
+  -- Vložení privátních přihlašovacích údajů
+  insert into public.attendance_credentials (
+    user_key,
+    pin_password_hash,
+    failed_login_count,
+    locked_until
+  ) values (
+    v_user_key,
+    v_bcrypt,
+    0,
+    null
+  );
 
+  -- Označení pozvánky za využitou
+  update public.attendance_invites
+  set is_used = true,
+      used_by = v_user_key,
+      used_at = now()
+  where code = v_invite.code;
+
+  -- Okamžité vystavení session tokenu pro automatické přihlášení
   v_raw_token := encode(gen_random_bytes(32), 'hex');
   v_token_hash := encode(digest(v_raw_token, 'sha256'), 'hex');
   v_expires_at := now() + interval '30 days';
@@ -600,13 +690,15 @@ begin
     token_hash,
     expires_at,
     created_at,
-    last_used_at
+    last_used_at,
+    user_agent
   ) values (
     v_user_key,
     v_token_hash,
     v_expires_at,
     now(),
-    now()
+    now(),
+    public.current_client_user_agent()
   );
 
   return jsonb_build_object(
@@ -617,7 +709,7 @@ begin
     'display_name', coalesce(nullif(trim(p_display_name), ''), v_clean_user),
     'role', v_assigned_role,
     'expires_at', v_expires_at,
-    'message', case when v_user_count = 0 then 'První administrátorský profil byl úspěšně vytvořen.' else 'Registrace proběhla úspěšně.' end
+    'message', 'Registrace proběhla úspěšně.'
   );
 end;
 $$;
@@ -630,18 +722,64 @@ stable
 security definer
 set search_path = public
 as $$
-declare
-  v_has_users boolean;
 begin
-  select exists (
-    select 1
-    from public.attendance_profiles
-    limit 1
-  ) into v_has_users;
-
   return jsonb_build_object(
     'registration_enabled', true,
-    'requires_invite', v_has_users
+    'requires_invite', true
+  );
+end;
+$$;
+
+-- Bezpečná aktualizace vlastního nastavení přes RPC (přímý REST UPDATE je zakázán)
+create or replace function public.update_own_settings(
+  p_settings jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_user_key text;
+  v_result public.attendance_profiles%rowtype;
+begin
+  v_user_key := public.current_session_user_key();
+  if v_user_key = '' then
+    raise exception 'Neautorizovaný přístup: Neplatná nebo chybějící session.';
+  end if;
+
+  update public.attendance_profiles
+  set
+    work_start = coalesce(p_settings->>'work_start', work_start),
+    work_end = coalesce(p_settings->>'work_end', work_end),
+    daily_target_minutes = coalesce((p_settings->>'daily_target_minutes')::integer, daily_target_minutes),
+    break_minutes = coalesce((p_settings->>'break_minutes')::integer, break_minutes),
+    break_after_minutes = coalesce((p_settings->>'break_after_minutes')::integer, break_after_minutes),
+    auto_fill = coalesce((p_settings->>'auto_fill')::boolean, auto_fill),
+    work_weekends = coalesce((p_settings->>'work_weekends')::boolean, work_weekends),
+    weekend_mode = coalesce(p_settings->>'weekend_mode', weekend_mode),
+    weekend_custom_hours = coalesce((p_settings->>'weekend_custom_hours')::boolean, weekend_custom_hours),
+    weekend_start = coalesce(p_settings->>'weekend_start', weekend_start),
+    weekend_end = coalesce(p_settings->>'weekend_end', weekend_end),
+    weekend_target_minutes = coalesce((p_settings->>'weekend_target_minutes')::integer, weekend_target_minutes),
+    work_on_holidays = coalesce((p_settings->>'work_on_holidays')::boolean, work_on_holidays),
+    theme = coalesce(p_settings->>'theme', theme),
+    settings_json = coalesce(p_settings->'settings_json', settings_json),
+    updated_at = now()
+  where user_key = v_user_key
+  returning * into v_result;
+
+  if not found then
+    raise exception 'Uživatelský profil nebyl nalezen.';
+  end if;
+
+  return jsonb_build_object(
+    'success', true,
+    'user_key', v_result.user_key,
+    'username', v_result.username,
+    'display_name', v_result.display_name,
+    'role', v_result.role,
+    'updated_at', v_result.updated_at
   );
 end;
 $$;
@@ -664,8 +802,8 @@ begin
     raise exception 'Přístup odepřen: Pouze správce může generovat pozvánky.';
   end if;
 
-  if p_target_role not in ('employee', 'admin', 'manager') then
-    raise exception 'Neplatná role.';
+  if p_target_role not in ('employee', 'admin') then
+    raise exception 'Neplatná role. Podporované role: employee, admin.';
   end if;
 
   v_creator := public.current_session_user_key();
@@ -717,12 +855,16 @@ begin
 
   v_bcrypt := crypt(p_new_pin, gen_salt('bf', 10));
 
-  update public.attendance_profiles
+  update public.attendance_credentials
   set pin_password_hash = v_bcrypt,
       failed_login_count = 0,
       locked_until = null,
       updated_at = now()
   where user_key = p_target_user_key;
+
+  if not found then
+    raise exception 'Uživatel nebyl nalezen.';
+  end if;
 
   update public.attendance_sessions
   set revoked_at = now()
@@ -747,8 +889,8 @@ begin
     raise exception 'Přístup odepřen: Pouze správce může měnit role.';
   end if;
 
-  if p_new_role not in ('admin', 'employee', 'manager') then
-    raise exception 'Neplatná role.';
+  if p_new_role not in ('admin', 'employee') then
+    raise exception 'Neplatná role. Podporované role: employee, admin.';
   end if;
 
   update public.attendance_profiles
@@ -940,16 +1082,17 @@ end;
 $$;
 
 -- ----------------------------------------------------------------------------
--- 8. ZABEZPEČENÍ ROW LEVEL SECURITY (RLS)
+-- 9. ZABEZPEČENÍ ROW LEVEL SECURITY (RLS)
 -- ----------------------------------------------------------------------------
 alter table public.attendance_profiles enable row level security;
+alter table public.attendance_credentials enable row level security;
 alter table public.attendance_sessions enable row level security;
 alter table public.attendance_invites enable row level security;
 alter table public.attendance_days enable row level security;
 
--- PROFILY
-drop policy if exists "Secure access to own profile" on public.attendance_profiles;
-create policy "Secure access to own profile"
+-- PROFILY (attendance_profiles): pouze SELECT
+drop policy if exists "Secure read profiles" on public.attendance_profiles;
+create policy "Secure read profiles"
   on public.attendance_profiles
   for select
   to anon, authenticated
@@ -958,48 +1101,7 @@ create policy "Secure access to own profile"
     or public.is_admin()
   );
 
-drop policy if exists "Secure update own profile or admin" on public.attendance_profiles;
-create policy "Secure update own profile or admin"
-  on public.attendance_profiles
-  for update
-  to anon, authenticated
-  using (
-    (public.current_session_user_key() <> '' and user_key = public.current_session_user_key())
-    or public.is_admin()
-  )
-  with check (
-    (
-      public.current_session_user_key() <> ''
-      and user_key = public.current_session_user_key()
-      and role = (select p.role from public.attendance_profiles p where p.user_key = public.current_session_user_key())
-    )
-    or public.is_admin()
-  );
-
-drop policy if exists "Secure delete profile admin only" on public.attendance_profiles;
-create policy "Secure delete profile admin only"
-  on public.attendance_profiles
-  for delete
-  to anon, authenticated
-  using (public.is_admin());
-
--- RELACE (SESSIONS)
-drop policy if exists "Users manage own sessions" on public.attendance_sessions;
-create policy "Users manage own sessions"
-  on public.attendance_sessions
-  for all
-  to anon, authenticated
-  using (
-    public.current_session_user_key() <> ''
-    and user_key = public.current_session_user_key()
-  )
-  with check (
-    public.current_session_user_key() <> ''
-    and user_key = public.current_session_user_key()
-  );
-
--- POZVÁNKY
-drop policy if exists "Allow verify invite code" on public.attendance_invites;
+-- POZVÁNKY (attendance_invites)
 drop policy if exists "Admin manage invites" on public.attendance_invites;
 create policy "Admin manage invites"
   on public.attendance_invites
@@ -1008,9 +1110,9 @@ create policy "Admin manage invites"
   using (public.is_admin())
   with check (public.is_admin());
 
--- DNY DOCHÁZKY
-drop policy if exists "Secure access to own attendance days" on public.attendance_days;
-create policy "Secure access to own attendance days"
+-- DNY DOCHÁZKY (attendance_days): pouze SELECT přes RLS (zápis je přes RPC)
+drop policy if exists "Secure read own attendance days" on public.attendance_days;
+create policy "Secure read own attendance days"
   on public.attendance_days
   for select
   to anon, authenticated
@@ -1019,49 +1121,29 @@ create policy "Secure access to own attendance days"
     or public.is_admin()
   );
 
-drop policy if exists "Secure write own attendance days" on public.attendance_days;
-create policy "Secure write own attendance days"
-  on public.attendance_days
-  for insert
-  to anon, authenticated
-  with check (
-    (public.current_session_user_key() <> '' and user_key = public.current_session_user_key())
-    or public.is_admin()
-  );
-
-drop policy if exists "Secure update own attendance days" on public.attendance_days;
-create policy "Secure update own attendance days"
-  on public.attendance_days
-  for update
-  to anon, authenticated
-  using (
-    (public.current_session_user_key() <> '' and user_key = public.current_session_user_key())
-    or public.is_admin()
-  )
-  with check (
-    (public.current_session_user_key() <> '' and user_key = public.current_session_user_key())
-    or public.is_admin()
-  );
-
-drop policy if exists "Secure delete own attendance days" on public.attendance_days;
-create policy "Secure delete own attendance days"
-  on public.attendance_days
-  for delete
-  to anon, authenticated
-  using (
-    (public.current_session_user_key() <> '' and user_key = public.current_session_user_key())
-    or public.is_admin()
-  );
-
 -- ----------------------------------------------------------------------------
--- 9. OPRÁVNĚNÍ K FUNKCÍM A TABULKÁM
+-- 10. OPRÁVNĚNÍ K TABULKÁM A FUNKCÍM (PRINCIPLE OF LEAST PRIVILEGE)
 -- ----------------------------------------------------------------------------
 grant usage on schema public to anon, authenticated;
-grant all on public.attendance_profiles to anon, authenticated;
-grant all on public.attendance_sessions to anon, authenticated;
-grant all on public.attendance_invites to anon, authenticated;
-grant all on public.attendance_days to anon, authenticated;
 
+-- Úplný zákaz přímého REST přístupu k interním tabulkám
+revoke all on public.attendance_credentials from public, anon, authenticated;
+revoke all on public.attendance_sessions from public, anon, authenticated;
+
+-- attendance_profiles: POUZE SELECT pro REST klienty (úpravy jdou přes update_own_settings)
+grant select on public.attendance_profiles to anon, authenticated;
+revoke insert, update, delete on public.attendance_profiles from public, anon, authenticated;
+
+-- attendance_days: POUZE SELECT pro REST klienty (zápis jde přes upsert_attendance_day_lww)
+grant select on public.attendance_days to anon, authenticated;
+revoke insert, update, delete on public.attendance_days from public, anon, authenticated;
+
+-- attendance_invites: SELECT a administrátorská správa
+grant select on public.attendance_invites to anon, authenticated;
+revoke insert, update, delete on public.attendance_invites from anon;
+grant insert, update, delete on public.attendance_invites to authenticated;
+
+-- Spouštění RPC funkcí
 grant execute on function public.current_session_token() to anon, authenticated;
 grant execute on function public.current_session_user_key() to anon, authenticated;
 grant execute on function public.is_admin() to anon, authenticated;
@@ -1071,6 +1153,7 @@ grant execute on function public.verify_attendance_session() to anon, authentica
 grant execute on function public.change_attendance_pin(text, text, boolean) to anon, authenticated;
 grant execute on function public.register_user_with_invite(text, text, text, text) to anon, authenticated;
 grant execute on function public.registration_status() to anon, authenticated;
+grant execute on function public.update_own_settings(jsonb) to anon, authenticated;
 grant execute on function public.admin_create_invite(text) to anon, authenticated;
 grant execute on function public.admin_reset_user_pin(text, text) to anon, authenticated;
 grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;

@@ -4,8 +4,6 @@ import { getPendingSyncActions } from '../services/indexedDb.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 
 export const FOREGROUND_SYNC_INTERVAL_MS = 5000;
-// Zpětně kompatibilní alias
-export const REALTIME_SYNC_DEBOUNCE_MS = FOREGROUND_SYNC_INTERVAL_MS;
 
 const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error'
 const syncError = ref(null);
@@ -102,7 +100,7 @@ export function useSync() {
   }
 
   /**
-   * Zahájení 5s pollingu v popředí (nahrazuje Realtime odběr)
+   * Zahájení 5s pollingu v popředí
    */
   function startForegroundSync(currentUser, currentSettings, onRecordsUpdated) {
     activeUser = currentUser;
@@ -196,11 +194,6 @@ export function useSync() {
     sync,
     startForegroundSync,
     stopForegroundSync,
-    triggerPeriodicSync,
-    // Zpětně kompatibilní aliasy
-    subscribeRealtime: startForegroundSync,
-    unsubscribeRealtime: stopForegroundSync,
-    handleRealtimeEvent: triggerPeriodicSync,
-    scheduleRealtimeDebounce: startPollingTimer
+    triggerPeriodicSync
   };
 }

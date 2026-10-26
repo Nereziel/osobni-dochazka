@@ -412,4 +412,33 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(resLateA.reason).toBe('server_newer');
     expect(resLateA.server_updated_at).toBe('2026-10-26T11:00:00.000Z');
   });
+
+  it('Test 12 – outbox queue sync for attendance_profiles calls RPC update_own_settings', async () => {
+    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
+    vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([
+      {
+        id: 101,
+        entity: 'attendance_profiles',
+        action: 'UPDATE',
+        payload: { work_start: '07:00', work_end: '16:00' }
+      }
+    ]);
+
+    const removeActionSpy = vi.spyOn(idbService, 'removeSyncAction').mockResolvedValue();
+    let rpcEndpoint = '';
+    let rpcBody = null;
+
+    vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async (url, opts) => {
+      rpcEndpoint = url;
+      rpcBody = JSON.parse(opts.body);
+      return { success: true };
+    });
+
+    const count = await drainOutboxQueue(currentUser);
+
+    expect(count).toBe(1);
+    expect(rpcEndpoint).toBe('/rest/v1/rpc/update_own_settings');
+    expect(rpcBody).toEqual({ p_settings: { work_start: '07:00', work_end: '16:00' } });
+    expect(removeActionSpy).toHaveBeenCalledWith(101);
+  });
 });

@@ -194,7 +194,7 @@ import AdminResetPinModal from './components/Admin/AdminResetPinModal.vue';
 import MonthPickerModal from './components/Attendance/MonthPickerModal.vue';
 
 import { useOnlineStatus } from './composables/useOnlineStatus.js';
-import { useAuth, hashPin } from './composables/useAuth.js';
+import { useAuth } from './composables/useAuth.js';
 import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync } from './composables/useSync.js';
@@ -241,8 +241,8 @@ const {
   pendingCount,
   refreshPendingCount,
   sync,
-  subscribeRealtime,
-  unsubscribeRealtime
+  startForegroundSync,
+  stopForegroundSync
 } = useSync();
 
 // State
@@ -318,7 +318,7 @@ onMounted(async () => {
       const isValid = await verifySession();
       if (isValid && currentUser.value) {
         triggerSync(false);
-        subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+        startForegroundSync(currentUser.value, settings.value, (newMap) => {
           records.value = newMap;
         });
       } else {
@@ -490,7 +490,7 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
     if (isSupabaseConfigured()) {
       triggerSync(false);
-      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+      startForegroundSync(currentUser.value, settings.value, (newMap) => {
         records.value = newMap;
       });
     }
@@ -510,7 +510,7 @@ async function handleBiometricLogin() {
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
     if (isSupabaseConfigured()) {
       triggerSync(false);
-      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+      startForegroundSync(currentUser.value, settings.value, (newMap) => {
         records.value = newMap;
       });
     }
@@ -547,7 +547,7 @@ async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, in
     await loadRecords(userKey);
     if (isSupabaseConfigured()) {
       triggerSync(mergeLocal);
-      subscribeRealtime(currentUser.value, settings.value, (newMap) => {
+      startForegroundSync(currentUser.value, settings.value, (newMap) => {
         records.value = newMap;
       });
     }
@@ -587,7 +587,7 @@ async function handleEnableBiometrics() {
 
 function handleLogout() {
   if (!confirm('Opravdu se odhlásit z tohoto zařízení?')) return;
-  unsubscribeRealtime();
+  stopForegroundSync();
   logout();
   const userKey = 'user:local';
   loadSettings(userKey);

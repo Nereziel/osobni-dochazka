@@ -5,26 +5,6 @@ const LS_USER_KEY = 'dochazka_active_user_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
 const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
 
-/**
- * Legacy pomocná funkce pro hashování PINu na klientovi.
- * Používá se POUZE v offline/lokálním režimu nebo pro testy,
- * v produkčním Supabase režimu probíhá veškeré ověřování a hashování na serveru (bcrypt).
- */
-export async function hashPin(pin, username) {
-  const clean = (username || '').toLowerCase().trim();
-  const raw = `dochazka:${clean}:${pin}`;
-  if (typeof crypto !== 'undefined' && crypto.subtle?.digest) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
-    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-  let h = 2166136261;
-  for (let i = 0; i < raw.length; i++) {
-    h ^= raw.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return `fnv:${(h >>> 0).toString(16)}`;
-}
-
 function loadInitialUser() {
   try {
     const remember = localStorage.getItem(LS_REMEMBER_KEY);
@@ -40,7 +20,7 @@ function loadInitialUser() {
 const currentUser = ref(loadInitialUser());
 
 export function useAuth() {
-  const isAuthenticated = computed(() => Boolean(currentUser.value?.userKey));
+  const isAuthenticated = computed(() => Boolean(currentUser.value?.userKey && currentUser.value?.sessionToken));
   const isAdmin = computed(() => currentUser.value?.role === 'admin');
 
   function saveUserSession(user, remember = true) {
@@ -66,45 +46,38 @@ export function useAuth() {
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
 
-    const userKey = `user:${cleanUser}`;
-
-    if (isSupabaseConfigured()) {
-      const res = await supabaseRequest('/rest/v1/rpc/login_attendance_user', {
-        method: 'POST',
-        body: JSON.stringify({
-          p_username: cleanUser,
-          p_pin: pinInput,
-          p_remember: Boolean(rememberMe)
-        })
-      });
-
-      if (!res?.session_token) {
-        throw new Error('Přihlášení se nezdařilo: server nevydal session token.');
-      }
-
-      const userObj = {
-        sessionToken: res.session_token,
-        userKey: res.user_key || userKey,
-        username: res.username || cleanUser,
-        displayName: res.display_name || cleanUser,
-        role: res.role || 'employee',
-        expiresAt: res.expires_at
-      };
-
-      saveUserSession(userObj, rememberMe);
-      return { message: `Vítej zpět, ${userObj.displayName}!`, profile: userObj };
-    } else {
-      const userObj = {
-        sessionToken: `local_session_${Date.now()}`,
-        userKey,
-        username: cleanUser,
-        displayName: cleanUser,
-        role: 'admin',
-        expiresAt: null
-      };
-      saveUserSession(userObj, rememberMe);
-      return { message: `Přihlášen lokální profil ${cleanUser}.`, profile: null };
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase databáze není nakonfigurována. Pro přihlášení je nutné nastavit spojení s databází.');
     }
+
+    const res = await supabaseRequest('/rest/v1/rpc/login_attendance_user', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_username: cleanUser,
+        p_pin: pinInput,
+        p_remember: Boolean(rememberMe)
+      })
+    });
+
+    if (res?.success === false) {
+      throw new Error(res.message || res.error || 'Přihlášení se nezdařilo.');
+    }
+
+    if (!res?.session_token) {
+      throw new Error('Přihlášení se nezdařilo: server nevydal session token.');
+    }
+
+    const userObj = {
+      sessionToken: res.session_token,
+      userKey: res.user_key || `user:${cleanUser}`,
+      username: res.username || cleanUser,
+      displayName: res.display_name || cleanUser,
+      role: res.role || 'employee',
+      expiresAt: res.expires_at
+    };
+
+    saveUserSession(userObj, rememberMe);
+    return { message: `Vítej zpět, ${userObj.displayName}!`, profile: userObj };
   }
 
   async function register(usernameInput, displayNameInput, pinInput, pinConfirmInput, inviteCodeInput) {
@@ -114,76 +87,74 @@ export function useAuth() {
     if (!pinInput || pinInput.length < 4) throw new Error('PIN/heslo musí mít alespoň 4 znaky.');
     if (pinInput !== pinConfirmInput) throw new Error('Zadaná hesla/PINy se neshodují.');
 
-    const userKey = `user:${cleanUser}`;
-    let assignedRole = 'employee';
-
-    if (isSupabaseConfigured()) {
-      const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
-
-      const rpcRes = await supabaseRequest('/rest/v1/rpc/register_user_with_invite', {
-        method: 'POST',
-        body: JSON.stringify({
-          p_username: cleanUser,
-          p_display_name: displayNameInput.trim(),
-          p_pin: pinInput,
-          p_invite_code: cleanInvite
-        })
-      });
-
-      if (rpcRes?.role) assignedRole = rpcRes.role;
-
-      const userObj = {
-        sessionToken: rpcRes.session_token,
-        userKey: rpcRes.user_key || userKey,
-        username: rpcRes.username || cleanUser,
-        displayName: displayNameInput.trim(),
-        role: assignedRole,
-        expiresAt: rpcRes.expires_at
-      };
-
-      saveUserSession(userObj, true);
-      return {
-        message: assignedRole === 'admin'
-          ? `Účet "${cleanUser}" byl vytvořen s rolí Správce (Admin)!`
-          : `Účet "${cleanUser}" byl úspěšně vytvořen!`,
-        user: userObj
-      };
-    } else {
-      const userObj = {
-        sessionToken: `local_session_${Date.now()}`,
-        userKey,
-        username: cleanUser,
-        displayName: displayNameInput.trim(),
-        role: 'admin',
-        expiresAt: null
-      };
-      saveUserSession(userObj, true);
-      return {
-        message: `Lokální účet "${cleanUser}" vytvořen.`,
-        user: userObj
-      };
+    const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
+    if (!cleanInvite) {
+      throw new Error('Registrace vyžaduje platný kód pozvánky od správce.');
     }
+
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase databáze není nakonfigurována. Pro registraci je nutné nastavit spojení s databází.');
+    }
+
+    const rpcRes = await supabaseRequest('/rest/v1/rpc/register_user_with_invite', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_username: cleanUser,
+        p_display_name: displayNameInput.trim(),
+        p_pin: pinInput,
+        p_invite_code: cleanInvite
+      })
+    });
+
+    if (rpcRes?.success === false) {
+      throw new Error(rpcRes.message || rpcRes.error || 'Registrace se nezdařila.');
+    }
+
+    if (!rpcRes?.session_token) {
+      throw new Error('Registrace proběhla, ale server nevydal session token.');
+    }
+
+    const userObj = {
+      sessionToken: rpcRes.session_token,
+      userKey: rpcRes.user_key || `user:${cleanUser}`,
+      username: rpcRes.username || cleanUser,
+      displayName: rpcRes.display_name || displayNameInput.trim(),
+      role: rpcRes.role || 'employee',
+      expiresAt: rpcRes.expires_at
+    };
+
+    saveUserSession(userObj, true);
+    return {
+      message: `Účet "${cleanUser}" byl úspěšně vytvořen!`,
+      user: userObj
+    };
   }
 
   async function changePin(oldPin, newPin, newPinConfirm) {
-    if (!currentUser.value) throw new Error('Pro změnu PINu musíš být přihlášen.');
+    if (!currentUser.value?.sessionToken) throw new Error('Pro změnu PINu musíš být přihlášen.');
     if (!oldPin) throw new Error('Zadej svůj současný PIN / heslo.');
     if (!newPin || newPin.length < 4) throw new Error('Nový PIN musí mít alespoň 4 znaky.');
     if (newPin !== newPinConfirm) throw new Error('Nový PIN a jeho potvrzení se neshodují.');
     if (oldPin === newPin) throw new Error('Nový PIN musí být jiný než současný.');
 
-    if (isSupabaseConfigured()) {
-      await supabaseRequest('/rest/v1/rpc/change_attendance_pin', {
-        method: 'POST',
-        body: JSON.stringify({
-          p_old_pin: oldPin,
-          p_new_pin: newPin,
-          p_revoke_others: true
-        })
-      }, currentUser.value);
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase databáze není nakonfigurována.');
     }
 
-    return 'PIN byl úspěšně změněn.';
+    const res = await supabaseRequest('/rest/v1/rpc/change_attendance_pin', {
+      method: 'POST',
+      body: JSON.stringify({
+        p_old_pin: oldPin,
+        p_new_pin: newPin,
+        p_revoke_others: true
+      })
+    }, currentUser.value);
+
+    if (res?.success === false) {
+      throw new Error(res.message || res.error || 'Změna PINu selhala.');
+    }
+
+    return res?.message || 'PIN byl úspěšně změněn.';
   }
 
   async function logout() {
@@ -203,10 +174,23 @@ export function useAuth() {
 
   async function verifySession() {
     if (!isSupabaseConfigured() || !currentUser.value?.sessionToken) return true;
+
+    // Pokud je zařízení offline, neodlašujeme uživatele!
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return true;
+    }
+
     try {
       const res = await supabaseRequest('/rest/v1/rpc/verify_attendance_session', {
         method: 'POST'
       }, currentUser.value);
+
+      if (res?.success === false) {
+        console.warn('Session není platná:', res.message || res.error);
+        await logout();
+        return false;
+      }
+
       if (res?.role && currentUser.value) {
         currentUser.value = {
           ...currentUser.value,
@@ -217,7 +201,20 @@ export function useAuth() {
       }
       return true;
     } catch (err) {
-      console.warn('Session expirovala nebo byla odhlášena:', err);
+      // Rozlišení síťové/offline chyby od neplatné session (401/403)
+      const isNetworkError =
+        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        !err.status ||
+        err.name === 'TypeError' ||
+        err.message?.includes('fetch') ||
+        err.message?.includes('Network');
+
+      if (isNetworkError) {
+        console.info('Ověření session odloženo (aplikace je offline nebo síť není dostupná).');
+        return true;
+      }
+
+      console.warn('Session expirovala nebo byla na serveru zrušena:', err.message);
       await logout();
       return false;
     }

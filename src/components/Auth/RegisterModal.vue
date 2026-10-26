@@ -12,11 +12,11 @@
       </header>
 
       <form class="dialog-body-scroll" @submit.prevent="handleSubmit">
-        <div class="win-infobar" :class="isFirstUser ? 'success' : 'info'" style="margin-bottom: 12px;">
-          <div class="infobar-icon">{{ isFirstUser ? '👑' : '🔒' }}</div>
+        <div class="win-infobar info" style="margin-bottom: 12px;">
+          <div class="infobar-icon">🔒</div>
           <div class="infobar-body">
-            <strong>{{ isFirstUser ? 'První instalace aplikace (Hlavní správce)' : 'Registrace na pozvánku (Invite-Only)' }}</strong>
-            <p>{{ isFirstUser ? 'V databázi dosud není žádný účet. Váš profil bude vytvořen jako hlavní Správce (Admin) bez nutnosti pozvánky.' : 'Pro vytvoření účtu je vyžadován platný kód pozvánky od správce docházky.' }}</p>
+            <strong>Registrace na pozvánku (Invite-Only)</strong>
+            <p>Pro vytvoření osobního účtu je vyžadován platný kód pozvánky od správce docházky.</p>
           </div>
         </div>
 
@@ -72,7 +72,7 @@
           </label>
         </div>
 
-        <label v-if="!isFirstUser" class="win-field" style="margin-top: 6px;">
+        <label class="win-field" style="margin-top: 6px;">
           <span>Kód pozvánky od správce (Invite code) *</span>
           <input
             v-model="inviteCode"
@@ -124,17 +124,17 @@ const pin = ref('');
 const pinConfirm = ref('');
 const inviteCode = ref('');
 const mergeLocal = ref(true);
-const isFirstUser = ref(false);
 const loading = ref(false);
 
-function open(firstUser = false, prefilledInvite = '') {
+function open(firstArg = false, secondArg = '') {
   username.value = '';
   displayName.value = '';
   pin.value = '';
   pinConfirm.value = '';
-  inviteCode.value = prefilledInvite || '';
+  // Podpora volání open(prefilledInvite) i legacy open(isFirst, prefilledInvite)
+  const prefilled = typeof firstArg === 'string' ? firstArg : (secondArg || '');
+  inviteCode.value = prefilled;
   mergeLocal.value = true;
-  isFirstUser.value = firstUser;
   loading.value = false;
   dialogRef.value?.showModal();
 }
@@ -171,4 +171,3 @@ function onBackdropClick(e) {
 
 defineExpose({ open, close, setLoading: (l) => { loading.value = l; } });
 </script>
-

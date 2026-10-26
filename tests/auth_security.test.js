@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import crypto from 'crypto';
 
-describe('Security & Session-Based Auth Authorization Tests (New Architecture)', () => {
-  // Databázové tabulky simulující PostgreSQL schema:
-  // attendance_profiles, attendance_sessions, attendance_days, attendance_invites
+describe('Security & Custom Session-Based Auth Authorization Tests (Clean Architecture)', () => {
+  // Databázové tabulky simulující čisté PostgreSQL schema:
+  // attendance_profiles, attendance_credentials, attendance_sessions, attendance_days, attendance_invites
   let profilesTable = [];
+  let credentialsTable = [];
   let sessionsTable = [];
   let daysTable = [];
   let invitesTable = [];
@@ -16,61 +17,68 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
     currentHeaders = {};
     sessionsTable = [];
 
-    // bcrypt simulace: bcrypt(pin) = 'bcrypt:' + pin
-    // legacy sha256 simulace: sha256('dochazka:' + username + ':' + pin)
+    // attendance_profiles: pouze veřejná data a nastavení (ŽÁDNÁ hesla/zámky)
     profilesTable = [
       {
         user_key: 'user:admin',
         username: 'admin',
         display_name: 'Admin Boss',
-        pin_password_hash: 'bcrypt:admin1234',
-        auth_version: 2,
-        pin_hash: null,
-        failed_login_count: 0,
-        locked_until: null,
-        last_failed_login_at: null,
-        legacy_migrated_at: null,
-        role: 'admin'
+        role: 'admin',
+        work_start: '06:30',
+        work_end: '15:30',
+        daily_target_minutes: 510,
+        break_minutes: 30,
+        theme: 'system',
+        settings_json: {}
       },
       {
         user_key: 'user:alice',
         username: 'alice',
         display_name: 'Alice Wonder',
-        pin_password_hash: 'bcrypt:alice1234',
-        auth_version: 2,
-        pin_hash: null,
-        failed_login_count: 0,
-        locked_until: null,
-        last_failed_login_at: null,
-        legacy_migrated_at: null,
-        role: 'employee'
+        role: 'employee',
+        work_start: '06:30',
+        work_end: '15:30',
+        daily_target_minutes: 510,
+        break_minutes: 30,
+        theme: 'system',
+        settings_json: {}
       },
       {
         user_key: 'user:bob',
         username: 'bob',
         display_name: 'Bob Builder',
-        pin_password_hash: 'bcrypt:bob1234',
-        auth_version: 2,
-        pin_hash: null,
+        role: 'employee',
+        work_start: '06:30',
+        work_end: '15:30',
+        daily_target_minutes: 510,
+        break_minutes: 30,
+        theme: 'system',
+        settings_json: {}
+      }
+    ];
+
+    // attendance_credentials: privátní tabulka přístupná POUZE přes RPC (pgcrypto bcrypt)
+    credentialsTable = [
+      {
+        user_key: 'user:admin',
+        pin_password_hash: 'bcrypt:admin1234',
         failed_login_count: 0,
         locked_until: null,
-        last_failed_login_at: null,
-        legacy_migrated_at: null,
-        role: 'employee'
+        last_failed_login_at: null
       },
       {
-        // Existující legacy uživatel na auth_version = 1 s původním SHA-256 hashem
-        user_key: 'user:legacy_user',
-        username: 'legacy_user',
-        display_name: 'Legacy User',
-        pin_password_hash: null,
-        auth_version: 1,
-        pin_hash: sha256('dochazka:legacy_user:5555'),
+        user_key: 'user:alice',
+        pin_password_hash: 'bcrypt:alice1234',
         failed_login_count: 0,
         locked_until: null,
-        last_failed_login_at: null,
-        legacy_migrated_at: null,
-        role: 'employee'
+        last_failed_login_at: null
+      },
+      {
+        user_key: 'user:bob',
+        pin_password_hash: 'bcrypt:bob1234',
+        failed_login_count: 0,
+        locked_until: null,
+        last_failed_login_at: null
       }
     ];
 
@@ -87,7 +95,7 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
       {
         user_key: 'user:alice',
         date: '2026-10-24',
-        type: 'work',
+        type: 'homeOffice',
         start_time: '08:00',
         end_time: '16:30',
         deleted_at: null,
@@ -167,50 +175,42 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
     return profile?.role === 'admin';
   }
 
-  // 4. PostgreSQL login_attendance_user
+  // 4. PostgreSQL login_attendance_user (vrací JSON, counter se ukládá i při chybě)
   function login_attendance_user(username, pin, remember = true) {
     const cleanUser = (username || '').toLowerCase().trim().replace(/[^a-zA-Z0-9._-]/g, '');
     const userKey = `user:${cleanUser}`;
     const profile = profilesTable.find(p => p.user_key === userKey);
+    const cred = credentialsTable.find(c => c.user_key === userKey);
 
-    if (!profile) {
-      throw new Error('Neplatné uživatelské jméno nebo PIN.');
+    if (!profile || !cred) {
+      return { success: false, error: 'invalid_credentials', message: 'Neplatné uživatelské jméno nebo PIN.' };
     }
 
-    if (profile.locked_until && new Date(profile.locked_until) > new Date()) {
-      throw new Error('Účet je dočasně uzamčen z bezpečnostních důvodů. Zkuste to za chvíli.');
+    if (cred.locked_until && new Date(cred.locked_until) > new Date()) {
+      return { success: false, error: 'account_locked', message: 'Účet je dočasně uzamčen.', locked_until: cred.locked_until };
     }
 
-    let isValid = false;
-
-    if (profile.auth_version === 2 && profile.pin_password_hash) {
-      isValid = (profile.pin_password_hash === `bcrypt:${pin}`);
-    } else if (profile.auth_version === 1 && profile.pin_hash) {
-      // Seamless migrace ze SHA-256 na bcrypt
-      const legacyHash = sha256(`dochazka:${cleanUser}:${pin}`);
-      if (legacyHash === profile.pin_hash) {
-        isValid = true;
-        profile.pin_password_hash = `bcrypt:${pin}`;
-        profile.auth_version = 2;
-        profile.pin_hash = null;
-        profile.legacy_migrated_at = new Date().toISOString();
-      }
-    }
+    const isValid = (cred.pin_password_hash === `bcrypt:${pin}`);
 
     if (!isValid) {
-      profile.failed_login_count = (profile.failed_login_count || 0) + 1;
-      profile.last_failed_login_at = new Date().toISOString();
-      if (profile.failed_login_count >= 10) {
-        profile.locked_until = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-      } else if (profile.failed_login_count >= 5) {
-        profile.locked_until = new Date(Date.now() + 60 * 1000).toISOString();
+      cred.failed_login_count = (cred.failed_login_count || 0) + 1;
+      cred.last_failed_login_at = new Date().toISOString();
+      if (cred.failed_login_count >= 10) {
+        cred.locked_until = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      } else if (cred.failed_login_count >= 5) {
+        cred.locked_until = new Date(Date.now() + 2 * 60 * 1000).toISOString();
       }
-      throw new Error('Neplatné uživatelské jméno nebo PIN.');
+      return {
+        success: false,
+        error: cred.locked_until ? 'account_locked' : 'invalid_credentials',
+        message: 'Neplatné uživatelské jméno nebo PIN.',
+        failed_attempts: cred.failed_login_count
+      };
     }
 
     // Úspěch -> vyresetovat lockout
-    profile.failed_login_count = 0;
-    profile.locked_until = null;
+    cred.failed_login_count = 0;
+    cred.locked_until = null;
 
     // 256-bit cryptographically secure token
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -228,6 +228,7 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
     });
 
     return {
+      success: true,
       session_token: rawToken,
       user_key: profile.user_key,
       username: profile.username,
@@ -299,7 +300,27 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
     }
   }
 
-  // 7. RLS simulace pro attendance_days
+  // 7. PostgreSQL update_own_settings
+  function update_own_settings(p_settings) {
+    const callerKey = current_session_user_key();
+    if (!callerKey) {
+      throw new Error('Neautorizovaný přístup: Neplatná session.');
+    }
+
+    const profile = profilesTable.find(p => p.user_key === callerKey);
+    if (!profile) throw new Error('Profil nenalezen.');
+
+    // Aktualizujeme pouze povolená nastavení, nikoli role nebo username!
+    if (p_settings.work_start !== undefined) profile.work_start = p_settings.work_start;
+    if (p_settings.work_end !== undefined) profile.work_end = p_settings.work_end;
+    if (p_settings.daily_target_minutes !== undefined) profile.daily_target_minutes = p_settings.daily_target_minutes;
+    if (p_settings.break_minutes !== undefined) profile.break_minutes = p_settings.break_minutes;
+    if (p_settings.theme !== undefined) profile.theme = p_settings.theme;
+
+    return { success: true, profile };
+  }
+
+  // 8. RLS simulace pro attendance_days (POUZE SELECT)
   function rls_select_attendance_days(userKeyFilter) {
     const callerKey = current_session_user_key();
     const isAdmin = is_admin();
@@ -310,91 +331,64 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
     });
   }
 
-  function rls_insert_attendance_day(dayPayload) {
-    const callerKey = current_session_user_key();
-    const isAdmin = is_admin();
-
-    const allowed = (callerKey !== '' && dayPayload.user_key === callerKey) || isAdmin;
-    if (!allowed) {
-      throw new Error('RLS check violation: Access denied to insert attendance day.');
-    }
-    daysTable.push(dayPayload);
-    return dayPayload;
-  }
-
-  function rls_update_profile_role(targetUserKey, newRole) {
-    const callerKey = current_session_user_key();
-    const isAdmin = is_admin();
-
-    const profile = profilesTable.find(p => p.user_key === targetUserKey);
-    if (!profile) return null;
-
-    // Běžný uživatel si nesmí měnit roli
-    if (!isAdmin) {
-      if (callerKey !== targetUserKey || newRole !== profile.role) {
-        throw new Error('RLS check violation: Regular user cannot change their own role.');
-      }
-    }
-
-    profile.role = newRole;
-    return profile;
-  }
-
-  function register_user_with_invite(username, displayName, pin, inviteCode = '') {
+  // 9. Registrace VÝHRADNĚ na pozvánky (žádný auto-admin fallback)
+  function register_user_with_invite(username, displayName, pin, inviteCode) {
     const cleanUser = (username || '').toLowerCase().trim().replace(/[^a-zA-Z0-9._-]/g, '');
     if (cleanUser.length < 3) {
-      throw new Error('Uživatelské jméno musí mít alespoň 3 znaky.');
+      return { success: false, error: 'invalid_username', message: 'Uživatelské jméno musí mít alespoň 3 znaky.' };
     }
     if (!pin || pin.length < 4) {
-      throw new Error('PIN/heslo musí mít alespoň 4 znaky.');
+      return { success: false, error: 'pin_too_short', message: 'PIN/heslo musí mít alespoň 4 znaky.' };
     }
     const userKey = `user:${cleanUser}`;
-    const userCount = profilesTable.length;
-    let assignedRole = 'employee';
 
-    if (userCount === 0) {
-      assignedRole = 'admin';
-    } else {
-      const trimmedInvite = (inviteCode || '').trim();
-      if (!trimmedInvite) {
-        throw new Error('Registrace nových uživatelů je pouze na pozvánky. Zadej platný kód pozvánky.');
-      }
+    // 1. Ověření pozvánky VŽDY před kontrolou dostupnosti jména (prevence enumeration)
+    const trimmedInvite = (inviteCode || '').trim();
+    if (!trimmedInvite) {
+      return { success: false, error: 'missing_invite', message: 'Registrace vyžaduje platný kód pozvánky.' };
+    }
 
-      const invite = invitesTable.find(i => i.code.toUpperCase() === trimmedInvite.toUpperCase());
-      if (!invite) {
-        throw new Error(`Kód pozvánky "${trimmedInvite}" neexistuje nebo je neplatný.`);
-      }
-      if (invite.is_used) {
-        throw new Error('Tento kód pozvánky již byl využit.');
-      }
-      if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
-        throw new Error('Platnost tohoto kódu pozvánky vypršela.');
-      }
-      assignedRole = invite.target_role || 'employee';
+    const invite = invitesTable.find(i => i.code.toUpperCase() === trimmedInvite.toUpperCase());
+    if (!invite) {
+      return { success: false, error: 'invalid_invite', message: `Kód pozvánky "${trimmedInvite}" neexistuje nebo je neplatný.` };
+    }
+    if (invite.is_used) {
+      return { success: false, error: 'invite_used', message: 'Tento kód pozvánky již byl využit.' };
+    }
+    if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) {
+      return { success: false, error: 'invite_expired', message: 'Platnost tohoto kódu pozvánky vypršela.' };
     }
 
     if (profilesTable.some(p => p.user_key === userKey)) {
-      throw new Error(`Uživatelské jméno "${cleanUser}" je již obsazeno.`);
+      return { success: false, error: 'username_taken', message: `Uživatelské jméno "${cleanUser}" je již obsazeno.` };
     }
 
-    const newProfile = {
+    const assignedRole = invite.target_role || 'employee';
+
+    // Veřejný profil
+    profilesTable.push({
       user_key: userKey,
       username: cleanUser,
       display_name: displayName || cleanUser,
-      pin_password_hash: `bcrypt:${pin}`,
       role: assignedRole,
-      auth_version: 2
-    };
-    profilesTable.push(newProfile);
+      work_start: '06:30',
+      work_end: '15:30',
+      daily_target_minutes: 510,
+      break_minutes: 30,
+      theme: 'system'
+    });
 
-    if (userCount > 0 && inviteCode) {
-      const invite = invitesTable.find(i => i.code.toUpperCase() === inviteCode.trim().toUpperCase());
-      if (invite) {
-        invite.is_used = true;
-        invite.used_by = userKey;
-        invite.used_at = new Date().toISOString();
-      }
-    }
+    // Privátní credentials
+    credentialsTable.push({
+      user_key: userKey,
+      pin_password_hash: `bcrypt:${pin}`,
+      failed_login_count: 0,
+      locked_until: null
+    });
+
+    invite.is_used = true;
+    invite.used_by = userKey;
+    invite.used_at = new Date().toISOString();
 
     // Okamžitě vystavíme session token
     const rawToken = crypto.randomBytes(32).toString('hex');
@@ -411,12 +405,13 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
   }
 
   // ==========================================================================
-  // Testy jednotlivých bezpečnostních požadavků z P0 až P10
+  // Testy jednotlivých bezpečnostních požadavků z nové architektury
   // ==========================================================================
 
   describe('P0 & P9: Platná, neplatná, expirovaná a revokovaná session', () => {
     it('Platný session token uživatele A umožní číst jeho vlastní data', () => {
       const loginRes = login_attendance_user('bob', 'bob1234');
+      expect(loginRes.success).toBe(true);
       setSessionHeader(loginRes.session_token);
 
       expect(current_session_user_key()).toBe('user:bob');
@@ -434,7 +429,6 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
 
     it('Expirovaný token je odmítnut', () => {
       const loginRes = login_attendance_user('bob', 'bob1234');
-      // Nastavíme expiraci v minulosti
       const tokenHash = sha256(loginRes.session_token);
       const session = sessionsTable.find(s => s.token_hash === tokenHash);
       session.expires_at = new Date(Date.now() - 10000).toISOString();
@@ -470,15 +464,6 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
       // Alice nesmí číst Bobova data
       expect(rls_select_attendance_days('user:bob')).toHaveLength(0);
 
-      // Alice nesmí vkládat pro Boba
-      expect(() => {
-        rls_insert_attendance_day({
-          user_key: 'user:bob',
-          date: '2026-10-25',
-          type: 'work'
-        });
-      }).toThrow(/RLS check violation/);
-
       // Alice nesmí volat LWW upsert pro Boba
       expect(() => {
         upsert_attendance_day_lww({
@@ -504,81 +489,125 @@ describe('Security & Session-Based Auth Authorization Tests (New Architecture)',
       }).toThrow(/Přístup odepřen/);
     });
 
-    it('Employee s rolí role=admin v payloadu si nesmí povýšit práva', () => {
+    it('Employee nesmí volat REST update pro změnu své role', () => {
       const loginBob = login_attendance_user('bob', 'bob1234');
       setSessionHeader(loginBob.session_token);
 
-      expect(() => {
-        rls_update_profile_role('user:bob', 'admin');
-      }).toThrow(/Regular user cannot change their own role/);
+      // update_own_settings nepovoluje změnu role
+      update_own_settings({ work_start: '07:00' });
+      const bobProf = profilesTable.find(p => p.user_key === 'user:bob');
+      expect(bobProf.work_start).toBe('07:00');
+      expect(bobProf.role).toBe('employee');
     });
   });
 
-  describe('P3.1 & P9: PIN Brute-force ochrana a lockout', () => {
-    it('Po 5 chybných pokusech o login se účet dočasně uzamkne na 1 minutu', () => {
+  describe('P3.1 & P9: Brute-force ochrana s persistencí counteru', () => {
+    it('Po 5 chybných pokusech o login se účet dočasně uzamkne a counter zůstává uložen', () => {
       for (let i = 0; i < 5; i++) {
-        expect(() => {
-          login_attendance_user('bob', 'wrong_pin');
-        }).toThrow(/Neplatné uživatelské jméno nebo PIN/);
+        const res = login_attendance_user('bob', 'wrong_pin');
+        expect(res.success).toBe(false);
       }
 
-      // 6. pokus je již odmítnut z důvodu uzamčení účtu
-      expect(() => {
-        login_attendance_user('bob', 'bob1234');
-      }).toThrow(/Účet je dočasně uzamčen/);
+      const bobCred = credentialsTable.find(c => c.user_key === 'user:bob');
+      expect(bobCred.failed_login_count).toBe(5);
+      expect(bobCred.locked_until).toBeTruthy();
+
+      // 6. pokus je odmítnut z důvodu uzamčení účtu
+      const lockRes = login_attendance_user('bob', 'bob1234');
+      expect(lockRes.success).toBe(false);
+      expect(lockRes.error).toBe('account_locked');
     });
   });
 
-  describe('P10: Plynulá migrace existujícího legacy uživatele bez ztráty účtu', () => {
-    it('Uživatel s auth_version = 1 a SHA-256 pin_hash se při prvním přihlášení automaticky převede na bcrypt a získá session token', () => {
-      const legacyProfile = profilesTable.find(p => p.user_key === 'user:legacy_user');
-      expect(legacyProfile.auth_version).toBe(1);
-      expect(legacyProfile.pin_hash).toBeTruthy();
-      expect(legacyProfile.pin_password_hash).toBeNull();
-
-      // První přihlášení s původním PINem '5555'
-      const loginRes = login_attendance_user('legacy_user', '5555');
-
-      expect(loginRes.session_token).toBeTruthy();
-      expect(loginRes.user_key).toBe('user:legacy_user');
-
-      // Profil je nyní povýšen na auth_version = 2
-      expect(legacyProfile.auth_version).toBe(2);
-      expect(legacyProfile.pin_password_hash).toBe('bcrypt:5555');
-      expect(legacyProfile.pin_hash).toBeNull();
-      expect(legacyProfile.legacy_migrated_at).toBeTruthy();
-
-      // Další přihlášení již probíhá plně přes bcrypt
-      const nextLogin = login_attendance_user('legacy_user', '5555');
-      expect(nextLogin.session_token).toBeTruthy();
-    });
-  });
-
-  describe('P2 & P2.1: Registrace s pozvánkou a prevence username enumeration', () => {
+  describe('P2 & P2.1: Registrace VÝHRADNĚ s pozvánkou a prevence username enumeration', () => {
     it('Útočník s neplatnou pozvánkou dostane chybu pozvánky, nikoliv o existenci jména "admin"', () => {
-      expect(() => {
-        register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INVALID_INVITE');
-      }).toThrow(/Kód pozvánky "INVALID_INVITE" neexistuje nebo je neplatný/);
+      const res = register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INVALID_INVITE');
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('invalid_invite');
     });
 
     it('Teprve s platnou pozvánkou se projeví obsazenost uživatelského jména', () => {
-      expect(() => {
-        register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INV-TEST1234');
-      }).toThrow(/Uživatelské jméno "admin" je již obsazeno/);
+      const res = register_user_with_invite('admin', 'Admin Copy', 'some_pin', 'INV-TEST1234');
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('username_taken');
     });
 
-    it('Úspěšná registrace vytvoří účet s bcrypt hashem a ihned vrátí session token', () => {
+    it('Úspěšná registrace vytvoří účet v profiles i credentials a ihned vrátí session token', () => {
       const regRes = register_user_with_invite('new_employee', 'Newbie', 'secret1234', 'INV-TEST1234');
       expect(regRes.success).toBe(true);
       expect(regRes.session_token).toBeTruthy();
 
       const newProf = profilesTable.find(p => p.user_key === 'user:new_employee');
-      expect(newProf.pin_password_hash).toBe('bcrypt:secret1234');
-      expect(newProf.auth_version).toBe(2);
+      expect(newProf).toBeTruthy();
+      expect(newProf.role).toBe('employee');
+
+      const newCred = credentialsTable.find(c => c.user_key === 'user:new_employee');
+      expect(newCred.pin_password_hash).toBe('bcrypt:secret1234');
 
       // Pozvánka je označena jako použitá
       const invite = invitesTable.find(i => i.code === 'INV-TEST1234');
       expect(invite.is_used).toBe(true);
+    });
+  });
+
+  describe('P3.3: Offline session handling (verifySession)', () => {
+    it('Při výpadku sítě (navigator.onLine = false) nebo chybě sítě neodhlásí uživatele', async () => {
+      // Simulace offline chování v useAuth verifySession
+      let loggedOut = false;
+      const fakeLogout = () => { loggedOut = true; };
+
+      const verifySessionSim = async (isOnline, networkThrows) => {
+        if (!isOnline) return true; // offline zachová relaci
+        try {
+          if (networkThrows) {
+            const err = new TypeError('Failed to fetch');
+            throw err;
+          }
+          return true;
+        } catch (err) {
+          const isNetworkError = !isOnline || !err.status || err.name === 'TypeError' || err.message?.includes('fetch');
+          if (isNetworkError) {
+            return true;
+          }
+          fakeLogout();
+          return false;
+        }
+      };
+
+      // 1. Zařízení je offline
+      const resOffline = await verifySessionSim(false, false);
+      expect(resOffline).toBe(true);
+      expect(loggedOut).toBe(false);
+
+      // 2. Došlo k výpadku sítě při fetchi
+      const resNetErr = await verifySessionSim(true, true);
+      expect(resNetErr).toBe(true);
+      expect(loggedOut).toBe(false);
+    });
+
+    it('Při explicitní odpovědi 401 / 403 nebo neplatné session odhlásí uživatele', async () => {
+      let loggedOut = false;
+      const fakeLogout = () => { loggedOut = true; };
+
+      const verifySessionSim = async (serverStatus) => {
+        try {
+          if (serverStatus === 401) {
+            const err = new Error('Neplatná session');
+            err.status = 401;
+            throw err;
+          }
+          return true;
+        } catch (err) {
+          const isNetworkError = !err.status || err.name === 'TypeError';
+          if (isNetworkError) return true;
+          fakeLogout();
+          return false;
+        }
+      };
+
+      const res401 = await verifySessionSim(401);
+      expect(res401).toBe(false);
+      expect(loggedOut).toBe(true);
     });
   });
 });

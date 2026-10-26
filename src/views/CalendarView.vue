@@ -50,7 +50,8 @@
               outside: cell.isOutside,
               weekend: cell.isWeekend,
               'scheduled-weekend': cell.isScheduledWeekend,
-              today: cell.isToday
+              today: cell.isToday,
+              'has-tag': Boolean(cell.tagText)
             }"
             :title="cell.tooltip"
             @click="$emit('edit-day', cell.dateKey)"
@@ -124,15 +125,25 @@
               class="cal-record-item"
               @click="$emit('edit-day', rec.date)"
             >
-              <div class="cal-rec-left">
-                <strong>{{ rec.dayNumber }}. {{ rec.monthNumber }}. · {{ rec.typeLabel }}</strong>
-                <small>{{ rec.timeSpan }}<template v-if="rec.note"> · {{ rec.note }}</template></small>
+              <div class="cal-rec-date-col">
+                <span class="cal-rec-day-num">{{ rec.dayNumber }}.</span>
+                <span class="cal-rec-day-wd">{{ rec.weekday }}</span>
               </div>
-              <div class="cal-rec-right">
-                <strong>{{ formatDuration(rec.metrics.worked || rec.metrics.credited) }}</strong>
-                <small :class="rec.metrics.balance > 0 ? 'positive' : rec.metrics.balance < 0 ? 'negative' : ''">
+              <div class="cal-rec-main-col">
+                <div class="cal-rec-type-line">{{ rec.typeLabel }}</div>
+                <div class="cal-rec-meta-line">
+                  <span class="cal-rec-timespan">{{ rec.timeSpan }}</span>
+                  <span v-if="rec.note" class="cal-rec-note">· {{ rec.note }}</span>
+                </div>
+              </div>
+              <div class="cal-rec-hours-col">
+                <strong class="cal-rec-hours-val">{{ formatDuration(rec.metrics.worked || rec.metrics.credited) }}</strong>
+                <span
+                  class="cal-rec-balance-val"
+                  :class="rec.metrics.balance > 0 ? 'positive' : rec.metrics.balance < 0 ? 'negative' : 'neutral'"
+                >
                   {{ formatDuration(rec.metrics.balance, true) }}
-                </small>
+                </span>
               </div>
             </button>
 

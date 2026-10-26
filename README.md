@@ -72,14 +72,15 @@ Veškerá struktura databáze je uceleně definována v jediném souboru [`supab
 
 Tento skript obsahuje:
 - **Rozšíření `pgcrypto`**: Pro bezpečné generování náhodných session tokenů a bcrypt hashování PINu.
-- **Tabulky a indexy**: `attendance_profiles`, `attendance_sessions`, `attendance_invites`, `attendance_days`.
-- **Pohled `v_monthly_attendance_summary`**: S volbou `security_invoker = true` pro respektování RLS politik.
-- **Session systém**: Ověřování relací přes HTTP hlavičku `X-Attendance-Session`, serverový lockout po 5 a 10 chybných pokusech.
-- **Invite-only registrace**: První uživatel se stává automaticky administrátorem bez nutnosti pozvánky.
-- **Atomický LWW upsert**: RPC funkce `upsert_attendance_day_lww` pro spolehlivou synchronizaci a řešení konfliktů.
+- **Oddělení citlivých tabulek**: Veřejný profil v `attendance_profiles`, privátní přihlašovací údaje v `attendance_credentials`, relace v `attendance_sessions`.
+- **Zákaz přímého zápisu přes REST**: Zápis docházky probíhá přes RPC `upsert_attendance_day_lww` a nastavení přes RPC `update_own_settings`.
+- **Pohled `v_monthly_attendance_summary`**: S volbou `security_invoker = true` pro respektování RLS politik a kanonickými typy docházky.
+- **Session systém**: Ověřování relací přes HTTP hlavičku `X-Attendance-Session`, serverový lockout counter s garancí uložení.
+- **Invite-only registrace**: Registrace nových uživatelů vyžaduje platný kód pozvánky. První administrátor se inicializuje skriptem [`supabase/bootstrap_admin.sql`](./supabase/bootstrap_admin.sql).
+- **Atomický LWW upsert**: RPC funkce `upsert_attendance_day_lww` pro spolehlivou synchronizaci a řešení souběžných konfliktů.
 - **Row Level Security (RLS)**: Striktní autorizace pro všechny operace.
 
-Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./supabase/schema.sql) vložit do **Supabase SQL Editoru** a spustit.
+Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./supabase/schema.sql) vložit do **Supabase SQL Editoru** a spustit, následovaný spuštěním [`supabase/bootstrap_admin.sql`](./supabase/bootstrap_admin.sql).
 
 ---
 

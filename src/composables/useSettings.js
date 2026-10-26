@@ -47,10 +47,9 @@ export function useSettings() {
       if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
         const row = profileRowFromSettings(normalized, currentUser);
         try {
-          await supabaseRequest(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}`, {
-            method: 'PATCH',
-            headers: { Prefer: 'return=minimal' },
-            body: JSON.stringify(row)
+          await supabaseRequest('/rest/v1/rpc/update_own_settings', {
+            method: 'POST',
+            body: JSON.stringify({ p_settings: row })
           }, currentUser);
         } catch (err) {
           console.warn('Uložení nastavení na server selhalo, zařazeno do outboxu:', err);
@@ -70,4 +69,3 @@ export function useSettings() {
     saveSettings
   };
 }
-

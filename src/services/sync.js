@@ -181,10 +181,9 @@ export async function drainOutboxQueue(currentUser) {
         }
       } else if (item.entity === 'attendance_profiles') {
         if (item.action === 'UPDATE') {
-          await supabaseRequest(`/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}`, {
-            method: 'PATCH',
-            headers: { Prefer: 'return=minimal' },
-            body: JSON.stringify(item.payload)
+          await supabaseRequest('/rest/v1/rpc/update_own_settings', {
+            method: 'POST',
+            body: JSON.stringify({ p_settings: item.payload })
           }, currentUser);
         }
       }

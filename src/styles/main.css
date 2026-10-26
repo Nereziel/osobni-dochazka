@@ -1285,30 +1285,103 @@ html[data-theme="dark"] .cal-day-cell.weekend {
   border-color: var(--accent);
 }
 
-.cal-rec-left {
-  flex: 1;
-  min-width: 0;
+.cal-rec-date-col {
+  flex-shrink: 0;
+  width: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0;
+  border-radius: var(--radius-xs);
+  background: var(--surface-card);
+  border: 1px solid var(--line);
 }
 
-.cal-rec-left strong {
-  display: block;
+.cal-rec-day-num {
+  font-size: 14px;
+  font-weight: 750;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.cal-rec-day-wd {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.cal-rec-main-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cal-rec-type-line {
   font-size: 13.5px;
   font-weight: 650;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text-primary);
 }
 
-.cal-rec-left small {
-  display: block;
+.cal-rec-meta-line {
   font-size: 12px;
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
+.cal-rec-timespan {
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-rec-note {
+  color: var(--text-tertiary, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-rec-hours-col {
+  flex-shrink: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 60px;
+}
+
+.cal-rec-hours-val {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.cal-rec-balance-val {
+  font-size: 11.5px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.cal-rec-balance-val.positive { color: var(--success); }
+.cal-rec-balance-val.negative { color: var(--danger); }
+.cal-rec-balance-val.neutral { color: var(--text-secondary); }
+
+/* Legacy compatibility classes */
+.cal-rec-left {
+  flex: 1;
+  min-width: 0;
+}
 .cal-rec-right {
   flex-shrink: 0;
   text-align: right;
@@ -1317,20 +1390,6 @@ html[data-theme="dark"] .cal-day-cell.weekend {
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
-}
-
-.cal-rec-right strong {
-  font-size: 14px;
-  font-weight: 700;
-  display: block;
-  line-height: 1.2;
-}
-
-.cal-rec-right small {
-  font-size: 11.5px;
-  font-weight: 600;
-  display: block;
-  line-height: 1.2;
 }
 
 /* ============================================================================
@@ -2640,12 +2699,12 @@ input:focus, .win-select:focus, textarea:focus {
   }
 
   .calendar-card-shell {
-    padding: 12px 8px;
+    padding: 10px 6px;
   }
 
   .cal-day-cell {
-    min-height: 64px;
-    padding: 6px 4px;
+    min-height: 56px;
+    padding: 5px 3px;
     border-radius: 6px;
   }
 
@@ -2655,30 +2714,62 @@ input:focus, .win-select:focus, textarea:focus {
     font-weight: 750;
   }
 
+  .cal-day-bottom {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Na mobilních zařízeních skryjeme dlouhý text rozpětí (07:00–15:30), pokud je zobrazen tag s odpracovanými hodinami */
+  .cal-day-cell.has-tag .cal-time-range {
+    display: none !important;
+  }
+
   .cal-time-range {
-    font-size: 9.5px;
+    font-size: 9px;
     font-weight: 600;
+    text-align: center;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .cal-tag-pill {
-    font-size: 9px;
-    padding: 1px 3px;
-    margin-top: 1px;
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 2px 2px;
+    width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .cal-rec-left strong {
+  .cal-rec-date-col {
+    width: 34px;
+    padding: 3px 0;
+  }
+  .cal-rec-day-num {
     font-size: 13px;
   }
-
-  .cal-rec-left small {
+  .cal-rec-day-wd {
+    font-size: 10px;
+  }
+  .cal-rec-type-line {
+    font-size: 13px;
+  }
+  .cal-rec-meta-line {
     font-size: 11.5px;
   }
-
-  .cal-rec-right strong {
+  .cal-rec-hours-val {
     font-size: 13.5px;
   }
-
-  .cal-rec-right small {
+  .cal-rec-balance-val {
     font-size: 11px;
   }
 
@@ -2754,13 +2845,13 @@ input:focus, .win-select:focus, textarea:focus {
     padding: 8px 4px;
   }
   .cal-day-cell {
-    min-height: 58px;
-    padding: 4px 3px;
+    min-height: 52px;
+    padding: 4px 2px;
     border-radius: 5px;
   }
   .cal-day-num,
   .cal-day-number {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 750;
   }
   .cal-time-range {
@@ -2768,24 +2859,37 @@ input:focus, .win-select:focus, textarea:focus {
     font-weight: 600;
   }
   .cal-tag-pill {
-    font-size: 8px;
-    padding: 1px 2px;
+    font-size: 8.5px;
+    padding: 1.5px 1px;
   }
   .dot,
   .cal-dot {
     width: 7px;
     height: 7px;
   }
-  .cal-rec-left strong {
+  .cal-rec-date-col {
+    width: 32px;
+    padding: 2px 0;
+  }
+  .cal-rec-day-num {
+    font-size: 12px;
+  }
+  .cal-rec-day-wd {
+    font-size: 9.5px;
+  }
+  .cal-rec-type-line {
     font-size: 12.5px;
   }
-  .cal-rec-left small {
+  .cal-rec-meta-line {
     font-size: 11px;
   }
-  .cal-rec-right strong {
+  .cal-rec-hours-col {
+    min-width: 52px;
+  }
+  .cal-rec-hours-val {
     font-size: 13px;
   }
-  .cal-rec-right small {
+  .cal-rec-balance-val {
     font-size: 10.5px;
   }
   .win-week-strip {
