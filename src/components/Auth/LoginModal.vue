@@ -54,9 +54,9 @@
             {{ loading ? 'Přihlašování...' : 'Přihlásit se' }}
           </button>
           <div class="modal-switch-link">
-            <span>Máš kód pozvánky od správce?</span>
+            <span>Nemáš ještě vytvořený účet?</span>
             <button class="text-link-btn" type="button" @click="switchToRegister">
-              Registrace s pozvánkou
+              Registrace nového účtu
             </button>
           </div>
         </div>

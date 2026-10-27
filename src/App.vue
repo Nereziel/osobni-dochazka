@@ -512,7 +512,21 @@ function handleMonthPickerSelect(selectedDate) {
 }
 
 // Auth Handlers
-function openLoginModal() {
+async function openLoginModal() {
+  if (isSupabaseConfigured()) {
+    try {
+      const statusRes = await supabaseRequest('/rest/v1/rpc/registration_status', {
+        method: 'POST'
+      });
+      // Pokud v databázi dosud není žádný profil, přesměrujeme rovnou na registraci prvního správce
+      if (statusRes?.requires_invite === false) {
+        openRegisterModal();
+        return;
+      }
+    } catch {
+      // fallback
+    }
+  }
   loginModalRef.value?.open();
 }
 
