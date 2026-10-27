@@ -67,8 +67,8 @@
             </div>
             <div class="metric-tile">
               <span class="tile-label">Přestávka</span>
-              <strong class="tile-value">{{ todayMetrics.breakMinutes }} min</strong>
-              <span class="tile-sub">odečteno</span>
+              <strong class="tile-value">{{ todayBreakDisplay.value }}</strong>
+              <span class="tile-sub">{{ todayBreakDisplay.sub }}</span>
             </div>
             <div class="metric-tile">
               <span class="tile-label">Fond dne</span>
@@ -292,6 +292,24 @@ const todayMetrics = computed(() => {
     counted: 0,
     balance: 0,
     breakMinutes: 0
+  };
+});
+
+const todayBreakDisplay = computed(() => {
+  const rec = props.todayRecord;
+  const standardBreak = props.settings?.breakMinutes ?? 30;
+  if (!rec || (!rec.start && !rec.end)) {
+    return { value: `${standardBreak} min`, sub: 'standardně' };
+  }
+  if (rec.manualBreak) {
+    return { value: `${rec.breakMinutes ?? standardBreak} min`, sub: 'vlastní' };
+  }
+  if (rec.start && !rec.end) {
+    return { value: `${standardBreak} min`, sub: 'bude odečteno' };
+  }
+  return {
+    value: `${todayMetrics.value.breakMinutes} min`,
+    sub: todayMetrics.value.breakMinutes > 0 ? 'odečteno' : 'pod 6 h'
   };
 });
 

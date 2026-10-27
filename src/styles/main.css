@@ -2087,6 +2087,131 @@ input:focus, .win-select:focus, textarea:focus {
   gap: 12px;
 }
 
+/* Lunch Break Section in DayEditModal */
+.break-control-card {
+  background: var(--surface-card-subtle);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.break-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.break-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.break-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.break-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary);
+}
+
+.break-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: 11.5px;
+  font-weight: 650;
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.break-badge.auto-active {
+  background: var(--accent-light);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.break-badge.auto-pending,
+.break-badge.auto-zero {
+  background: var(--surface-card);
+  color: var(--text-secondary);
+  border-color: var(--line);
+}
+
+.break-badge.manual {
+  background: var(--accent-light);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.break-hint {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.break-manual-box {
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+  margin-top: 2px;
+}
+
+.break-input-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.break-input-row .win-field.compact {
+  flex: 0 0 130px;
+}
+
+.break-preset-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+.break-preset-btn {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  border: 1px solid var(--line);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.break-preset-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--line-strong);
+}
+
+.break-preset-btn.active {
+  background: var(--accent);
+  color: #ffffff;
+  border-color: var(--accent);
+}
+
 .break-toggle-row {
   display: flex;
   align-items: center;
@@ -2096,10 +2221,55 @@ input:focus, .win-select:focus, textarea:focus {
 }
 
 .win-mini-toggle {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
+  user-select: none;
+}
+
+.win-mini-toggle input[type="checkbox"] {
+  display: none;
+}
+
+.win-mini-toggle .mini-toggle-slider {
+  width: 32px;
+  min-width: 32px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: var(--surface-input);
+  border: 1px solid var(--line-strong);
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.win-mini-toggle .mini-toggle-slider::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: all 0.2s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+.win-mini-toggle input:checked + .mini-toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.win-mini-toggle input:checked + .mini-toggle-slider::after {
+  left: 16px;
+  background: #ffffff;
+}
+
+.win-mini-toggle .mini-toggle-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .dialog-preview-grid {

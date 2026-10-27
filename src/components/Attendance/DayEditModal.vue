@@ -49,24 +49,58 @@
             </label>
           </div>
 
-          <div class="break-toggle-row">
-            <div>
-              <span class="field-sub-label">Přestávka na oběd</span>
-              <strong>{{ autoBreakLabel }}</strong>
-            </div>
-            <label class="win-mini-toggle">
-              <input v-model="formData.manualBreak" type="checkbox">
-              <span>Vlastní</span>
-            </label>
-          </div>
+          <!-- Přestávka na oběd -->
+          <div class="break-control-card">
+            <div class="break-control-header">
+              <div class="break-info-col">
+                <div class="break-label-row">
+                  <span class="break-title">Přestávka na oběd</span>
+                  <span class="break-badge" :class="breakBadgeClass">
+                    {{ breakBadgeText }}
+                  </span>
+                </div>
+                <small class="break-hint">{{ breakHintText }}</small>
+              </div>
 
-          <label v-if="formData.manualBreak" class="win-field" style="margin-top: 8px;">
-            <span>Délka přestávky</span>
-            <div class="win-input-suffix">
-              <input v-model.number="formData.breakMinutes" type="number" min="0" max="240" step="5">
-              <span>min</span>
+              <label class="win-mini-toggle" title="Zapnout vlastní délku přestávky">
+                <input v-model="formData.manualBreak" type="checkbox">
+                <span class="mini-toggle-slider"></span>
+                <span class="mini-toggle-label">Vlastní</span>
+              </label>
             </div>
-          </label>
+
+            <!-- Vlastní zadání délky přestávky -->
+            <div v-if="formData.manualBreak" class="break-manual-box">
+              <div class="break-input-row">
+                <label class="win-field compact">
+                  <span>Délka přestávky</span>
+                  <div class="win-input-suffix">
+                    <input
+                      v-model.number="formData.breakMinutes"
+                      type="number"
+                      min="0"
+                      max="240"
+                      step="5"
+                    >
+                    <span>min</span>
+                  </div>
+                </label>
+
+                <div class="break-preset-chips">
+                  <button
+                    v-for="mins in [0, 15, 30, 45, 60]"
+                    :key="mins"
+                    type="button"
+                    class="break-preset-btn"
+                    :class="{ active: formData.breakMinutes === mins }"
+                    @click="formData.breakMinutes = mins"
+                  >
+                    {{ mins }} min
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Lékař sekce -->
@@ -169,7 +203,7 @@ import {
   isScheduledWorkday
 } from '../../utils/attendance.js';
 import { cloneDeep } from '../../utils/validation.js';
-import { formatDuration } from '../../utils/time.js';
+import { formatDuration, durationMinutes } from '../../utils/time.js';
 
 const props = defineProps({
   settings: {
@@ -213,6 +247,65 @@ const headerSubtitle = computed(() => {
 const showsWorkSection = computed(() => {
   if (formData.value.type === 'doctor' && formData.value.doctorFullDay) return false;
   return allowsWork(formData.value.type);
+});
+
+const presenceMinutes = computed(() => {
+  return durationMinutes(formData.value.start, formData.value.end);
+});
+
+const breakAfterThreshold = computed(() => {
+  return props.settings?.breakAfterMinutes ?? 360;
+});
+
+const defaultAutoBreakMinutes = computed(() => {
+  return props.settings?.breakMinutes ?? 30;
+});
+
+const calculatedAutoBreak = computed(() => {
+  if (!formData.value.start || !formData.value.end) return 0;
+  return presenceMinutes.value >= breakAfterThreshold.value ? defaultAutoBreakMinutes.value : 0;
+});
+
+const effectiveBreakMinutes = computed(() => {
+  if (formData.value.manualBreak) {
+    return Number(formData.value.breakMinutes) || 0;
+  }
+  return calculatedAutoBreak.value;
+});
+
+const breakBadgeText = computed(() => {
+  if (formData.value.manualBreak) {
+    return `Vlastní: ${effectiveBreakMinutes.value} min`;
+  }
+  if (!formData.value.start || !formData.value.end) {
+    return `Standardně ${defaultAutoBreakMinutes.value} min`;
+  }
+  if (presenceMinutes.value >= breakAfterThreshold.value) {
+    return `Automaticky ${calculatedAutoBreak.value} min`;
+  }
+  return `0 min (směna pod ${Math.round(breakAfterThreshold.value / 60)} h)`;
+});
+
+const breakBadgeClass = computed(() => {
+  if (formData.value.manualBreak) return 'manual';
+  if (!formData.value.start || !formData.value.end) return 'auto-active';
+  return calculatedAutoBreak.value > 0 ? 'auto-active' : 'auto-zero';
+});
+
+const breakHintText = computed(() => {
+  if (formData.value.manualBreak) {
+    return 'Ručně zadaná přestávka (nezávislá na délce směny)';
+  }
+  if (!formData.value.start && !formData.value.end) {
+    return `Zákonná přestávka ${defaultAutoBreakMinutes.value} min se automaticky odečte u směny od ${Math.round(breakAfterThreshold.value / 60)} h`;
+  }
+  if (formData.value.start && !formData.value.end) {
+    return `Směna probíhá – po ukončení směny nad ${Math.round(breakAfterThreshold.value / 60)} h se odečte ${defaultAutoBreakMinutes.value} min oběda`;
+  }
+  if (presenceMinutes.value >= breakAfterThreshold.value) {
+    return `Směna trvá ${formatDuration(presenceMinutes.value)} – ze zákona odečteno ${defaultAutoBreakMinutes.value} min na jídlo a oddech`;
+  }
+  return `Směna trvá jen ${formatDuration(presenceMinutes.value)} (pod ${Math.round(breakAfterThreshold.value / 60)} h) – zákonná přestávka se nestrhává`;
 });
 
 const autoBreakLabel = computed(() => {

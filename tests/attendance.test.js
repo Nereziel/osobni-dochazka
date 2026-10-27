@@ -23,6 +23,27 @@ describe('Attendance calculations and business logic', () => {
     workOnHolidays: false
   };
 
+  it('default settings: 06:30 to 15:00 results in 8h work, 30m break, 480m target, 0 balance', () => {
+    expect(DEFAULT_SETTINGS.workStart).toBe('06:30');
+    expect(DEFAULT_SETTINGS.workEnd).toBe('15:00');
+    expect(DEFAULT_SETTINGS.dailyTargetMinutes).toBe(480);
+    expect(DEFAULT_SETTINGS.breakMinutes).toBe(30);
+
+    const normalDay = {
+      date: '2026-10-23',
+      type: 'work',
+      start: DEFAULT_SETTINGS.workStart,
+      end: DEFAULT_SETTINGS.workEnd,
+      manualBreak: false
+    };
+
+    const metrics = dayMetrics(normalDay, DEFAULT_SETTINGS);
+    expect(metrics.worked).toBe(480); // 8:00
+    expect(metrics.breakMinutes).toBe(30);
+    expect(metrics.target).toBe(480);
+    expect(metrics.balance).toBe(0);
+  });
+
   it('determines scheduled workdays correctly', () => {
     // 2026-10-23 je pátek (pracovní den)
     expect(isScheduledWorkday('2026-10-23', customSettings)).toBe(true);

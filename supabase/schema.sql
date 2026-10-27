@@ -42,8 +42,8 @@ create table if not exists public.attendance_profiles (
 
   -- Běžná pracovní doba
   work_start text not null default '06:30',
-  work_end text not null default '15:30',
-  daily_target_minutes integer not null default 510 check (daily_target_minutes between 0 and 1440),
+  work_end text not null default '15:00',
+  daily_target_minutes integer not null default 480 check (daily_target_minutes between 0 and 1440),
   break_minutes integer not null default 30 check (break_minutes between 0 and 240),
   break_after_minutes integer not null default 360 check (break_after_minutes between 0 and 1440),
   auto_fill boolean not null default true,

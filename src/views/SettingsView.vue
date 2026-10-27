@@ -33,11 +33,12 @@
               </div>
             </label>
             <label class="win-field">
-              <span>Odečíst přestávku po</span>
+              <span>Zákonná přestávka po odpracování</span>
               <div class="win-input-suffix">
                 <input v-model.number="formSettings.breakAfterMinutes" type="number" min="0" max="1440" step="15" required>
                 <span>min</span>
               </div>
+              <small class="muted" style="margin-top: 2px;">Standardně 360 min (6 h) dle § 88 Zákoníku práce. U směn pod 6 h se přestávka nestrhává.</small>
             </label>
           </div>
 

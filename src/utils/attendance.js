@@ -9,8 +9,8 @@ import { clampNumber, cloneDeep } from './validation.js';
 export const DEFAULT_SETTINGS = {
   id: 'settings',
   workStart: '06:30',
-  workEnd: '15:30',
-  dailyTargetMinutes: 510, // 8:30
+  workEnd: '15:00',
+  dailyTargetMinutes: 480, // 8:00
   breakMinutes: 30,
   breakAfterMinutes: 360,  // 6:00
   autoFill: true,
@@ -82,8 +82,8 @@ export function defaultHoursForDate(dateOrKey, settings = DEFAULT_SETTINGS) {
 
   return {
     start: settings?.workStart || '06:30',
-    end: settings?.workEnd || '15:30',
-    target: settings?.dailyTargetMinutes ?? 510
+    end: settings?.workEnd || '15:00',
+    target: settings?.dailyTargetMinutes ?? 480
   };
 }
 
