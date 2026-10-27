@@ -237,7 +237,21 @@ begin
         raise exception 'TEST 6 SELHAL: Neočekávaná chyba: %', sqlerrm;
       end if;
   end;
-  raise notice '✓ TEST 6 PROŠEL: Izolace dat funguje, běžný uživatel nemůže zapisovat data cizího profilu.';
+  -- Ověření update_own_settings: uživatel A může aktualizovat své nastavení včetně work_days a settings_json
+  perform public.update_own_settings(jsonb_build_object(
+    'work_start', '06:30',
+    'work_end', '15:00',
+    'daily_target_minutes', 480,
+    'break_minutes', 30,
+    'work_days', array[1, 2, 3, 4, 5],
+    'settings_json', jsonb_build_object('autoFill', true, 'customField', 'ok', 'role', 'hacker')
+  ));
+
+  if exists (select 1 from public.attendance_profiles where user_key = v_test_key and role = 'hacker') then
+    raise exception 'TEST 6 SELHAL: update_own_settings nesmí dovolit změnu role!';
+  end if;
+
+  raise notice '✓ TEST 6 PROŠEL: Izolace dat funguje, běžný uživatel nemůže zapisovat data cizího profilu a nastavení se bezpečně ukládá.';
 
   -- --------------------------------------------------------------------------
   -- TEST 7: EMPLOYEE NEMŮŽE VOLAT ADMIN RPC FUNKCE

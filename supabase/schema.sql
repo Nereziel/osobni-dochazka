@@ -803,7 +803,7 @@ declare
   v_safe_settings jsonb;
 begin
   v_user_key := public.current_session_user_key();
-  if v_user_key = '' then
+  if v_user_key is null or v_user_key = '' then
     raise exception 'Neautorizovaný přístup: Neplatná nebo chybějící session.';
   end if;
 
@@ -822,7 +822,7 @@ begin
 
   -- Bezpečnostní filtrace settings_json: odstranění citlivých atributů před uložením
   if p_settings ? 'settings_json' and jsonb_typeof(p_settings->'settings_json') = 'object' then
-    v_safe_settings := p_settings->'settings_json' - 'role' - 'username' - 'user_key' - 'pin' - 'pin_password_hash' - 'credentials' - 'sessions';
+    v_safe_settings := (p_settings->'settings_json') - array['role', 'username', 'user_key', 'pin', 'pin_password_hash', 'credentials', 'sessions']::text[];
   end if;
 
   update public.attendance_profiles
