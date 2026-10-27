@@ -170,7 +170,7 @@
                 <div class="mini-avatar">{{ (s.display_name || s.username || '?')[0].toUpperCase() }}</div>
                 <div>
                   <strong>{{ s.display_name || s.username }}</strong>
-                  <small>{{ s.recorded_days }} evidovaných dnů · Dovolená: {{ s.vacation_days_used }} d.</small>
+                  <small>{{ s.total_days_recorded ?? s.recorded_days ?? 0 }} evidovaných dnů · Dovolená: {{ s.vacation_days_count ?? s.vacation_days_used ?? 0 }} d.</small>
                 </div>
               </div>
               <div class="team-user-stats">
