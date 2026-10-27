@@ -213,10 +213,12 @@ export function useAttendance() {
         isActive: true,
         startTime: rec.start,
         type: rec.type,
-        typeLabel: TYPE_LABELS[rec.type] || 'Práce'
+        typeLabel: TYPE_LABELS[rec.type] || 'Práce',
+        manualBreak: !!rec.manualBreak,
+        breakMinutes: rec.breakMinutes
       };
     }
-    return { isActive: false, startTime: '', type: '', typeLabel: '' };
+    return { isActive: false, startTime: '', type: '', typeLabel: '', manualBreak: false, breakMinutes: null };
   });
 
   return {

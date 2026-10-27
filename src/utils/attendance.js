@@ -3,7 +3,7 @@
  */
 import { localDateKey, parseDateKey, isWeekendDate } from './dates.js';
 import { isPublicHoliday } from './holidays.js';
-import { durationMinutes, overlapMinutes, timeToMinutes } from './time.js';
+import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime } from './time.js';
 import { clampNumber, cloneDeep } from './validation.js';
 
 export const DEFAULT_SETTINGS = {
@@ -85,6 +85,28 @@ export function defaultHoursForDate(dateOrKey, settings = DEFAULT_SETTINGS) {
     end: settings?.workEnd || '15:00',
     target: settings?.dailyTargetMinutes ?? 480
   };
+}
+
+export function calculateWorkEndTime(startTime, settings = DEFAULT_SETTINGS, creditedMinutes = 0, manualBreakMinutes = null) {
+  const startMin = timeToMinutes(startTime);
+  if (startMin === null) {
+    return settings?.workEnd || '15:00';
+  }
+
+  const target = Number.isFinite(settings?.dailyTargetMinutes) ? settings.dailyTargetMinutes : 480;
+  const remainingWork = Math.max(0, target - (creditedMinutes || 0));
+  const breakAfter = Number.isFinite(settings?.breakAfterMinutes) ? settings.breakAfterMinutes : 360;
+  const standardBreak = Number.isFinite(settings?.breakMinutes) ? settings.breakMinutes : 30;
+
+  let neededBreak = 0;
+  if (manualBreakMinutes !== null && manualBreakMinutes !== undefined && !Number.isNaN(manualBreakMinutes)) {
+    neededBreak = Math.max(0, Number(manualBreakMinutes));
+  } else {
+    neededBreak = (remainingWork >= breakAfter) ? standardBreak : 0;
+  }
+
+  const totalPresence = remainingWork + neededBreak;
+  return minutesToTime(startMin + totalPresence);
 }
 
 export function baseTargetForDate(dateOrKey, settings = DEFAULT_SETTINGS) {

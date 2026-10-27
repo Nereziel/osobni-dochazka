@@ -4,6 +4,8 @@
     <ActiveShiftBanner
       :active-shift="activeShift"
       :daily-target="todayMetrics.target"
+      :settings="settings"
+      :credited-minutes="todayMetrics.credited"
       @end-shift="handleEndShiftNow"
     />
 
@@ -235,6 +237,7 @@ import { formatDuration } from '../utils/time.js';
 import {
   dayMetrics,
   defaultHoursForDate,
+  calculateWorkEndTime,
   isScheduledWorkday,
   statusClassForDay,
   TYPE_LABELS,
@@ -353,11 +356,21 @@ const progressSubText = computed(() => {
   const counted = todayMetrics.value.counted;
   if (target <= 0) return 'Dnes není předepsán žádný fond';
   if (counted >= target) return `Fond splněn (${formatDuration(counted)} z ${formatDuration(target)})`;
-  return `Zbývá ${formatDuration(target - counted)} do splnění cíle`;
+
+  if (props.activeShift?.isActive && props.activeShift?.startTime) {
+    const endTime = calculateWorkEndTime(
+      props.activeShift.startTime,
+      props.settings,
+      todayMetrics.value.credited,
+      props.activeShift.manualBreak ? props.activeShift.breakMinutes : null
+    );
+    return `Zbývá ${formatDuration(target - counted)} (odchod v ${endTime})`;
+  }
+  return `Zbývá ${formatDuration(target - counted)} do splnění fondu`;
 });
 
 const defaultShiftHours = computed(() => {
-  return `${props.settings.workStart || '06:30'} – ${props.settings.workEnd || '15:30'}`;
+  return `${props.settings.workStart || '06:30'} – ${props.settings.workEnd || '15:00'}`;
 });
 
 // 7-denní pás Po-Ne pro tento týden

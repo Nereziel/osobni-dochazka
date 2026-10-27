@@ -8,6 +8,7 @@ import {
   workedMinutes,
   creditedMinutes,
   dayMetrics,
+  calculateWorkEndTime,
   monthStats
 } from '../src/utils/attendance.js';
 
@@ -219,6 +220,23 @@ describe('Attendance calculations and business logic', () => {
     expect(stats.worked).toBe(540);
     expect(stats.credited).toBe(510);
     expect(stats.balance).toBe(30);
+  });
+
+  it('calculates work end time correctly based on start, target, break and credited absence', () => {
+    // 06:30 příchod + 8:00 fond (480 min) + 30 min oběd = 15:00
+    expect(calculateWorkEndTime('06:30', DEFAULT_SETTINGS)).toBe('15:00');
+
+    // 06:45 příchod + 8:00 fond + 30 min oběd = 15:15
+    expect(calculateWorkEndTime('06:45', DEFAULT_SETTINGS)).toBe('15:15');
+
+    // 07:00 příchod + 8:00 fond + 30 min oběd = 15:30
+    expect(calculateWorkEndTime('07:00', DEFAULT_SETTINGS)).toBe('15:30');
+
+    // 06:30 příchod s 2h (120 min) uznanou absencí (např. lékař) -> zbývá 6h práce + 30m oběd -> 13:00
+    expect(calculateWorkEndTime('06:30', DEFAULT_SETTINGS, 120)).toBe('13:00');
+
+    // 06:30 příchod s manuální přestávkou 45 min -> 15:15
+    expect(calculateWorkEndTime('06:30', DEFAULT_SETTINGS, 0, 45)).toBe('15:15');
   });
 });
 

@@ -9,7 +9,7 @@
     </div>
     <div class="shift-live-meta">
       <span>{{ activeShift.typeLabel }} od {{ activeShift.startTime }}</span>
-      <span>Denní cíl: {{ formatDuration(dailyTarget) }}</span>
+      <span>Konec pracovní doby: <strong>{{ workEndTime }}</strong></span>
     </div>
     <div class="shift-live-actions">
       <button class="win-btn-accent" type="button" @click="$emit('endShift')">
@@ -23,8 +23,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue';
-import { timeToMinutes, formatDuration, pad } from '../../utils/time.js';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { timeToMinutes, pad } from '../../utils/time.js';
+import { calculateWorkEndTime } from '../../utils/attendance.js';
 
 const props = defineProps({
   activeShift: {
@@ -33,7 +34,15 @@ const props = defineProps({
   },
   dailyTarget: {
     type: Number,
-    default: 510
+    default: 480
+  },
+  settings: {
+    type: Object,
+    default: () => ({})
+  },
+  creditedMinutes: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -41,6 +50,20 @@ defineEmits(['endShift']);
 
 const elapsedTime = ref('00:00:00');
 let timerInterval = null;
+
+const workEndTime = computed(() => {
+  const customBreak = props.activeShift?.manualBreak ? props.activeShift.breakMinutes : null;
+  const mergedSettings = {
+    ...props.settings,
+    dailyTargetMinutes: props.dailyTarget ?? props.settings?.dailyTargetMinutes ?? 480
+  };
+  return calculateWorkEndTime(
+    props.activeShift?.startTime,
+    mergedSettings,
+    props.creditedMinutes,
+    customBreak
+  );
+});
 
 function updateTimer() {
   if (!props.activeShift?.isActive || !props.activeShift?.startTime) {
