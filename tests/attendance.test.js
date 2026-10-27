@@ -46,6 +46,10 @@ describe('Attendance calculations and business logic', () => {
   });
 
   it('determines scheduled workdays correctly', () => {
+    expect(isScheduledWorkday(undefined)).toBe(false);
+    expect(isScheduledWorkday(null)).toBe(false);
+    expect(isScheduledWorkday(() => {})).toBe(false);
+
     // 2026-10-23 je pátek (pracovní den)
     expect(isScheduledWorkday('2026-10-23', customSettings)).toBe(true);
     // 2026-10-24 je sobota (víkend)

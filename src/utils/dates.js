@@ -37,7 +37,16 @@ export function isSameMonth(a, b) {
 }
 
 export function isWeekendDate(dateOrKey) {
-  const d = typeof dateOrKey === 'string' ? parseDateKey(dateOrKey) : dateOrKey;
+  if (!dateOrKey) return false;
+  let d;
+  if (typeof dateOrKey === 'string') {
+    d = parseDateKey(dateOrKey);
+  } else if (dateOrKey instanceof Date) {
+    d = dateOrKey;
+  } else {
+    return false;
+  }
+  if (!d || isNaN(d.getTime())) return false;
   const day = d.getDay();
   return day === 0 || day === 6;
 }

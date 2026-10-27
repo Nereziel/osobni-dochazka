@@ -390,8 +390,17 @@ async function triggerSync(pushLocalDays = true) {
 
 // Day Edit Handlers
 function openDayEditor(dateKey) {
-  const existing = records.value.get(dateKey) || null;
-  dayEditModalRef.value?.open(dateKey, existing);
+  let key = dateKey;
+  if (typeof dateKey === 'function') {
+    key = dateKey();
+  } else if (dateKey && typeof dateKey === 'object' && dateKey.date) {
+    key = dateKey.date;
+  }
+  if (!key || typeof key !== 'string') {
+    key = todayKey();
+  }
+  const existing = records.value.get(key) || null;
+  dayEditModalRef.value?.open(key, existing);
 }
 
 async function handleDaySave(day) {

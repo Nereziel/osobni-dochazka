@@ -326,7 +326,15 @@ function applyDefaultSchedule() {
 }
 
 function open(dayOrKey, existingRecord = null) {
-  const key = typeof dayOrKey === 'string' ? dayOrKey : dayOrKey?.date;
+  let key = dayOrKey;
+  if (typeof dayOrKey === 'function') {
+    key = dayOrKey();
+  } else if (dayOrKey && typeof dayOrKey === 'object' && dayOrKey.date) {
+    key = dayOrKey.date;
+  }
+  if (!key || typeof key !== 'string') {
+    key = localDateKey(new Date());
+  }
   hasExistingRecord.value = Boolean(existingRecord);
 
   if (existingRecord) {

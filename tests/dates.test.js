@@ -31,6 +31,14 @@ describe('Date utilities', () => {
     expect(isWeekendDate('2026-10-25')).toBe(true);
   });
 
+  it('isWeekendDate handles null, undefined and invalid inputs safely without getDay error', () => {
+    expect(isWeekendDate(null)).toBe(false);
+    expect(isWeekendDate(undefined)).toBe(false);
+    expect(isWeekendDate('')).toBe(false);
+    expect(isWeekendDate(123)).toBe(false);
+    expect(isWeekendDate(() => {})).toBe(false);
+  });
+
   it('adds and subtracts months correctly', () => {
     const base = new Date(2026, 9, 1, 12); // říjen 2026
     const next = addMonths(base, 1);

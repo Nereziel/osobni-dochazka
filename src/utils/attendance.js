@@ -59,8 +59,19 @@ export function activeWorkDays(settings = DEFAULT_SETTINGS) {
 }
 
 export function isScheduledWorkday(dateOrKey, settings = DEFAULT_SETTINGS) {
-  const date = typeof dateOrKey === 'string' ? parseDateKey(dateOrKey) : dateOrKey;
-  const key = typeof dateOrKey === 'string' ? dateOrKey : localDateKey(date);
+  if (!dateOrKey) return false;
+  let date;
+  let key;
+  if (typeof dateOrKey === 'string') {
+    key = dateOrKey;
+    date = parseDateKey(dateOrKey);
+  } else if (dateOrKey instanceof Date) {
+    date = dateOrKey;
+    key = localDateKey(date);
+  } else {
+    return false;
+  }
+  if (!date || isNaN(date.getTime())) return false;
 
   if (isPublicHoliday(key) && !settings?.workOnHolidays) {
     return false;
@@ -70,13 +81,15 @@ export function isScheduledWorkday(dateOrKey, settings = DEFAULT_SETTINGS) {
 }
 
 export function defaultHoursForDate(dateOrKey, settings = DEFAULT_SETTINGS) {
-  const date = typeof dateOrKey === 'string' ? parseDateKey(dateOrKey) : dateOrKey;
+  const date = typeof dateOrKey === 'string'
+    ? parseDateKey(dateOrKey)
+    : (dateOrKey instanceof Date ? dateOrKey : new Date());
 
   if (isWeekendDate(date) && settings?.weekendCustomHours) {
     return {
       start: settings.weekendStart || settings.workStart || '07:00',
       end: settings.weekendEnd || settings.workEnd || '15:30',
-      target: Number.isFinite(settings.weekendTargetMinutes) ? settings.weekendTargetMinutes : (settings?.dailyTargetMinutes ?? 510)
+      target: Number.isFinite(settings.weekendTargetMinutes) ? settings.weekendTargetMinutes : (settings?.dailyTargetMinutes ?? 480)
     };
   }
 
