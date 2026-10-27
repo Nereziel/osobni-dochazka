@@ -43,6 +43,8 @@ declare
   v_sessions_before integer;
   v_sessions_after integer;
   v_pin_res jsonb;
+  v_new_invite jsonb;
+  v_invite_code text;
 begin
   raise notice '====================================================================';
   raise notice '>>> SPUŠTĚNÍ KOMPLETNÍCH SQL BEZPEČNOSTNÍCH TESTŮ... <<<';
@@ -267,6 +269,16 @@ begin
   end;
 
   begin
+    perform public.admin_delete_invite('INV-ANY');
+    raise exception 'TEST 7 SELHAL: Employee nesmí mít přístup k admin_delete_invite.';
+  exception
+    when others then
+      if sqlerrm not like '%Pouze správce%' then
+        raise exception 'TEST 7 SELHAL: Neočekávaná chyba: %', sqlerrm;
+      end if;
+  end;
+
+  begin
     perform public.admin_delete_user(v_key_b);
     raise exception 'TEST 7 SELHAL: Employee nesmí mít přístup k admin_delete_user.';
   exception
@@ -408,6 +420,24 @@ begin
 
   delete from public.attendance_days where user_key = v_test_key and date = '2026-01-05';
   raise notice '✓ TEST 12 PROŠEL: admin_cleanup_old_tombstones striktně dodržuje minimální retenci 30 dní i při zadání 0.';
+
+  -- --------------------------------------------------------------------------
+  -- TEST 13: SPRÁVCE MŮŽE SMAZAT POZVÁNKU (admin_delete_invite)
+  -- --------------------------------------------------------------------------
+  perform set_config('request.headers', json_build_object('x-attendance-session', v_admin_session)::text, true);
+  v_new_invite := public.admin_create_invite();
+  v_invite_code := v_new_invite->>'code';
+
+  if not exists (select 1 from public.attendance_invites where code = v_invite_code) then
+    raise exception 'TEST 13 SELHAL: admin_create_invite nevytvořil pozvánku v DB.';
+  end if;
+
+  perform public.admin_delete_invite(v_invite_code);
+
+  if exists (select 1 from public.attendance_invites where code = v_invite_code) then
+    raise exception 'TEST 13 SELHAL: admin_delete_invite nesmazal pozvánku z DB.';
+  end if;
+  raise notice '✓ TEST 13 PROŠEL: Správce úspěšně smazal pozvánku přes admin_delete_invite.';
 
   -- --------------------------------------------------------------------------
   -- ÚKLID TESTOVACÍCH DAT

@@ -204,7 +204,7 @@ const planDaysLabel = computed(() => {
 });
 
 const planHoursLabel = computed(() => {
-  return `${props.settings.workStart || '06:30'} – ${props.settings.workEnd || '15:30'}`;
+  return `${props.settings.workStart || '06:30'} – ${props.settings.workEnd || '15:00'}`;
 });
 </script>
 

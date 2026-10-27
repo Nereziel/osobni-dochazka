@@ -906,6 +906,40 @@ begin
 end;
 $$;
 
+-- Správce: smazání pozvánky
+drop function if exists public.admin_delete_invite(text);
+create or replace function public.admin_delete_invite(
+  p_code text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_clean_code text;
+begin
+  if not public.is_admin() then
+    raise exception 'Přístup odepřen: Pouze správce může mazat pozvánky.';
+  end if;
+
+  if p_code is null or trim(p_code) = '' then
+    raise exception 'Kód pozvánky je povinný.';
+  end if;
+
+  v_clean_code := upper(trim(p_code));
+
+  delete from public.attendance_invites
+  where upper(code) = v_clean_code;
+
+  if not found then
+    raise exception 'Pozvánka nebyla nalezena.';
+  end if;
+
+  return true;
+end;
+$$;
+
 -- Správce: reset PINu uživatele (okamžitě revokuje VŠECHNY aktivní sessions daného uživatele)
 drop function if exists public.admin_reset_user_pin(text, text);
 create or replace function public.admin_reset_user_pin(
@@ -1262,8 +1296,8 @@ grant select on public.attendance_days to anon, authenticated;
 revoke insert, update, delete on public.attendance_days from public, anon, authenticated;
 
 -- attendance_invites: SELECT a administrátorská správa
-grant select on public.attendance_invites to anon, authenticated;
-revoke insert, update, delete on public.attendance_invites from public, anon;
+grant select, delete on public.attendance_invites to anon, authenticated;
+revoke insert, update on public.attendance_invites from public, anon;
 grant insert, update, delete on public.attendance_invites to authenticated;
 
 -- v_monthly_attendance_summary: POUZE SELECT pro REST klienty (zabezpečeno přes security_invoker = true a underlying RLS)
@@ -1287,6 +1321,7 @@ revoke all on function public.register_user_with_invite(text, text, text, text) 
 revoke all on function public.registration_status() from public, anon, authenticated;
 revoke all on function public.update_own_settings(jsonb) from public, anon, authenticated;
 revoke all on function public.admin_create_invite() from public, anon, authenticated;
+revoke all on function public.admin_delete_invite(text) from public, anon, authenticated;
 revoke all on function public.admin_reset_user_pin(text, text) from public, anon, authenticated;
 revoke all on function public.admin_change_user_role(text, text) from public, anon, authenticated;
 revoke all on function public.admin_delete_user(text) from public, anon, authenticated;
@@ -1315,6 +1350,7 @@ grant execute on function public.upsert_attendance_day_lww(jsonb) to anon, authe
 
 -- 4. Administrátorské operace (vyžadují uvnitř session token s rolí admin):
 grant execute on function public.admin_create_invite() to anon, authenticated;
+grant execute on function public.admin_delete_invite(text) to anon, authenticated;
 grant execute on function public.admin_reset_user_pin(text, text) to anon, authenticated;
 grant execute on function public.admin_change_user_role(text, text) to anon, authenticated;
 grant execute on function public.admin_delete_user(text) to anon, authenticated;

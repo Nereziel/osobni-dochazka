@@ -97,7 +97,6 @@ Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./su
 - **Atomický Server-side LWW**: Outbox odesílá změny přes RPC `upsert_attendance_day_lww`.
 - **Spolehlivé Tombstones**: Smazání nastavuje `deleted_at` a spolehlivě odstraňuje dny na všech synchronizovaných zařízeních.
 - **Bezpečnostní RLS a RPC**: Ochrana proti privilege escalation, úniku pozvánek a čtení cizích dat.
-- **Biometrické odemknutí**: Rychlé lokální odemknutí uloženého session tokenu v daném prohlížeči (s ověřením platnosti relace proti serveru).
 
 ### Známá omezení
 - **Původní IndexedDB (v1–v3)**: Původní databáze neobsahovala vlastníka záznamu. Při migraci na v4 jsou stará lokální data přiřazena aktuálně známému profilu. Pokud bylo stejné zařízení ve staré verzi používáno více účty, nelze původního vlastníka historických lokálních záznamů spolehlivě určit. Cloudová data v Supabase tím nejsou ovlivněna.

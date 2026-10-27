@@ -53,15 +53,12 @@ let timerInterval = null;
 
 const workEndTime = computed(() => {
   const customBreak = props.activeShift?.manualBreak ? props.activeShift.breakMinutes : null;
-  const mergedSettings = {
-    ...props.settings,
-    dailyTargetMinutes: props.dailyTarget ?? props.settings?.dailyTargetMinutes ?? 480
-  };
   return calculateWorkEndTime(
     props.activeShift?.startTime,
-    mergedSettings,
+    props.settings,
     props.creditedMinutes,
-    customBreak
+    customBreak,
+    props.dailyTarget
   );
 });
 

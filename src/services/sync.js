@@ -94,8 +94,8 @@ export function settingsFromProfileRow(profileRow) {
   return normalizeSettings({
     ...jsonSettings,
     workStart: profileRow.work_start || jsonSettings.workStart || '06:30',
-    workEnd: profileRow.work_end || jsonSettings.workEnd || '15:30',
-    dailyTargetMinutes: profileRow.daily_target_minutes ?? jsonSettings.dailyTargetMinutes ?? 510,
+    workEnd: profileRow.work_end || jsonSettings.workEnd || '15:00',
+    dailyTargetMinutes: profileRow.daily_target_minutes ?? jsonSettings.dailyTargetMinutes ?? 480,
     breakMinutes: profileRow.break_minutes ?? jsonSettings.breakMinutes ?? 30,
     breakAfterMinutes: profileRow.break_after_minutes ?? jsonSettings.breakAfterMinutes ?? 360,
     autoFill: profileRow.auto_fill ?? jsonSettings.autoFill ?? true,

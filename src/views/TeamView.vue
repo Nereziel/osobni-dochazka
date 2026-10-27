@@ -69,9 +69,14 @@
                   </td>
                   <td>{{ inv.used_by ? inv.used_by.replace('user:', '') : '—' }}</td>
                   <td>
-                    <button class="win-btn-standard compact-btn" type="button" title="Kopírovat odkaz pozvánky" @click="copyInviteUrl(inv.code)">
-                      🔗 Odkaz
-                    </button>
+                    <div class="table-action-cell">
+                      <button class="win-btn-standard compact-btn" type="button" title="Kopírovat odkaz pozvánky" @click="copyInviteUrl(inv.code)">
+                        🔗 Odkaz
+                      </button>
+                      <button class="win-btn-subtle compact-btn danger-btn" type="button" title="Smazat pozvánku" @click="deleteInvite(inv)">
+                        ✕ Smazat
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 <tr v-if="invites.length === 0">
@@ -265,6 +270,32 @@ function copyInviteUrl(code) {
   }).catch(() => {
     prompt('Odkaz pozvánky:', url);
   });
+}
+
+async function deleteInvite(inv) {
+  if (!confirm(`Opravdu smazat pozvánku ${inv.code}? Tuto akci nelze vrátit.`)) return;
+
+  try {
+    try {
+      await supabaseRequest('/rest/v1/rpc/admin_delete_invite', {
+        method: 'POST',
+        body: JSON.stringify({ p_code: inv.code })
+      }, props.currentUser);
+    } catch (rpcErr) {
+      if (rpcErr.message?.includes('404') || rpcErr.message?.includes('not found') || rpcErr.status === 404) {
+        await supabaseRequest(`/rest/v1/attendance_invites?code=eq.${encodeURIComponent(inv.code)}`, {
+          method: 'DELETE'
+        }, props.currentUser);
+      } else {
+        throw rpcErr;
+      }
+    }
+
+    emit('toast', `Pozvánka ${inv.code} byla smazána`, '✓');
+    await loadInvites();
+  } catch (err) {
+    alert(err.message || 'Smazání pozvánky selhalo');
+  }
 }
 
 async function toggleRole(prof) {

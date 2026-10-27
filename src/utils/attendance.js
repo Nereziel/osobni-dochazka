@@ -100,13 +100,15 @@ export function defaultHoursForDate(dateOrKey, settings = DEFAULT_SETTINGS) {
   };
 }
 
-export function calculateWorkEndTime(startTime, settings = DEFAULT_SETTINGS, creditedMinutes = 0, manualBreakMinutes = null) {
+export function calculateWorkEndTime(startTime, settings = DEFAULT_SETTINGS, creditedMinutes = 0, manualBreakMinutes = null, targetMinutes = null) {
   const startMin = timeToMinutes(startTime);
   if (startMin === null) {
     return settings?.workEnd || '15:00';
   }
 
-  const target = Number.isFinite(settings?.dailyTargetMinutes) ? settings.dailyTargetMinutes : 480;
+  const target = Number.isFinite(targetMinutes)
+    ? Math.max(0, targetMinutes)
+    : (Number.isFinite(settings?.dailyTargetMinutes) ? settings.dailyTargetMinutes : 480);
   const remainingWork = Math.max(0, target - (creditedMinutes || 0));
   const breakAfter = Number.isFinite(settings?.breakAfterMinutes) ? settings.breakAfterMinutes : 360;
   const standardBreak = Number.isFinite(settings?.breakMinutes) ? settings.breakMinutes : 30;

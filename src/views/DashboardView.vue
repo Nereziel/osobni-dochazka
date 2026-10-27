@@ -362,7 +362,8 @@ const progressSubText = computed(() => {
       props.activeShift.startTime,
       props.settings,
       todayMetrics.value.credited,
-      props.activeShift.manualBreak ? props.activeShift.breakMinutes : null
+      props.activeShift.manualBreak ? props.activeShift.breakMinutes : null,
+      todayMetrics.value.target
     );
     return `Zbývá ${formatDuration(target - counted)} (odchod v ${endTime})`;
   }

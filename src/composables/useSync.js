@@ -26,7 +26,21 @@ let onVerifySessionCallback = null;
 let onInvalidSessionCallback = null;
 let listenersAttached = false;
 
+function getActiveSettings() {
+  if (typeof activeSettings === 'function') {
+    return activeSettings();
+  }
+  if (activeSettings && typeof activeSettings === 'object' && 'value' in activeSettings) {
+    return activeSettings.value;
+  }
+  return activeSettings;
+}
+
 export function useSync() {
+  function updateSyncSettings(newSettings) {
+    activeSettings = newSettings;
+  }
+
   async function refreshPendingCount(userId) {
     if (!userId) {
       pendingCount.value = 0;
@@ -55,7 +69,7 @@ export function useSync() {
     }
 
     try {
-      const res = await sync(activeUser, activeSettings, {
+      const res = await sync(activeUser, getActiveSettings(), {
         pushLocalDays: false,
         incremental: true,
         fetchProfile: false
@@ -113,7 +127,7 @@ export function useSync() {
       }
 
       try {
-        const res = await sync(activeUser, activeSettings, {
+        const res = await sync(activeUser, getActiveSettings(), {
           pushLocalDays: true,
           incremental: false,
           fetchProfile: true
@@ -215,8 +229,14 @@ export function useSync() {
     syncState.value = 'syncing';
     syncError.value = null;
 
+    const resolvedSettings = (
+      typeof currentSettings === 'function'
+        ? currentSettings()
+        : (currentSettings && typeof currentSettings === 'object' && 'value' in currentSettings ? currentSettings.value : currentSettings)
+    ) || getActiveSettings();
+
     try {
-      const result = await performFullSync(currentUser, currentSettings, syncOptions);
+      const result = await performFullSync(currentUser, resolvedSettings, syncOptions);
       syncState.value = 'online';
       await refreshPendingCount(currentUser.userKey);
       return result;
@@ -232,7 +252,7 @@ export function useSync() {
       if (pendingFollowupSync) {
         pendingFollowupSync = false;
         setTimeout(() => {
-          sync(currentUser, currentSettings, { pushLocalDays: false }).catch(() => {});
+          sync(currentUser, getActiveSettings(), { pushLocalDays: false }).catch(() => {});
         }, 50);
       }
     }
@@ -246,6 +266,7 @@ export function useSync() {
     sync,
     startForegroundSync,
     stopForegroundSync,
-    triggerPeriodicSync
+    triggerPeriodicSync,
+    updateSyncSettings
   };
 }

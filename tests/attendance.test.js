@@ -242,5 +242,18 @@ describe('Attendance calculations and business logic', () => {
     // 06:30 příchod s manuální přestávkou 45 min -> 15:15
     expect(calculateWorkEndTime('06:30', DEFAULT_SETTINGS, 0, 45)).toBe('15:15');
   });
+
+  it('calculates work end time correctly for weekend with custom target', () => {
+    const weekendSettings = {
+      ...DEFAULT_SETTINGS,
+      weekendCustomHours: true,
+      weekendTargetMinutes: 240 // 4 hodiny (méně než 6h -> pauza 0 min)
+    };
+    // Příchod v 08:00 při víkendovém fondu 240 min -> odchod 12:00
+    expect(calculateWorkEndTime('08:00', weekendSettings, 0, null, 240)).toBe('12:00');
+
+    // Víkendový fond 420 min (7h) -> povinná 30min pauza -> 450 min přítomnosti -> příchod v 07:00 -> odchod 14:30
+    expect(calculateWorkEndTime('07:00', weekendSettings, 0, null, 420)).toBe('14:30');
+  });
 });
 

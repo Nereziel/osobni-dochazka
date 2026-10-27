@@ -49,20 +49,6 @@
           </label>
         </div>
 
-        <div v-if="hasBiometrics" style="margin-bottom: 12px;">
-          <button
-            class="win-btn-standard full-width-btn"
-            type="button"
-            style="display:flex; align-items:center; justify-content:center; gap:8px;"
-            @click="handleBiometricLogin"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4" />
-            </svg>
-            <span>Přihlásit se pomocí Windows Hello / Otisku prstu</span>
-          </button>
-        </div>
-
         <div class="dialog-footer-block">
           <button class="win-btn-accent full-width-btn" type="submit" :disabled="loading">
             {{ loading ? 'Přihlašování...' : 'Přihlásit se' }}
@@ -82,19 +68,17 @@
 <script setup>
 import { ref } from 'vue';
 
-const emit = defineEmits(['login-success', 'switch-to-register', 'toast']);
+const emit = defineEmits(['login-submit', 'switch-to-register', 'toast']);
 
 const dialogRef = ref(null);
 const username = ref('');
 const pin = ref('');
 const rememberMe = ref(true);
 const loading = ref(false);
-const hasBiometrics = ref(false);
 
-function open(biometricsAvailable = false) {
+function open() {
   username.value = '';
   pin.value = '';
-  hasBiometrics.value = biometricsAvailable;
   loading.value = false;
   dialogRef.value?.showModal();
 }
@@ -114,10 +98,6 @@ function handleSubmit() {
     pin: pin.value,
     rememberMe: rememberMe.value
   });
-}
-
-function handleBiometricLogin() {
-  emit('biometric-login');
 }
 
 function onBackdropClick(e) {

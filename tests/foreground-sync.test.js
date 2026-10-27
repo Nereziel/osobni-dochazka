@@ -31,7 +31,7 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     username: 'martin',
     sessionToken: 'test_session_token_123'
   };
-  const currentSettings = { workStart: '06:30', workEnd: '15:30' };
+  const currentSettings = { workStart: '06:30', workEnd: '15:00' };
 
   let origDoc;
   let origWin;
@@ -234,6 +234,27 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(fakeVerify).toHaveBeenCalledTimes(1);
     expect(fakeInvalid).toHaveBeenCalledTimes(1);
     expect(syncSpy).not.toHaveBeenCalled();
+
+    stopForegroundSync();
+  });
+
+  it('uses updated settings on subsequent periodic sync without stale closure', async () => {
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+
+    const { startForegroundSync, stopForegroundSync, updateSyncSettings } = useSync();
+    startForegroundSync(currentUser, currentSettings);
+
+    await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, expect.any(Object));
+
+    const updatedSettings = { workStart: '07:00', workEnd: '15:30', dailyTargetMinutes: 480 };
+    updateSyncSettings(updatedSettings);
+
+    await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, updatedSettings, expect.any(Object));
 
     stopForegroundSync();
   });

@@ -3,7 +3,6 @@ import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
 
 const LS_USER_KEY = 'dochazka_active_user_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
-const LS_BIOMETRICS_KEY = 'dochazka_biometrics_cred_v1';
 
 function loadInitialUser() {
   try {
@@ -154,19 +153,23 @@ export function useAuth() {
     return res?.message || 'PIN byl úspěšně změněn.';
   }
 
-  async function logout() {
-    if (isSupabaseConfigured() && currentUser.value?.sessionToken) {
-      try {
-        await supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
-          method: 'POST',
-          body: JSON.stringify({ p_all_devices: false })
-        }, currentUser.value);
-      } catch {
-        // Ignorujeme případnou chybu při offline odhlášení
-      }
-    }
+  function logout() {
+    const priorUser = currentUser.value;
     saveUserSession(null);
-    localStorage.removeItem(LS_BIOMETRICS_KEY);
+    try {
+      localStorage.removeItem('dochazka_biometrics_cred_v1');
+    } catch {
+      // Ignorovat případnou chybu přístupu k storage
+    }
+
+    if (isSupabaseConfigured() && priorUser?.sessionToken) {
+      supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
+        method: 'POST',
+        body: JSON.stringify({ p_all_devices: false })
+      }, priorUser).catch((err) => {
+        console.warn('Odvolání serverové session na pozadí selhalo (best-effort):', err?.message || err);
+      });
+    }
   }
 
   async function verifySession() {
@@ -184,7 +187,7 @@ export function useAuth() {
 
       if (res?.success === false) {
         console.warn('Session není platná:', res.message || res.error);
-        await logout();
+        logout();
         return false;
       }
 
@@ -212,114 +215,9 @@ export function useAuth() {
       }
 
       console.warn('Session expirovala nebo byla na serveru zrušena:', err.message);
-      await logout();
+      logout();
       return false;
     }
-  }
-
-  // Biometrické odemknutí lokální relace (WebAuthn user verification)
-  function isBiometricsSupported() {
-    return Boolean(typeof window !== 'undefined' && window.PublicKeyCredential && navigator.credentials);
-  }
-
-  function hasSavedBiometrics() {
-    try {
-      const saved = JSON.parse(localStorage.getItem(LS_BIOMETRICS_KEY) || 'null');
-      return Boolean(saved?.id && saved?.username && saved?.sessionToken);
-    } catch {
-      return false;
-    }
-  }
-
-  async function registerBiometrics() {
-    if (!isBiometricsSupported()) {
-      throw new Error('Zařízení nepodporuje biometrické ověření (WebAuthn).');
-    }
-    if (!currentUser.value?.sessionToken) throw new Error('Musíš být přihlášen s aktivní relací.');
-
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-    const userId = new TextEncoder().encode(currentUser.value.username);
-
-    const credential = await navigator.credentials.create({
-      publicKey: {
-        challenge,
-        rp: { name: 'Osobní docházka', id: window.location.hostname || 'localhost' },
-        user: {
-          id: userId,
-          name: currentUser.value.username,
-          displayName: currentUser.value.displayName || currentUser.value.username
-        },
-        pubKeyCredParams: [{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'required',
-          residentKey: 'preferred'
-        },
-        timeout: 60000,
-        attestation: 'none'
-      }
-    });
-
-    if (credential) {
-      const rawId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
-      localStorage.setItem(LS_BIOMETRICS_KEY, JSON.stringify({
-        id: rawId,
-        username: currentUser.value.username,
-        displayName: currentUser.value.displayName,
-        sessionToken: currentUser.value.sessionToken,
-        role: currentUser.value.role || 'employee',
-        userKey: currentUser.value.userKey,
-        enabledAt: new Date().toISOString()
-      }));
-      return true;
-    }
-    return false;
-  }
-
-  async function loginWithBiometrics() {
-    if (!isBiometricsSupported()) throw new Error('Biometrika není podporována.');
-    const saved = JSON.parse(localStorage.getItem(LS_BIOMETRICS_KEY) || 'null');
-    if (!saved?.id || !saved?.username || !saved?.sessionToken) {
-      throw new Error('Na tomto zařízení dosud není povoleno biometrické přihlašování.');
-    }
-
-    const challenge = new Uint8Array(32);
-    crypto.getRandomValues(challenge);
-    const credentialId = Uint8Array.from(atob(saved.id), c => c.charCodeAt(0));
-
-    const assertion = await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        allowCredentials: [{
-          id: credentialId,
-          type: 'public-key',
-          transports: ['internal']
-        }],
-        userVerification: 'required',
-        timeout: 60000
-      }
-    });
-
-    if (assertion) {
-      const userObj = {
-        sessionToken: saved.sessionToken,
-        userKey: saved.userKey,
-        username: saved.username,
-        displayName: saved.displayName,
-        role: saved.role || 'employee'
-      };
-      saveUserSession(userObj, true);
-
-      // Ověříme platnost obnovené session proti serveru
-      const valid = await verifySession();
-      if (!valid) {
-        throw new Error('Uložená session na serveru expirovala. Přihlaste se prosím PINem.');
-      }
-
-      return `Vítej zpět, ${userObj.displayName}!`;
-    }
-    throw new Error('Biometrické ověření selhalo.');
   }
 
   return {
@@ -330,10 +228,6 @@ export function useAuth() {
     register,
     changePin,
     logout,
-    verifySession,
-    isBiometricsSupported,
-    hasSavedBiometrics,
-    registerBiometrics,
-    loginWithBiometrics
+    verifySession
   };
 }

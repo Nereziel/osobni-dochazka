@@ -84,13 +84,11 @@
           :current-user="currentUser"
           :is-admin="isAdmin"
           :sync-state="syncState"
-          :can-biometrics="isBiometricsSupported()"
           @save-settings="handleSaveSettings"
           @change-theme="handleThemeChange"
           @open-login="openLoginModal"
           @open-register="openRegisterModal"
           @open-change-pin="openChangePinModal"
-          @enable-biometrics="handleEnableBiometrics"
           @logout="handleLogout"
           @open-team="navigateView('team')"
           @sync="triggerSync"
@@ -131,7 +129,6 @@
     <LoginModal
       ref="loginModalRef"
       @login-submit="handleLoginSubmit"
-      @biometric-login="handleBiometricLogin"
       @switch-to-register="openRegisterModal"
     />
 
@@ -214,11 +211,7 @@ const {
   register,
   changePin,
   logout,
-  verifySession,
-  isBiometricsSupported,
-  hasSavedBiometrics,
-  registerBiometrics,
-  loginWithBiometrics
+  verifySession
 } = useAuth();
 const { settings, applyTheme, toggleTheme, loadSettings, saveSettings } = useSettings();
 const {
@@ -243,7 +236,8 @@ const {
   refreshPendingCount,
   sync,
   startForegroundSync,
-  stopForegroundSync
+  stopForegroundSync,
+  updateSyncSettings
 } = useSync();
 
 // State
@@ -337,6 +331,7 @@ async function applyServerProfile(serverProfile) {
   const newSettings = settingsFromProfileRow(serverProfile);
   if (newSettings) {
     settings.value = newSettings;
+    updateSyncSettings(newSettings);
     await putUserSettings(currentUser.value.userKey, newSettings);
     applyTheme();
   }
@@ -363,7 +358,7 @@ function handleInvalidSession() {
 
 function startSyncService() {
   if (!currentUser.value) return;
-  startForegroundSync(currentUser.value, settings.value, handleSyncUpdate, {
+  startForegroundSync(currentUser.value, () => settings.value, handleSyncUpdate, {
     onVerifySession: verifySession,
     onInvalidSession: handleInvalidSession
   });
@@ -518,7 +513,7 @@ function handleMonthPickerSelect(selectedDate) {
 
 // Auth Handlers
 function openLoginModal() {
-  loginModalRef.value?.open(hasSavedBiometrics());
+  loginModalRef.value?.open();
 }
 
 async function handleLoginSubmit({ username, pin, rememberMe }) {
@@ -537,22 +532,6 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
     alert(err.message || 'Přihlášení selhalo');
   } finally {
     loginModalRef.value?.setLoading(false);
-  }
-}
-
-async function handleBiometricLogin() {
-  try {
-    const msg = await loginWithBiometrics();
-    loginModalRef.value?.close();
-    showToast(msg, '✓');
-    const userKey = currentUser.value?.userKey;
-    await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
-    if (isSupabaseConfigured()) {
-      await triggerSync(false);
-      startSyncService();
-    }
-  } catch (err) {
-    alert(err.message || 'Biometrické přihlášení selhalo');
   }
 }
 
@@ -610,16 +589,6 @@ async function handleChangePinSubmit({ oldPin, newPin, newPinConfirm }) {
   }
 }
 
-async function handleEnableBiometrics() {
-  if (!confirm(`Chcete pro účet "${currentUser.value?.username}" povolit biometrické přihlášení na tomto zařízení?`)) return;
-  try {
-    const ok = await registerBiometrics();
-    if (ok) showToast('Biometrika úspěšně povolena', '✓');
-  } catch (err) {
-    alert(err.message || 'Povolení biometrie selhalo');
-  }
-}
-
 function handleLogout() {
   if (!confirm('Opravdu se odhlásit z tohoto zařízení?')) return;
   performLocalLogout();
@@ -629,12 +598,14 @@ function handleLogout() {
 // Settings Handlers
 async function handleSaveSettings(newSettings) {
   const userKey = currentUser.value?.userKey || 'user:local';
+  updateSyncSettings(newSettings);
   await saveSettings(userKey, newSettings, currentUser.value);
   showToast('Nastavení bylo uloženo', '✓');
 }
 
 function handleThemeChange(newTheme) {
   settings.value.theme = newTheme;
+  updateSyncSettings(settings.value);
   applyTheme(newTheme);
   const userKey = currentUser.value?.userKey || 'user:local';
   saveSettings(userKey, settings.value, currentUser.value, true);

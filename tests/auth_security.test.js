@@ -397,6 +397,23 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     return true;
   }
 
+  // 7e. PostgreSQL admin_delete_invite
+  function admin_delete_invite(code) {
+    if (!is_admin()) {
+      throw new Error('Přístup odepřen: Pouze správce může mazat pozvánky.');
+    }
+    if (!code || !code.trim()) {
+      throw new Error('Kód pozvánky je povinný.');
+    }
+    const cleanCode = code.trim().toUpperCase();
+    const idx = invitesTable.findIndex(i => i.code.toUpperCase() === cleanCode);
+    if (idx === -1) {
+      throw new Error('Pozvánka nebyla nalezena.');
+    }
+    invitesTable.splice(idx, 1);
+    return true;
+  }
+
   // 8. RLS simulace pro attendance_days (POUZE SELECT)
   function rls_select_attendance_days(userKeyFilter) {
     const callerKey = current_session_user_key();
@@ -838,6 +855,30 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       const res401 = await verifySessionSim(401);
       expect(res401).toBe(false);
       expect(loggedOut).toBe(true);
+    });
+  });
+
+  describe('P3.4: Správa pozvánek – mazání pozvánky administrátorem', () => {
+    it('Běžný uživatel (employee) nemůže smazat pozvánku', () => {
+      const loginRes = login_attendance_user('alice', 'alice1234');
+      setSessionHeader(loginRes.session_token);
+
+      expect(() => admin_delete_invite('INV-TEST1234')).toThrow(/Pouze správce/);
+    });
+
+    it('Administrátor může smazat pozvánku, následně ji nelze použít pro registraci', async () => {
+      const adminLogin = login_attendance_user('admin', 'admin1234');
+      setSessionHeader(adminLogin.session_token);
+
+      expect(invitesTable.some(i => i.code === 'INV-TEST1234')).toBe(true);
+      const ok = admin_delete_invite('INV-TEST1234');
+      expect(ok).toBe(true);
+      expect(invitesTable.some(i => i.code === 'INV-TEST1234')).toBe(false);
+
+      // Registrace s již smazanou pozvánkou musí selhat
+      const regRes = await register_user_with_invite('new_guy', 'New Guy', 'pass1234', 'INV-TEST1234');
+      expect(regRes.success).toBe(false);
+      expect(regRes.error).toBe('invalid_invite');
     });
   });
 });

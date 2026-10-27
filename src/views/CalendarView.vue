@@ -217,7 +217,7 @@ const scheduleHint = computed(() => {
   let daysStr = 'Po–Pá';
   if (ordered === '1,2,3,4,5,6') daysStr = 'Po–So';
   if (ordered === '1,2,3,4,5,6,0') daysStr = 'Po–Ne';
-  return `Rozvrh: ${daysStr} · ${props.settings.workStart || '06:30'}–${props.settings.workEnd || '15:30'}`;
+  return `Rozvrh: ${daysStr} · ${props.settings.workStart || '06:30'}–${props.settings.workEnd || '15:00'}`;
 });
 
 const today = todayKey();
