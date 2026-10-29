@@ -45,6 +45,7 @@ declare
   v_pin_res jsonb;
   v_new_invite jsonb;
   v_invite_code text;
+  v_existing_admins integer;
 begin
   raise notice '====================================================================';
   raise notice '>>> SPUŠTĚNÍ KOMPLETNÍCH SQL BEZPEČNOSTNÍCH TESTŮ... <<<';
@@ -103,6 +104,13 @@ begin
   -- attendance_profiles: POUZE SELECT, přímý REST UPDATE zakázán
   select has_table_privilege('anon', 'public.attendance_profiles', 'update') into v_has_priv;
   if v_has_priv then raise exception 'TEST 1 SELHAL: přímý REST UPDATE do attendance_profiles musí být zakázán.'; end if;
+
+  -- attendance_invites: POUZE SELECT přes RLS, přímý REST DELETE/INSERT/UPDATE zakázán
+  select has_table_privilege('anon', 'public.attendance_invites', 'delete') into v_has_priv;
+  if v_has_priv then raise exception 'TEST 1 SELHAL: přímý REST DELETE z attendance_invites musí být zakázán pro anon.'; end if;
+
+  select has_table_privilege('authenticated', 'public.attendance_invites', 'delete') into v_has_priv;
+  if v_has_priv then raise exception 'TEST 1 SELHAL: přímý REST DELETE z attendance_invites musí být zakázán pro authenticated.'; end if;
 
   -- v_monthly_attendance_summary: POUZE SELECT pro REST
   select has_table_privilege('anon', 'public.v_monthly_attendance_summary', 'select') into v_has_priv;
@@ -374,40 +382,51 @@ begin
   raise notice '✓ TEST 10 PROŠEL: Atomický LWW bezpečně odmítl starší záznam bez porušení konzistence.';
 
   -- --------------------------------------------------------------------------
-  -- TEST 11: OCHRANA POSLEDNÍHO ADMINISTRÁTORA
+  -- TEST 11: OCHRANA POSLEDNÍHO ADMINISTRÁTORA (DETERMINISTICKÝ BEZ ZÁSAHU DO PRODUKČNÍCH ÚČTŮ)
   -- --------------------------------------------------------------------------
   perform set_config('request.headers', json_build_object('x-attendance-session', v_admin_session)::text, true);
 
-  -- 1. Pokus odebrat roli poslednímu adminovi
-  begin
-    perform public.admin_change_user_role(v_admin_key, 'employee');
-    raise exception 'TEST 11 SELHAL: Poslední admin nesmí být degradován na employee.';
-  exception
-    when others then
-      if sqlerrm not like '%poslední%' then
-        raise exception 'TEST 11 SELHAL: Neočekávaná chyba při degradaci posledního admina: %', sqlerrm;
-      end if;
-  end;
+  -- Zjistíme, zda v databázi mimo náš testovací účet existují produkční administrátoři.
+  -- Produkční účty ani jejich role test NIKDY nemění ani nemaže.
+  select count(*) into v_existing_admins
+  from public.attendance_profiles
+  where role = 'admin' and user_key <> v_admin_key;
 
-  -- 2. Pokus smazat posledního admina
+  -- 1. Pokus odebrat roli poslednímu adminovi (pouze pokud v DB není další produkční admin)
+  if v_existing_admins = 0 then
+    begin
+      perform public.admin_change_user_role(v_admin_key, 'employee');
+      raise exception 'TEST 11 SELHAL: Poslední admin nesmí být degradován na employee.';
+    exception
+      when others then
+        if sqlerrm not like '%poslední%' then
+          raise exception 'TEST 11 SELHAL: Neočekávaná chyba při degradaci posledního admina: %', sqlerrm;
+        end if;
+    end;
+  else
+    raise notice 'ℹ TEST 11 (last-admin degradace): V DB již existuje % produkční(ch) admin(ů). Část degradace posledního admina přeskočena, aby test nemanipuloval s produkčními účty.', v_existing_admins;
+  end if;
+
+  -- 2. Pokus smazat vlastní účet / posledního admina (vždy selže buď na ochraně vlastního účtu nebo posledního admina)
   begin
     perform public.admin_delete_user(v_admin_key);
-    raise exception 'TEST 11 SELHAL: Poslední admin nesmí být smazán.';
+    raise exception 'TEST 11 SELHAL: Správce nesmí smazat svůj vlastní účet ani posledního admina.';
   exception
     when others then
       if sqlerrm not like '%poslední%' and sqlerrm not like '%vlastní%' then
-        raise exception 'TEST 11 SELHAL: Neočekávaná chyba při mazání posledního admina: %', sqlerrm;
+        raise exception 'TEST 11 SELHAL: Neočekávaná chyba při mazání admina: %', sqlerrm;
       end if;
   end;
 
-  -- 3. Ověření, že změna role admina je povolena, pokud existuje jiný admin
+  -- 3. Ověření, že změna role testovacího admina je povolena, pokud existuje jiný admin
+  delete from public.attendance_profiles where user_key = 'user:second_admin';
   insert into public.attendance_profiles (user_key, username, display_name, role)
   values ('user:second_admin', 'second_admin', 'Second Admin', 'admin');
 
   perform public.admin_change_user_role('user:second_admin', 'employee');
   delete from public.attendance_profiles where user_key = 'user:second_admin';
 
-  raise notice '✓ TEST 11 PROŠEL: Systém spolehlivě brání degradaci i smazání posledního administrátora.';
+  raise notice '✓ TEST 11 PROŠEL: Ochrana administrátorských účtů funguje deterministicky bez zásahu do produkčních dat.';
 
   -- --------------------------------------------------------------------------
   -- TEST 12: TOMBSTONE RETENTION MINIMUM 30 DNÍ

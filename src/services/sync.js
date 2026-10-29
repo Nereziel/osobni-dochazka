@@ -13,6 +13,7 @@ import {
   getPendingSyncActions,
   removeSyncAction,
   updateSyncAction,
+  enqueueSyncAction,
   getUserDays,
   putUserDay,
   deleteUserDay
@@ -252,7 +253,7 @@ export function getLastSuccessfulPullAt(userKey) {
   try {
     if (typeof sessionStorage !== 'undefined') {
       const stored = sessionStorage.getItem(`${SS_LAST_PULL_PREFIX}${userKey}`);
-      if (stored) {
+      if (stored && Number.isFinite(Date.parse(stored))) {
         lastSuccessfulPullTimestamps.set(userKey, stored);
         return stored;
       }
@@ -265,7 +266,7 @@ export function getLastSuccessfulPullAt(userKey) {
 
 export function setLastSuccessfulPullAt(userKey, timestamp) {
   if (!userKey) return;
-  if (timestamp) {
+  if (timestamp && Number.isFinite(Date.parse(timestamp))) {
     lastSuccessfulPullTimestamps.set(userKey, timestamp);
     try {
       if (typeof sessionStorage !== 'undefined') {
@@ -286,8 +287,57 @@ export function setLastSuccessfulPullAt(userKey, timestamp) {
   }
 }
 
+export function resetUserSyncCursor(userKey) {
+  setLastSuccessfulPullAt(userKey, null);
+}
+
+/**
+ * Odvodí následující inkrementální synchronizační kurzor (watermark) výhradně ze serverových dat.
+ * NIKDY nepoužívá lokální hodiny klienta (new Date() / Date.now()), takže ani výrazně posunuté
+ * hodiny zařízení nezpůsobí přeskočení serverových změn z jiných zařízení.
+ */
+export function computeNextSyncCursor(remoteRows = [], currentCursor = null, serverTimestamps = []) {
+  let maxTimeMs = -Infinity;
+  let bestIso = null;
+
+  const considerTimestamp = (iso) => {
+    if (!iso || typeof iso !== 'string') return;
+    const ms = Date.parse(iso);
+    if (Number.isFinite(ms) && ms > maxTimeMs) {
+      maxTimeMs = ms;
+      bestIso = iso;
+    }
+  };
+
+  considerTimestamp(currentCursor);
+
+  if (Array.isArray(remoteRows)) {
+    for (const row of remoteRows) {
+      considerTimestamp(row?.updated_at);
+    }
+  }
+
+  if (Array.isArray(serverTimestamps)) {
+    for (const ts of serverTimestamps) {
+      considerTimestamp(ts);
+    }
+  }
+
+  return bestIso;
+}
+
 /**
  * Plná nebo inkrementální synchronizace: Outbox -> Supabase Fetch -> Conflict Resolution (Last-Write-Wins + Tombstones)
+ *
+ * Architektura LWW a hodin klienta:
+ * - Inkrementální kurzor (lastSuccessfulPullAt) je plně oddělen od hodin klienta a odvozuje se
+ *   výhradně z nejvyššího `updated_at` / `server_updated_at` vráceného serverem (s 15s bezpečnostním překryvem).
+ * - Na serveru RPC `upsert_attendance_day_lww` ořezává (clampuje) příchozí `updated_at` shora na `now()` serveru
+ *   (`least(incoming_updated_at, now())`), takže zařízení s hodinami posunutými do budoucnosti nemůže
+ *   zablokovat budoucí změny z jiných zařízení.
+ * - Zbývající omezení offline LWW: pokud má zařízení při offline editaci už existujícího dne systémový čas
+ *   výrazně zpožděný do minulosti oproti poslední serverové verzi téhož dne, server při konfliktu
+ *   upřednostní novější serverové razítko (`server_newer`).
  */
 export async function performFullSync(
   currentUser,
@@ -318,20 +368,22 @@ export async function performFullSync(
   }
 
   // 3. Dotaz na dny: plný vs inkrementální s 15s bezpečnostním překrytím (overlap window)
+  // Pokud bezpečný serverový kurzor není k dispozici, vždy se provede plný pull.
   const lastPull = getLastSuccessfulPullAt(currentUser.userKey);
-  const isIncremental = Boolean(options.incremental && lastPull);
+  const lastPullMs = lastPull ? Date.parse(lastPull) : NaN;
+  const isIncremental = Boolean(options.incremental && Number.isFinite(lastPullMs));
   let daysUrl = `/rest/v1/attendance_days?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*&order=date.asc`;
 
   if (isIncremental) {
-    const overlapIso = new Date(Date.parse(lastPull) - 15000).toISOString();
+    const overlapIso = new Date(lastPullMs - 15000).toISOString();
     daysUrl += `&updated_at=gte.${encodeURIComponent(overlapIso)}`;
   }
 
   const remoteRows = await supabaseRequest(daysUrl, {}, currentUser);
 
-  // Rychlá optimalizace: pokud při periodickém pollingu nepřibyla žádná změna na serveru
+  // Rychlá optimalizace: pokud při periodickém pollingu nepřibyla žádná změna na serveru,
+  // ponecháme dosavadní serverový kurzor beze změny (nikdy jej nepřepisujeme časem klienta!).
   if (isIncremental && (!remoteRows || remoteRows.length === 0) && !options.pushLocalDays) {
-    setLastSuccessfulPullAt(currentUser.userKey, new Date().toISOString());
     const localList = await getUserDays(currentUser.userKey);
     return {
       status: 'online',
@@ -370,8 +422,8 @@ export async function performFullSync(
 
     const rem = remoteMap.get(date);
     if (!rem) {
-      // Záznam na serveru zatím vůbec není -> nahrát jako nový
-      if (options.pushLocalDays) {
+      // Záznam na serveru zatím vůbec není (nebo při incremental pullu nebyl v diffu)
+      if (!isIncremental && options.pushLocalDays) {
         toUpload.push(dayRowForSupabase(localDay, currentUser.userKey, currentSettings));
       }
       mergedMap.set(date, localDay);
@@ -425,14 +477,29 @@ export async function performFullSync(
     await putUserDay(currentUser.userKey, remDay);
   }
 
+  const serverReturnedTimestamps = [];
+
   // Odeslat případné novější lokální záznamy přes bezpečnou atomickou LWW RPC
   if (toUpload.length > 0) {
     for (const row of toUpload) {
       try {
-        await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
+        const upRes = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
           method: 'POST',
           body: JSON.stringify({ p_day: row })
         }, currentUser);
+
+        if (upRes?.server_updated_at) {
+          serverReturnedTimestamps.push(upRes.server_updated_at);
+          // Pokud server ořízl příliš budoucí čas klienta na serverové now(), srovnáme lokální záznam
+          if (upRes.applied && mergedMap.has(row.date)) {
+            const mergedDay = mergedMap.get(row.date);
+            if (mergedDay && mergedDay.updatedAt !== upRes.server_updated_at) {
+              const normalizedDay = { ...mergedDay, updatedAt: upRes.server_updated_at };
+              mergedMap.set(row.date, normalizedDay);
+              await putUserDay(currentUser.userKey, normalizedDay);
+            }
+          }
+        }
       } catch (err) {
         console.warn(`LWW upload pro den ${row.date} selhal, řadím do outboxu:`, err);
         await enqueueSyncAction(currentUser.userKey, 'attendance_days', 'UPSERT', row);
@@ -440,7 +507,11 @@ export async function performFullSync(
     }
   }
 
-  setLastSuccessfulPullAt(currentUser.userKey, new Date().toISOString());
+  // Aktualizace kurzoru výhradně na základě serverových dat (nikoli hodin klienta)
+  const nextCursor = computeNextSyncCursor(remoteRows, lastPull, serverReturnedTimestamps);
+  if (nextCursor) {
+    setLastSuccessfulPullAt(currentUser.userKey, nextCursor);
+  }
 
   return {
     status: 'online',

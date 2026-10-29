@@ -276,20 +276,10 @@ async function deleteInvite(inv) {
   if (!confirm(`Opravdu smazat pozvánku ${inv.code}? Tuto akci nelze vrátit.`)) return;
 
   try {
-    try {
-      await supabaseRequest('/rest/v1/rpc/admin_delete_invite', {
-        method: 'POST',
-        body: JSON.stringify({ p_code: inv.code })
-      }, props.currentUser);
-    } catch (rpcErr) {
-      if (rpcErr.message?.includes('404') || rpcErr.message?.includes('not found') || rpcErr.status === 404) {
-        await supabaseRequest(`/rest/v1/attendance_invites?code=eq.${encodeURIComponent(inv.code)}`, {
-          method: 'DELETE'
-        }, props.currentUser);
-      } else {
-        throw rpcErr;
-      }
-    }
+    await supabaseRequest('/rest/v1/rpc/admin_delete_invite', {
+      method: 'POST',
+      body: JSON.stringify({ p_code: inv.code })
+    }, props.currentUser);
 
     emit('toast', `Pozvánka ${inv.code} byla smazána`, '✓');
     await loadInvites();

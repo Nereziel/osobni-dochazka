@@ -10,7 +10,6 @@ import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
 import {
   localDateKey,
   startOfMonth,
-  addMonths,
   todayKey,
   isWeekendDate,
   fmtWeekdayShort,
@@ -28,7 +27,7 @@ import {
 } from '../utils/attendance.js';
 import { cloneDeep } from '../utils/validation.js';
 import { holidayName } from '../utils/holidays.js';
-import { formatDuration, pad, formatClock } from '../utils/time.js';
+import { formatDuration, pad } from '../utils/time.js';
 
 const records = ref(new Map());
 const calendarMonth = ref(startOfMonth(new Date()));
@@ -60,10 +59,16 @@ export function useAttendance() {
     if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
       const row = dayRowForSupabase(updated, currentUser.userKey, settings);
       try {
-        await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
+        const upRes = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
           method: 'POST',
           body: JSON.stringify({ p_day: row })
         }, currentUser);
+        if (upRes?.applied && upRes?.server_updated_at && upRes.server_updated_at !== updated.updatedAt) {
+          updated.updatedAt = upRes.server_updated_at;
+          await putUserDay(userId, updated);
+          records.value.set(updated.date, updated);
+          records.value = new Map(records.value);
+        }
       } catch (err) {
         console.warn('Uložení dne do cloudu selhalo, zařazeno do outboxu:', err);
         await enqueueSyncAction(userId, 'attendance_days', 'UPSERT', row);

@@ -1146,12 +1146,20 @@ begin
     raise exception 'Chybí povinný atribut date.';
   end if;
 
-  v_incoming_updated_at := coalesce(
-    (p_day->>'updated_at')::timestamptz,
+  -- Ochrana proti hodinám klienta posunutým do budoucnosti (clock skew):
+  -- pokud klient pošle updated_at / deleted_at v budoucnosti oproti času serveru now(),
+  -- ořízneme (clamp) razítko na serverové now(), aby jedno zařízení se špatným časem
+  -- nemohlo zablokovat LWW přepisy z jiných zařízení.
+  v_incoming_updated_at := least(
+    coalesce((p_day->>'updated_at')::timestamptz, now()),
     now()
   );
 
-  v_incoming_deleted_at := (p_day->>'deleted_at')::timestamptz;
+  if p_day->>'deleted_at' is not null then
+    v_incoming_deleted_at := least((p_day->>'deleted_at')::timestamptz, now());
+  else
+    v_incoming_deleted_at := null;
+  end if;
 
   insert into public.attendance_days as d (
     user_key,
@@ -1259,14 +1267,14 @@ create policy "Secure read profiles"
     or public.is_admin()
   );
 
--- POZVÁNKY (attendance_invites): správce spravuje pozvánky
+-- POZVÁNKY (attendance_invites): pouze SELECT přes RLS pro správce (CREATE a DELETE jdou výhradně přes admin RPC)
 drop policy if exists "Admin manage invites" on public.attendance_invites;
-create policy "Admin manage invites"
+drop policy if exists "Admin read invites" on public.attendance_invites;
+create policy "Admin read invites"
   on public.attendance_invites
-  for all
+  for select
   to anon, authenticated
-  using (public.is_admin())
-  with check (public.is_admin());
+  using (public.is_admin());
 
 -- DNY DOCHÁZKY (attendance_days): pouze SELECT přes RLS (zápis je přes RPC)
 drop policy if exists "Secure read own attendance days" on public.attendance_days;
@@ -1296,10 +1304,9 @@ revoke insert, update, delete on public.attendance_profiles from public, anon, a
 grant select on public.attendance_days to anon, authenticated;
 revoke insert, update, delete on public.attendance_days from public, anon, authenticated;
 
--- attendance_invites: SELECT a administrátorská správa
-grant select, delete on public.attendance_invites to anon, authenticated;
-revoke insert, update on public.attendance_invites from public, anon;
-grant insert, update, delete on public.attendance_invites to authenticated;
+-- attendance_invites: POUZE SELECT pro REST klienty (CREATE a DELETE jdou přes admin_create_invite / admin_delete_invite)
+grant select on public.attendance_invites to anon, authenticated;
+revoke insert, update, delete on public.attendance_invites from public, anon, authenticated;
 
 -- v_monthly_attendance_summary: POUZE SELECT pro REST klienty (zabezpečeno přes security_invoker = true a underlying RLS)
 grant select on public.v_monthly_attendance_summary to anon, authenticated;

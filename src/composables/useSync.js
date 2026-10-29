@@ -1,6 +1,6 @@
 import { ref } from 'vue';
-import { performFullSync } from '../services/sync.js';
-import { getPendingSyncActions } from '../services/indexedDb.js';
+import { performFullSync, resetUserSyncCursor } from '../services/sync.js';
+import { getPendingSyncActions, clearUserDays } from '../services/indexedDb.js';
 import { isSupabaseConfigured } from '../services/supabase.js';
 
 const rawEnvInterval = typeof import.meta !== 'undefined' && import.meta?.env?.VITE_SYNC_INTERVAL_MS
@@ -11,14 +11,60 @@ export const FOREGROUND_SYNC_INTERVAL_MS = !Number.isNaN(rawEnvInterval) && rawE
   ? rawEnvInterval
   : 10000;
 
+export const SESSION_VERIFY_INTERVAL_MS = 300000; // 5 minut – lehké periodické ověření platnosti session
+export const BOOT_SYNC_SKIP_COOLDOWN_MS = 15000; // 15 sekund – ochrana proti F5 datovému syncu (nikdy nepřeskakuje verifySession!)
+export const BOOT_INCREMENTAL_WINDOW_MS = 300000; // 5 minut – okno pro lehký inkrementální sync po reloadu
+
+const bootSyncTimestamps = new Map();
+
+export function getBootSyncTimestamp(userKey) {
+  if (!userKey) return 0;
+  if (bootSyncTimestamps.has(userKey)) {
+    return bootSyncTimestamps.get(userKey);
+  }
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = Number(sessionStorage.getItem(`dochazka_boot_sync_ts_${userKey}`) || 0);
+      if (stored > 0) {
+        bootSyncTimestamps.set(userKey, stored);
+        return stored;
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return 0;
+}
+
+export function setBootSyncTimestamp(userKey, ts = Date.now()) {
+  if (!userKey) return;
+  if (ts && ts > 0) {
+    bootSyncTimestamps.set(userKey, ts);
+  } else {
+    bootSyncTimestamps.delete(userKey);
+  }
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      if (ts && ts > 0) {
+        sessionStorage.setItem(`dochazka_boot_sync_ts_${userKey}`, String(ts));
+      } else {
+        sessionStorage.removeItem(`dochazka_boot_sync_ts_${userKey}`);
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
 const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error'
 const syncError = ref(null);
 const pendingCount = ref(0);
 
-// Řízení synchronizace a 10s foreground pollingu
+// Řízení synchronizace a 10s foreground pollingu + 5min ověření session
 let syncInProgress = false;
 let pendingFollowupSync = false;
 let pollingTimer = null;
+let sessionVerifyTimer = null;
 let activeUser = null;
 let activeSettings = null;
 let onSyncCompletedCallback = null;
@@ -38,10 +84,6 @@ function getActiveSettings() {
 }
 
 export function useSync() {
-  function updateSyncSettings(newSettings) {
-    activeSettings = newSettings;
-  }
-
   async function refreshPendingCount(userId) {
     if (!userId) {
       pendingCount.value = 0;
@@ -53,7 +95,42 @@ export function useSync() {
   }
 
   /**
-   * Spustí jeden krok lehkého foreground syncu
+   * Lehké periodické ověření platnosti session (každých 5 minut v popředí)
+   */
+  async function triggerPeriodicSessionVerify() {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      stopPollingTimer();
+      return true;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      stopPollingTimer();
+      return true;
+    }
+    if (!activeUser?.userKey || !isSupabaseConfigured()) {
+      stopPollingTimer();
+      return true;
+    }
+    if (typeof onVerifySessionCallback !== 'function') {
+      return true;
+    }
+
+    try {
+      const isValid = await onVerifySessionCallback();
+      if (!isValid) {
+        stopPollingTimer();
+        if (typeof onInvalidSessionCallback === 'function') {
+          onInvalidSessionCallback();
+        }
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  }
+
+  /**
+   * Spustí jeden krok lehkého foreground syncu (každých 10 sekund, bez volání verifySession)
    */
   async function triggerPeriodicSync() {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
@@ -88,12 +165,20 @@ export function useSync() {
     pollingTimer = setInterval(() => {
       triggerPeriodicSync();
     }, FOREGROUND_SYNC_INTERVAL_MS);
+
+    sessionVerifyTimer = setInterval(() => {
+      triggerPeriodicSessionVerify();
+    }, SESSION_VERIFY_INTERVAL_MS);
   }
 
   function stopPollingTimer() {
     if (pollingTimer) {
       clearInterval(pollingTimer);
       pollingTimer = null;
+    }
+    if (sessionVerifyTimer) {
+      clearInterval(sessionVerifyTimer);
+      sessionVerifyTimer = null;
     }
   }
 
@@ -267,6 +352,118 @@ export function useSync() {
     }
   }
 
+  /**
+   * Jednotný startovací (boot/reload) flow pro přihlášeného uživatele:
+   * 1. VŽDY nejprve provede verifySession() – ochrana proti F5 nikdy nepřeskakuje ověření session.
+   * 2. Při neplatné session okamžitě provede tichý lokální logout bez confirmu a otevře login modal.
+   * 3. Teprve po úspěšném ověření session rozhodne, zda:
+   *    - přeskočit okamžitý datový sync (< 15 s od posledního syncu a prázdný outbox),
+   *    - provést incremental sync (< 5 min od posledního syncu a prázdný outbox),
+   *    - provést full sync.
+   */
+  async function runBootSyncFlow({
+    currentUser,
+    settingsGetter,
+    verifySessionFn,
+    onInvalidSessionFn,
+    onSyncCompletedFn,
+    triggerFullSyncFn,
+    startServiceFn
+  }) {
+    if (!isSupabaseConfigured() || !currentUser?.userKey) {
+      return { verified: false, mode: 'none' };
+    }
+
+    const isValid = await verifySessionFn();
+    if (!isValid) {
+      stopForegroundSync();
+      if (typeof onInvalidSessionFn === 'function') {
+        onInvalidSessionFn();
+      }
+      return { verified: false, mode: 'invalid_session' };
+    }
+
+    const userKey = currentUser.userKey;
+    const now = Date.now();
+    const lastBootSync = getBootSyncTimestamp(userKey);
+    const elapsedSinceLastBoot = lastBootSync > 0 ? now - lastBootSync : Infinity;
+    await refreshPendingCount(userKey);
+
+    let mode = 'full';
+    if (elapsedSinceLastBoot < BOOT_SYNC_SKIP_COOLDOWN_MS && pendingCount.value === 0) {
+      mode = 'skip';
+    } else if (elapsedSinceLastBoot < BOOT_INCREMENTAL_WINDOW_MS && pendingCount.value === 0) {
+      mode = 'incremental';
+      const res = await sync(currentUser, settingsGetter, {
+        pushLocalDays: false,
+        incremental: true,
+        fetchProfile: false
+      });
+      if (typeof onSyncCompletedFn === 'function' && res) {
+        await onSyncCompletedFn(res.recordsMap, res.serverProfile);
+      }
+      setBootSyncTimestamp(userKey, Date.now());
+    } else {
+      mode = 'full';
+      if (typeof triggerFullSyncFn === 'function') {
+        await triggerFullSyncFn();
+      } else {
+        const res = await sync(currentUser, settingsGetter, {
+          pushLocalDays: false,
+          incremental: false,
+          fetchProfile: true
+        });
+        if (typeof onSyncCompletedFn === 'function' && res) {
+          await onSyncCompletedFn(res.recordsMap, res.serverProfile);
+        }
+        setBootSyncTimestamp(userKey, Date.now());
+      }
+    }
+
+    if (typeof startServiceFn === 'function') {
+      startServiceFn();
+    }
+
+    return { verified: true, mode };
+  }
+
+  /**
+   * Reset lokálních dat docházky:
+   * - smaže lokální attendance dny v IndexedDB,
+   * - vymaže inkrementální synchronizační kurzor (lastSuccessfulPullAt) i boot timestamp,
+   * - pokud je uživatel online a přihlášený, následně provede full pull ze serveru.
+   */
+  async function runResetLocalDataFlow({
+    currentUser,
+    settingsGetter,
+    loadRecordsFn,
+    onSyncCompletedFn
+  }) {
+    const userKey = currentUser?.userKey || 'user:local';
+    await clearUserDays(userKey);
+    resetUserSyncCursor(userKey);
+    setBootSyncTimestamp(userKey, 0);
+
+    if (typeof loadRecordsFn === 'function') {
+      await loadRecordsFn(userKey);
+    }
+
+    if (isSupabaseConfigured() && currentUser?.userKey && (typeof navigator === 'undefined' || navigator.onLine)) {
+      const res = await sync(currentUser, settingsGetter, {
+        pushLocalDays: false,
+        incremental: false,
+        fetchProfile: true
+      });
+      if (typeof onSyncCompletedFn === 'function' && res) {
+        await onSyncCompletedFn(res.recordsMap, res.serverProfile);
+      }
+      setBootSyncTimestamp(userKey, Date.now());
+      return { status: 'pulled', result: res };
+    }
+
+    return { status: 'cleared' };
+  }
+
   return {
     syncState,
     syncError,
@@ -276,6 +473,8 @@ export function useSync() {
     startForegroundSync,
     stopForegroundSync,
     triggerPeriodicSync,
-    updateSyncSettings
+    triggerPeriodicSessionVerify,
+    runBootSyncFlow,
+    runResetLocalDataFlow
   };
 }

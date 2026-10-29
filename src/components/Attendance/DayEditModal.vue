@@ -193,13 +193,12 @@
 
 <script setup>
 import { ref, computed } from 'vue';
-import { fmtDayFull, parseDateKey, localDateKey } from '../../utils/dates.js';
+import { fmtDayFull, localDateKey } from '../../utils/dates.js';
 import { holidayName } from '../../utils/holidays.js';
 import {
   allowsWork,
   dayMetrics,
   defaultHoursForDate,
-  calculatedBreak,
   isScheduledWorkday
 } from '../../utils/attendance.js';
 import { cloneDeep } from '../../utils/validation.js';
@@ -306,11 +305,6 @@ const breakHintText = computed(() => {
     return `Směna trvá ${formatDuration(presenceMinutes.value)} – ze zákona odečteno ${defaultAutoBreakMinutes.value} min na jídlo a oddech`;
   }
   return `Směna trvá jen ${formatDuration(presenceMinutes.value)} (pod ${Math.round(breakAfterThreshold.value / 60)} h) – zákonná přestávka se nestrhává`;
-});
-
-const autoBreakLabel = computed(() => {
-  const brk = calculatedBreak(formData.value, props.settings);
-  return `Automaticky ${brk} min`;
 });
 
 const previewMetrics = computed(() => {

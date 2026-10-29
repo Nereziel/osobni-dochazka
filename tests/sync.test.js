@@ -4,7 +4,11 @@ import {
   localDayFromSupabaseRow,
   coalesceOutboxActions,
   drainOutboxQueue,
-  performFullSync
+  performFullSync,
+  getLastSuccessfulPullAt,
+  setLastSuccessfulPullAt,
+  resetUserSyncCursor,
+  computeNextSyncCursor
 } from '../src/services/sync.js';
 import * as supabaseService from '../src/services/supabase.js';
 import * as idbService from '../src/services/indexedDb.js';
@@ -19,6 +23,7 @@ describe('Real Integration Tests for Sync Engine', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetUserSyncCursor(currentUser.userKey);
   });
 
   it('converts local day to Supabase row format including tombstones', () => {
@@ -440,5 +445,138 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(rpcEndpoint).toBe('/rest/v1/rpc/update_own_settings');
     expect(rpcBody).toEqual({ p_settings: { work_start: '07:00', work_end: '16:00' } });
     expect(removeActionSpy).toHaveBeenCalledWith(101);
+  });
+
+  it('Test 13 – incremental cursor derives strictly from server updated_at, never from client clock', async () => {
+    const rows = [
+      { date: '2026-10-20', updated_at: '2026-10-20T09:00:00.000Z' },
+      { date: '2026-10-21', updated_at: '2026-10-21T14:30:00.000Z' }
+    ];
+    const cursor = computeNextSyncCursor(rows, null, []);
+    expect(cursor).toBe('2026-10-21T14:30:00.000Z');
+
+    // Prázdný incremental pull nesmí posunout kurzor na čas klienta
+    const unchanged = computeNextSyncCursor([], cursor, []);
+    expect(unchanged).toBe('2026-10-21T14:30:00.000Z');
+  });
+
+  it('Test 14 – clock-skew scenario: client clock is far ahead (+5 hours), remote change on another device is NOT missed by incremental sync', async () => {
+    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
+    vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
+    const putDaySpy = vi.spyOn(idbService, 'putUserDay').mockResolvedValue();
+
+    // Simulace: lokální hodiny klienta ukazují 15:00 (o 5 hodin napřed oproti reálnému serverovému času 10:00)
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-29T15:00:00.000Z'));
+
+    let serverRows = [
+      {
+        user_key: currentUser.userKey,
+        date: '2026-10-28',
+        type: 'work',
+        start_time: '06:30',
+        end_time: '15:00',
+        deleted_at: null,
+        updated_at: '2026-10-29T10:00:00.000Z' // Skutečný čas serveru (10:00)
+      }
+    ];
+
+    let localStore = [];
+    vi.spyOn(idbService, 'getUserDays').mockImplementation(async () => [...localStore]);
+    putDaySpy.mockImplementation(async (_uk, day) => {
+      const idx = localStore.findIndex(d => d.date === day.date);
+      if (idx >= 0) localStore[idx] = day;
+      else localStore.push(day);
+    });
+
+    const requestedUrls = [];
+    vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async (url) => {
+      if (url.includes('attendance_profiles')) return [];
+      if (url.includes('attendance_days')) {
+        requestedUrls.push(url);
+        const match = url.match(/updated_at=gte\.([^&]+)/);
+        if (match) {
+          const thresholdMs = Date.parse(decodeURIComponent(match[1]));
+          return serverRows.filter(r => Date.parse(r.updated_at) >= thresholdMs);
+        }
+        return [...serverRows];
+      }
+      return [];
+    });
+
+    try {
+      // 1. První full sync (klient má hodiny 15:00, ale server vrací řádek s updated_at 10:00)
+      await performFullSync(currentUser, DEFAULT_SETTINGS, {
+        pushLocalDays: false,
+        incremental: false,
+        fetchProfile: false
+      });
+
+      // Kurzor musí být 10:00 (ze serveru), NIKOLI 15:00 (z hodin klienta)!
+      expect(getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-10-29T10:00:00.000Z');
+
+      // 2. Prázdný incremental sync v 15:00:10 klientského času -> kurzor musí zůstat 10:00:00
+      vi.setSystemTime(new Date('2026-10-29T15:00:10.000Z'));
+      await performFullSync(currentUser, DEFAULT_SETTINGS, {
+        pushLocalDays: false,
+        incremental: true,
+        fetchProfile: false
+      });
+      expect(getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-10-29T10:00:00.000Z');
+
+      // 3. Na jiném zařízení vznikne změna na serveru v reálném serverovém čase 10:02:00
+      // (což je stále o skoro 5 hodin "dříve" než špatně nastavené hodiny prvního klienta 15:00:20!)
+      serverRows.push({
+        user_key: currentUser.userKey,
+        date: '2026-10-29',
+        type: 'homeOffice',
+        start_time: '07:00',
+        end_time: '15:30',
+        deleted_at: null,
+        updated_at: '2026-10-29T10:02:00.000Z'
+      });
+
+      // 4. Následující incremental sync změnu z 10:02:00 spolehlivě najde a stáhne!
+      vi.setSystemTime(new Date('2026-10-29T15:00:20.000Z'));
+      const incRes = await performFullSync(currentUser, DEFAULT_SETTINGS, {
+        pushLocalDays: false,
+        incremental: true,
+        fetchProfile: false
+      });
+
+      expect(incRes.recordsMap.has('2026-10-29')).toBe(true);
+      expect(incRes.recordsMap.get('2026-10-29').type).toBe('homeOffice');
+      expect(getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-10-29T10:02:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Test 15 – when no safe server cursor exists (e.g. after resetUserSyncCursor), incremental option safely falls back to full pull', async () => {
+    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
+    vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
+    vi.spyOn(idbService, 'getUserDays').mockResolvedValue([]);
+    vi.spyOn(idbService, 'putUserDay').mockResolvedValue();
+
+    setLastSuccessfulPullAt(currentUser.userKey, '2026-10-29T10:00:00.000Z');
+    resetUserSyncCursor(currentUser.userKey);
+    expect(getLastSuccessfulPullAt(currentUser.userKey)).toBeNull();
+
+    let queriedUrl = '';
+    vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async (url) => {
+      if (url.includes('attendance_days')) {
+        queriedUrl = url;
+        return [];
+      }
+      return [];
+    });
+
+    await performFullSync(currentUser, DEFAULT_SETTINGS, {
+      pushLocalDays: false,
+      incremental: true,
+      fetchProfile: false
+    });
+
+    expect(queriedUrl).not.toContain('updated_at=gte.');
   });
 });

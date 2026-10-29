@@ -22,21 +22,45 @@ export function useAuth() {
   const isAuthenticated = computed(() => Boolean(currentUser.value?.userKey && currentUser.value?.sessionToken));
   const isAdmin = computed(() => currentUser.value?.role === 'admin');
 
+  function isRememberedSession() {
+    try {
+      return typeof localStorage !== 'undefined' && localStorage.getItem(LS_REMEMBER_KEY) !== 'false';
+    } catch {
+      return true;
+    }
+  }
+
   function saveUserSession(user, remember = true) {
     currentUser.value = user;
-    if (user) {
-      if (remember) {
-        localStorage.setItem(LS_REMEMBER_KEY, 'true');
-        localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
-        sessionStorage.removeItem(LS_USER_KEY);
+    try {
+      if (user) {
+        if (remember) {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(LS_REMEMBER_KEY, 'true');
+            localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+          }
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.removeItem(LS_USER_KEY);
+          }
+        } else {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(LS_REMEMBER_KEY, 'false');
+            localStorage.removeItem(LS_USER_KEY);
+          }
+          if (typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+          }
+        }
       } else {
-        localStorage.setItem(LS_REMEMBER_KEY, 'false');
-        localStorage.removeItem(LS_USER_KEY);
-        sessionStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+        if (typeof localStorage !== 'undefined') {
+          localStorage.removeItem(LS_USER_KEY);
+        }
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.removeItem(LS_USER_KEY);
+        }
       }
-    } else {
-      localStorage.removeItem(LS_USER_KEY);
-      sessionStorage.removeItem(LS_USER_KEY);
+    } catch {
+      // ignore storage errors
     }
   }
 
@@ -171,18 +195,13 @@ export function useAuth() {
       ...currentUser.value,
       displayName: cleanName
     };
-    saveUserSession(currentUser.value, localStorage.getItem(LS_REMEMBER_KEY) !== 'false');
+    saveUserSession(currentUser.value, isRememberedSession());
     return cleanName;
   }
 
   function logout() {
     const priorUser = currentUser.value;
     saveUserSession(null);
-    try {
-      localStorage.removeItem('dochazka_biometrics_cred_v1');
-    } catch {
-      // Ignorovat případnou chybu přístupu k storage
-    }
 
     if (isSupabaseConfigured() && priorUser?.sessionToken) {
       supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
@@ -198,7 +217,7 @@ export function useAuth() {
     if (!isSupabaseConfigured() || !currentUser.value?.sessionToken) return true;
 
     // Pokud je zařízení offline, neodlašujeme uživatele!
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return true;
     }
 
@@ -219,13 +238,13 @@ export function useAuth() {
           role: res.role,
           displayName: res.display_name || currentUser.value.displayName
         };
-        saveUserSession(currentUser.value, localStorage.getItem(LS_REMEMBER_KEY) !== 'false');
+        saveUserSession(currentUser.value, isRememberedSession());
       }
       return true;
     } catch (err) {
       // Rozlišení síťové/offline chyby od neplatné session (401/403)
       const isNetworkError =
-        (typeof navigator !== 'undefined' && !navigator.onLine) ||
+        (typeof navigator !== 'undefined' && navigator.onLine === false) ||
         !err.status ||
         err.name === 'TypeError' ||
         err.message?.includes('fetch') ||

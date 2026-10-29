@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { useSync, FOREGROUND_SYNC_INTERVAL_MS } from '../src/composables/useSync.js';
+import {
+  useSync,
+  FOREGROUND_SYNC_INTERVAL_MS,
+  SESSION_VERIFY_INTERVAL_MS,
+  setBootSyncTimestamp
+} from '../src/composables/useSync.js';
 import * as syncService from '../src/services/sync.js';
 import * as supabaseService from '../src/services/supabase.js';
 import * as idbService from '../src/services/indexedDb.js';
@@ -238,25 +243,144 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     stopForegroundSync();
   });
 
-  it('uses updated settings on subsequent periodic sync without stale closure', async () => {
+  it('uses updated settings on subsequent periodic sync via getter () => settings.value without stale closure', async () => {
     const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
       status: 'online',
       recordsMap: new Map()
     });
 
-    const { startForegroundSync, stopForegroundSync, updateSyncSettings } = useSync();
-    startForegroundSync(currentUser, currentSettings);
+    let liveSettings = { workStart: '06:30', workEnd: '15:00', dailyTargetMinutes: 480 };
+    const { startForegroundSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, () => liveSettings);
 
     await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
-    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, expect.any(Object));
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, liveSettings, expect.any(Object));
 
     const updatedSettings = { workStart: '07:00', workEnd: '15:30', dailyTargetMinutes: 480 };
-    updateSyncSettings(updatedSettings);
+    liveSettings = updatedSettings;
 
     await vi.advanceTimersByTimeAsync(FOREGROUND_SYNC_INTERVAL_MS);
     expect(syncSpy).toHaveBeenLastCalledWith(currentUser, updatedSettings, expect.any(Object));
 
     stopForegroundSync();
+  });
+
+  it('periodic session verification is NOT triggered every 10s, only every 5 minutes (SESSION_VERIFY_INTERVAL_MS)', async () => {
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+    const fakeVerify = vi.fn().mockResolvedValue(true);
+    const fakeInvalid = vi.fn();
+
+    const { startForegroundSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, () => currentSettings, null, {
+      onVerifySession: fakeVerify,
+      onInvalidSession: fakeInvalid
+    });
+
+    // Během 60 sekund (6x 10s sync) se verifySession NESMÍ zavolat ani jednou
+    await vi.advanceTimersByTimeAsync(6 * FOREGROUND_SYNC_INTERVAL_MS);
+    expect(syncSpy).toHaveBeenCalledTimes(6);
+    expect(fakeVerify).not.toHaveBeenCalled();
+
+    // Po dosažení 5 minut (300 000 ms) se verifySession zavolá právě 1x
+    await vi.advanceTimersByTimeAsync(SESSION_VERIFY_INTERVAL_MS - 6 * FOREGROUND_SYNC_INTERVAL_MS);
+    expect(fakeVerify).toHaveBeenCalledTimes(1);
+    expect(fakeInvalid).not.toHaveBeenCalled();
+
+    // Pokud při dalším 5min ověření session selže, provede se okamžitý force logout bez confirmu
+    fakeVerify.mockResolvedValueOnce(false);
+    await vi.advanceTimersByTimeAsync(SESSION_VERIFY_INTERVAL_MS);
+    expect(fakeVerify).toHaveBeenCalledTimes(2);
+    expect(fakeInvalid).toHaveBeenCalledTimes(1);
+
+    stopForegroundSync();
+  });
+
+  it('rapid reload (F5 within 15s cooldown) STILL executes verifySession() before deciding to skip data sync', async () => {
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+    const fakeVerify = vi.fn().mockResolvedValue(true);
+    const fakeInvalid = vi.fn();
+    const fakeStartService = vi.fn();
+
+    const { runBootSyncFlow } = useSync();
+
+    // Simulace, že před 2 sekundami proběhl plný sync
+    setBootSyncTimestamp(currentUser.userKey, Date.now() - 2000);
+
+    const resValid = await runBootSyncFlow({
+      currentUser,
+      settingsGetter: () => currentSettings,
+      verifySessionFn: fakeVerify,
+      onInvalidSessionFn: fakeInvalid,
+      startServiceFn: fakeStartService
+    });
+
+    // verifySession() MUSÍ proběhnout i při rychlém reloadu, ale datový sync se přeskočí
+    expect(fakeVerify).toHaveBeenCalledTimes(1);
+    expect(resValid.verified).toBe(true);
+    expect(resValid.mode).toBe('skip');
+    expect(syncSpy).not.toHaveBeenCalled();
+    expect(fakeStartService).toHaveBeenCalledTimes(1);
+
+    // Pokud byla session mezitím na jiném zařízení revokována, rychlý reload ji okamžitě odhalí a odhlásí bez confirmu
+    fakeVerify.mockResolvedValueOnce(false);
+    const confirmSpy = vi.fn();
+    globalThis.confirm = confirmSpy;
+
+    const resRevoked = await runBootSyncFlow({
+      currentUser,
+      settingsGetter: () => currentSettings,
+      verifySessionFn: fakeVerify,
+      onInvalidSessionFn: fakeInvalid,
+      startServiceFn: fakeStartService
+    });
+
+    expect(fakeVerify).toHaveBeenCalledTimes(2);
+    expect(resRevoked.verified).toBe(false);
+    expect(resRevoked.mode).toBe('invalid_session');
+    expect(fakeInvalid).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('reset local data resets incremental sync cursor and immediately performs full pull when online', async () => {
+    const clearSpy = vi.spyOn(idbService, 'clearUserDays').mockResolvedValue();
+    const resetCursorSpy = vi.spyOn(syncService, 'resetUserSyncCursor');
+    const pulledMap = new Map([['2026-10-29', { date: '2026-10-29', type: 'work', start: '06:30', end: '15:00' }]]);
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: pulledMap,
+      serverProfile: { user_key: currentUser.userKey, display_name: 'Martin' }
+    });
+
+    // Nastavíme existující inkrementální kurzor
+    syncService.setLastSuccessfulPullAt(currentUser.userKey, '2026-10-29T08:00:00.000Z');
+    expect(syncService.getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-10-29T08:00:00.000Z');
+
+    const loadRecordsFn = vi.fn().mockResolvedValue();
+    const onSyncCompletedFn = vi.fn().mockResolvedValue();
+
+    const { runResetLocalDataFlow } = useSync();
+    const res = await runResetLocalDataFlow({
+      currentUser,
+      settingsGetter: () => currentSettings,
+      loadRecordsFn,
+      onSyncCompletedFn
+    });
+
+    expect(clearSpy).toHaveBeenCalledWith(currentUser.userKey);
+    expect(resetCursorSpy).toHaveBeenCalledWith(currentUser.userKey);
+    expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
+      pushLocalDays: false,
+      incremental: false,
+      fetchProfile: true
+    });
+    expect(onSyncCompletedFn).toHaveBeenCalledWith(pulledMap, expect.any(Object));
+    expect(res.status).toBe('pulled');
   });
 });
 

@@ -195,7 +195,7 @@ import { useOnlineStatus } from './composables/useOnlineStatus.js';
 import { useAuth } from './composables/useAuth.js';
 import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
-import { useSync } from './composables/useSync.js';
+import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
 import { openDatabase, clearUserDays, putUserSettings } from './services/indexedDb.js';
 import { supabaseRequest, isSupabaseConfigured } from './services/supabase.js';
@@ -239,7 +239,8 @@ const {
   sync,
   startForegroundSync,
   stopForegroundSync,
-  updateSyncSettings
+  runBootSyncFlow,
+  runResetLocalDataFlow
 } = useSync();
 
 // State
@@ -295,32 +296,10 @@ const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value
 
 // Ochrana proti držení F5 / spamování reloadu a nadměrnému čerpání limitu Supabase
 const RELOAD_KEY_COOLDOWN_MS = 4000;
-const BOOT_SYNC_SKIP_COOLDOWN_MS = 15000;
-const BOOT_INCREMENTAL_WINDOW_MS = 300000; // 5 minut
 const MANUAL_SYNC_COOLDOWN_MS = 5000;
 const REG_STATUS_CACHE_TTL_MS = 30000;
 
 let lastManualSyncAt = 0;
-
-function getBootSyncTimestamp(userKey) {
-  try {
-    return Number(sessionStorage.getItem(`dochazka_boot_sync_ts_${userKey}`) || 0);
-  } catch {
-    return 0;
-  }
-}
-
-function setBootSyncTimestamp(userKey, ts = Date.now()) {
-  try {
-    if (ts) {
-      sessionStorage.setItem(`dochazka_boot_sync_ts_${userKey}`, String(ts));
-    } else {
-      sessionStorage.removeItem(`dochazka_boot_sync_ts_${userKey}`);
-    }
-  } catch {
-    // ignore storage errors
-  }
-}
 
 function handleKeyDownReloadGuard(e) {
   const key = (e.key || '').toLowerCase();
@@ -368,34 +347,15 @@ onMounted(async () => {
       openRegisterModal(inviteParam.trim().toUpperCase());
       showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
     } else if (isSupabaseConfigured() && currentUser.value) {
-      const now = Date.now();
-      const lastBootSync = getBootSyncTimestamp(userKey);
-      const elapsedSinceLastBoot = now - lastBootSync;
-
-      if (elapsedSinceLastBoot < BOOT_SYNC_SKIP_COOLDOWN_MS && pendingCount.value === 0) {
-        // Ochrana proti F5 / reload spamu: pokud proběhl plný start před méně než 15 s a nic nečeká v outboxu,
-        // přeskočíme okamžité dotazy na server a pouze zapneme standardní 10s periodický interval.
-        startSyncService();
-      } else {
-        const isValid = await verifySession();
-        if (isValid && currentUser.value) {
-          if (elapsedSinceLastBoot < BOOT_INCREMENTAL_WINDOW_MS && pendingCount.value === 0) {
-            // V témže okně již nedávno proběhl plný sync -> stačí lehký inkrementální dotaz
-            const res = await sync(currentUser.value, settings.value, {
-              pushLocalDays: false,
-              incremental: true,
-              fetchProfile: false
-            });
-            if (res?.recordsMap) records.value = res.recordsMap;
-            setBootSyncTimestamp(userKey, Date.now());
-          } else {
-            await triggerSync(false, { isBoot: true });
-          }
-          startSyncService();
-        } else {
-          handleInvalidSession();
-        }
-      }
+      await runBootSyncFlow({
+        currentUser: currentUser.value,
+        settingsGetter: () => settings.value,
+        verifySessionFn: verifySession,
+        onInvalidSessionFn: handleInvalidSession,
+        onSyncCompletedFn: handleSyncUpdate,
+        triggerFullSyncFn: () => triggerSync(false, { isBoot: true }),
+        startServiceFn: startSyncService
+      });
     } else if (isSupabaseConfigured() && !currentUser.value) {
       openLoginModal();
     }
@@ -417,7 +377,6 @@ async function applyServerProfile(serverProfile) {
   const newSettings = settingsFromProfileRow(serverProfile);
   if (newSettings) {
     settings.value = newSettings;
-    updateSyncSettings(newSettings);
     await putUserSettings(currentUser.value.userKey, newSettings);
     applyTheme();
   }
@@ -466,7 +425,7 @@ async function triggerSync(pushLocalDays = true, options = {}) {
   }
 
   try {
-    const res = await sync(currentUser.value, settings.value, { pushLocalDays });
+    const res = await sync(currentUser.value, () => settings.value, { pushLocalDays });
     const finishedAt = Date.now();
     lastManualSyncAt = finishedAt;
     setBootSyncTimestamp(currentUser.value.userKey, finishedAt);
@@ -750,14 +709,12 @@ async function handleUpdateProfileName(newName) {
 
 async function handleSaveSettings(newSettings) {
   const userKey = currentUser.value?.userKey || 'user:local';
-  updateSyncSettings(newSettings);
   await saveSettings(userKey, newSettings, currentUser.value);
   showToast('Nastavení bylo uloženo', '✓');
 }
 
 function handleThemeChange(newTheme) {
   settings.value.theme = newTheme;
-  updateSyncSettings(settings.value);
   applyTheme(newTheme);
   const userKey = currentUser.value?.userKey || 'user:local';
   saveSettings(userKey, settings.value, currentUser.value, true);
@@ -812,10 +769,21 @@ async function handleImportBackup(file) {
 
 async function handleResetLocalData() {
   if (!confirm('Opravdu vymazat veškerá lokální data docházky v tomto zařízení?')) return;
-  const userKey = currentUser.value?.userKey || 'user:local';
-  await clearUserDays(userKey);
-  await loadRecords(userKey);
-  showToast('Lokální data vymazána', '🗑️');
+  try {
+    const res = await runResetLocalDataFlow({
+      currentUser: currentUser.value,
+      settingsGetter: () => settings.value,
+      loadRecordsFn: loadRecords,
+      onSyncCompletedFn: handleSyncUpdate
+    });
+    if (res?.status === 'pulled') {
+      showToast('Lokální data vymazána a znovu načtena ze serveru', '✓');
+    } else {
+      showToast('Lokální data vymazána', '🗑️');
+    }
+  } catch (err) {
+    showToast(err.message || 'Obnovení po výmazu selhalo', '⚠️');
+  }
 }
 
 function openPwaHelp() {

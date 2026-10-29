@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { settingsFromProfileRow } from '../src/services/sync.js';
+import { useAuth } from '../src/composables/useAuth.js';
 
 describe('Security & Custom Session-Based Auth Authorization Tests (Clean Architecture)', () => {
   // Databázové tabulky simulující čisté PostgreSQL schema:
@@ -861,9 +864,73 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       expect(res401).toBe(false);
       expect(loggedOut).toBe(true);
     });
+
+    it('Reálná useAuth.verifySession(): síťová chyba neodhlásí uživatele, neplatná session provede force logout bez confirm()', async () => {
+      globalThis.window = {
+        DOCHAZKA_CONFIG: {
+          supabaseUrl: 'https://test.supabase.co',
+          supabaseAnonKey: 'anon-key-test'
+        }
+      };
+      const origNavigator = globalThis.navigator;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: { onLine: true },
+        configurable: true,
+        writable: true
+      });
+
+      const { currentUser, verifySession } = useAuth();
+
+      currentUser.value = {
+        userKey: 'user:alice',
+        username: 'alice',
+        displayName: 'Alice',
+        role: 'employee',
+        sessionToken: 'tok_real_123'
+      };
+
+      const confirmSpy = vi.fn();
+      globalThis.confirm = confirmSpy;
+
+      // 1. Síťová chyba (Failed to fetch) -> zachová currentUser, vrátí true
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'));
+      const netRes = await verifySession();
+      expect(netRes).toBe(true);
+      expect(currentUser.value).not.toBeNull();
+      expect(confirmSpy).not.toHaveBeenCalled();
+
+      // 2. Server vrátí { success: false, error: 'invalid_session' } -> okamžitý force logout bez confirm()
+      fetchSpy.mockImplementation(async (url) => {
+        if (String(url).includes('verify_attendance_session')) {
+          return {
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({ success: false, error: 'invalid_session', message: 'Session expirovala' })
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ success: true })
+        };
+      });
+
+      const invalidRes = await verifySession();
+      expect(invalidRes).toBe(false);
+      expect(currentUser.value).toBeNull();
+      expect(confirmSpy).not.toHaveBeenCalled();
+
+      delete globalThis.window;
+      Object.defineProperty(globalThis, 'navigator', {
+        value: origNavigator,
+        configurable: true,
+        writable: true
+      });
+      vi.restoreAllMocks();
+    });
   });
 
-  describe('P3.4: Správa pozvánek – mazání pozvánky administrátorem', () => {
+  describe('P3.4: Správa pozvánek – mazání pozvánky administrátorem (výhradně přes RPC)', () => {
     it('Běžný uživatel (employee) nemůže smazat pozvánku', () => {
       const loginRes = login_attendance_user('alice', 'alice1234');
       setSessionHeader(loginRes.session_token);
@@ -871,7 +938,7 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       expect(() => admin_delete_invite('INV-TEST1234')).toThrow(/Pouze správce/);
     });
 
-    it('Administrátor může smazat pozvánku, následně ji nelze použít pro registraci', async () => {
+    it('Administrátor může smazat pozvánku přes admin_delete_invite RPC, následně ji nelze použít pro registraci', async () => {
       const adminLogin = login_attendance_user('admin', 'admin1234');
       setSessionHeader(adminLogin.session_token);
 
@@ -884,6 +951,15 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       const regRes = await register_user_with_invite('new_guy', 'New Guy', 'pass1234', 'INV-TEST1234');
       expect(regRes.success).toBe(false);
       expect(regRes.error).toBe('invalid_invite');
+    });
+
+    it('TeamView a SQL schéma používají pro mazání pozvánek výhradně admin_delete_invite RPC (žádný přímý REST DELETE)', () => {
+      const teamViewContent = fs.readFileSync(path.resolve(process.cwd(), 'src/views/TeamView.vue'), 'utf8');
+      expect(teamViewContent).toContain('/rest/v1/rpc/admin_delete_invite');
+      expect(teamViewContent).not.toContain('/rest/v1/attendance_invites?code=eq.');
+
+      const schemaContent = fs.readFileSync(path.resolve(process.cwd(), 'supabase/schema.sql'), 'utf8');
+      expect(schemaContent).toContain('revoke insert, update, delete on public.attendance_invites from public, anon, authenticated;');
     });
   });
 });
