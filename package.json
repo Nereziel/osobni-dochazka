@@ -2,6 +2,12 @@
   "name": "osobni-dochazka",
   "version": "3.1.1",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "Nereziel (https://github.com/Nereziel)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Nereziel/osobni-dochazka.git"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
