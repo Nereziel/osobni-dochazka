@@ -2,9 +2,16 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
+import fs from 'fs';
+
+const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
 
 export default defineConfig({
   base: '/osobni-dochazka/',
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_BUILD_DATE__: JSON.stringify(new Date().toISOString().split('T')[0])
+  },
   plugins: [
     vue(),
     VitePWA({

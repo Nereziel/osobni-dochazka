@@ -153,6 +153,28 @@ export function useAuth() {
     return res?.message || 'PIN byl úspěšně změněn.';
   }
 
+  async function updateDisplayName(newDisplayName) {
+    if (!currentUser.value) throw new Error('Pro úpravu profilu musíš být přihlášen.');
+    const cleanName = (newDisplayName || '').trim();
+    if (!cleanName) throw new Error('Celé jméno nesmí být prázdné.');
+
+    if (isSupabaseConfigured() && currentUser.value?.sessionToken) {
+      await supabaseRequest('/rest/v1/rpc/update_own_settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          p_settings: { display_name: cleanName }
+        })
+      }, currentUser.value);
+    }
+
+    currentUser.value = {
+      ...currentUser.value,
+      displayName: cleanName
+    };
+    saveUserSession(currentUser.value, localStorage.getItem(LS_REMEMBER_KEY) !== 'false');
+    return cleanName;
+  }
+
   function logout() {
     const priorUser = currentUser.value;
     saveUserSession(null);
@@ -227,6 +249,7 @@ export function useAuth() {
     login,
     register,
     changePin,
+    updateDisplayName,
     logout,
     verifySession
   };

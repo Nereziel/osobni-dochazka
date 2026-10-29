@@ -85,6 +85,7 @@
           :is-admin="isAdmin"
           :sync-state="syncState"
           @save-settings="handleSaveSettings"
+          @update-profile-name="handleUpdateProfileName"
           @change-theme="handleThemeChange"
           @open-login="openLoginModal"
           @open-register="openRegisterModal"
@@ -210,6 +211,7 @@ const {
   login,
   register,
   changePin,
+  updateDisplayName,
   logout,
   verifySession
 } = useAuth();
@@ -328,6 +330,9 @@ onMounted(async () => {
 
 async function applyServerProfile(serverProfile) {
   if (!serverProfile || !currentUser.value) return;
+  if (serverProfile.display_name && serverProfile.display_name !== currentUser.value.displayName) {
+    currentUser.value.displayName = serverProfile.display_name;
+  }
   const newSettings = settingsFromProfileRow(serverProfile);
   if (newSettings) {
     settings.value = newSettings;
@@ -610,6 +615,15 @@ function handleLogout() {
 }
 
 // Settings Handlers
+async function handleUpdateProfileName(newName) {
+  try {
+    await updateDisplayName(newName);
+    showToast('Jméno profilu bylo aktualizováno', '✓');
+  } catch (err) {
+    alert(err.message || 'Aktualizace jména selhala');
+  }
+}
+
 async function handleSaveSettings(newSettings) {
   const userKey = currentUser.value?.userKey || 'user:local';
   updateSyncSettings(newSettings);

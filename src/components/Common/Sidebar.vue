@@ -14,7 +14,7 @@
         </div>
         <div class="brand-info">
           <span class="brand-name">Docházka 11</span>
-          <span class="brand-badge">Enterprise Cloud</span>
+          <span class="brand-badge">Enterprise Cloud · v{{ APP_VERSION }}</span>
         </div>
       </div>
 
@@ -145,6 +145,7 @@
 import { computed } from 'vue';
 import { activeWorkDays } from '../../utils/attendance.js';
 import { formatDuration } from '../../utils/time.js';
+import { APP_VERSION } from '../../utils/version.js';
 
 const props = defineProps({
   currentView: {

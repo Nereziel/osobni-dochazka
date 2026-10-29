@@ -239,8 +239,9 @@ begin
         raise exception 'TEST 6 SELHAL: Neočekávaná chyba: %', sqlerrm;
       end if;
   end;
-  -- Ověření update_own_settings: uživatel A může aktualizovat své nastavení včetně work_days a settings_json
+  -- Ověření update_own_settings: uživatel A může aktualizovat své nastavení včetně display_name, work_days a settings_json
   perform public.update_own_settings(jsonb_build_object(
+    'display_name', 'Tester A Nový',
     'work_start', '06:30',
     'work_end', '15:00',
     'daily_target_minutes', 480,
@@ -248,6 +249,10 @@ begin
     'work_days', array[1, 2, 3, 4, 5],
     'settings_json', jsonb_build_object('autoFill', true, 'customField', 'ok', 'role', 'hacker')
   ));
+
+  if not exists (select 1 from public.attendance_profiles where user_key = v_test_key and display_name = 'Tester A Nový') then
+    raise exception 'TEST 6 SELHAL: update_own_settings neuložil změnu display_name!';
+  end if;
 
   if exists (select 1 from public.attendance_profiles where user_key = v_test_key and role = 'hacker') then
     raise exception 'TEST 6 SELHAL: update_own_settings nesmí dovolit změnu role!';

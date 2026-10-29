@@ -827,6 +827,7 @@ begin
 
   update public.attendance_profiles
   set
+    display_name = coalesce(nullif(trim(p_settings->>'display_name'), ''), display_name),
     work_start = coalesce(p_settings->>'work_start', work_start),
     work_end = coalesce(p_settings->>'work_end', work_end),
     daily_target_minutes = coalesce((p_settings->>'daily_target_minutes')::integer, daily_target_minutes),

@@ -164,6 +164,29 @@
             </div>
           </div>
 
+          <div v-if="currentUser" style="margin-top: 12px;">
+            <label class="win-field">
+              <span>Celé jméno (zobrazované na výkazu docházky)</span>
+              <div class="win-input-suffix">
+                <input
+                  v-model="editableDisplayName"
+                  type="text"
+                  placeholder="např. Jan Novák"
+                  @keyup.enter="saveDisplayName"
+                >
+                <button
+                  class="win-btn-accent compact-btn"
+                  type="button"
+                  :disabled="!isDisplayNameModified"
+                  @click="saveDisplayName"
+                >
+                  Uložit jméno
+                </button>
+              </div>
+              <small class="muted" style="margin-top: 2px;">Přihlašovací login ({{ accountUsernameText }}) a role jsou pevně dané z bezpečnostních důvodů.</small>
+            </label>
+          </div>
+
           <div class="account-actions-row">
             <button v-if="!currentUser" class="win-btn-accent" type="button" @click="$emit('open-login')">
               Přihlásit se
@@ -296,7 +319,7 @@
           <div class="app-version-grid">
             <div class="app-version-item">
               <span class="muted">Verze aplikace:</span>
-              <strong>v3.0.0 (Vue 3 + Vite)</strong>
+              <strong>v{{ APP_VERSION }} ({{ APP_BUILD_DATE }})</strong>
             </div>
             <div class="app-version-item">
               <span class="muted">Režim běhu:</span>
@@ -312,10 +335,31 @@
             </div>
           </div>
 
-          <div class="about-card-actions">
+          <div class="about-card-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="win-btn-subtle" type="button" @click="showChangelog = !showChangelog">
+              <span>{{ showChangelog ? '▲ Skrýt historii verzí' : '📋 Historie verzí (Changelog)' }}</span>
+            </button>
             <button class="win-btn-subtle" type="button" @click="$emit('open-pwa-help')">
               <span>Návod k instalaci aplikace</span>
             </button>
+          </div>
+
+          <div v-if="showChangelog" style="margin-top: 12px; border-top: 1px solid var(--border-subtle); padding-top: 12px;">
+            <div
+              v-for="item in VERSION_HISTORY"
+              :key="item.version"
+              style="margin-bottom: 12px;"
+            >
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <strong>v{{ item.version }}</strong>
+                <span class="win-badge neutral" style="font-size: 11px;">{{ item.date }}</span>
+              </div>
+              <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.5;">
+                <li v-for="(change, idx) in item.changes" :key="idx">
+                  {{ change }}
+                </li>
+              </ul>
+            </div>
           </div>
         </article>
       </div>
@@ -328,6 +372,7 @@ import { ref, computed, watch, toRaw } from 'vue';
 import { minutesToTime, timeToMinutes, durationMinutes } from '../utils/time.js';
 import { clampNumber, cloneDeep } from '../utils/validation.js';
 import { getSupabaseConfig, saveManualSupabaseConfig } from '../services/supabase.js';
+import { APP_VERSION, APP_BUILD_DATE, VERSION_HISTORY } from '../utils/version.js';
 
 const props = defineProps({
   settings: {
@@ -350,6 +395,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'save-settings',
+  'update-profile-name',
   'change-theme',
   'open-login',
   'open-register',
@@ -434,6 +480,24 @@ function submitScheduleSettings() {
 }
 
 // Účet info
+const editableDisplayName = ref(props.currentUser?.displayName || '');
+const showChangelog = ref(false);
+
+watch(() => props.currentUser?.displayName, (newVal) => {
+  editableDisplayName.value = newVal || '';
+});
+
+const isDisplayNameModified = computed(() => {
+  const clean = editableDisplayName.value.trim();
+  return clean.length > 0 && clean !== (props.currentUser?.displayName || '');
+});
+
+function saveDisplayName() {
+  const clean = editableDisplayName.value.trim();
+  if (!clean) return;
+  emit('update-profile-name', clean);
+}
+
 const accountStatusSubtitle = computed(() => {
   return props.currentUser ? 'Přihlášený profil' : 'Přihlaš se svým jménem a PINem.';
 });

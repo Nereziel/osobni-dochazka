@@ -315,6 +315,9 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     if (!profile) throw new Error('Profil nenalezen.');
 
     // Aktualizujeme pouze povolená nastavení, nikoli role nebo username!
+    if (typeof p_settings.display_name === 'string' && p_settings.display_name.trim()) {
+      profile.display_name = p_settings.display_name.trim();
+    }
     if (p_settings.work_start !== undefined) profile.work_start = p_settings.work_start;
     if (p_settings.work_end !== undefined) profile.work_end = p_settings.work_end;
     if (p_settings.daily_target_minutes !== undefined) profile.daily_target_minutes = p_settings.daily_target_minutes;
@@ -611,11 +614,13 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
       const loginBob = login_attendance_user('bob', 'bob1234');
       setSessionHeader(loginBob.session_token);
 
-      // update_own_settings nepovoluje změnu role
-      update_own_settings({ work_start: '07:00' });
+      // update_own_settings povoluje změnu display_name a rozvrhu, ale nepovoluje změnu role ani username
+      update_own_settings({ display_name: 'Robert Stavitel', work_start: '07:00', role: 'admin', username: 'hacker' });
       const bobProf = profilesTable.find(p => p.user_key === 'user:bob');
+      expect(bobProf.display_name).toBe('Robert Stavitel');
       expect(bobProf.work_start).toBe('07:00');
       expect(bobProf.role).toBe('employee');
+      expect(bobProf.username).toBe('bob');
     });
   });
 
