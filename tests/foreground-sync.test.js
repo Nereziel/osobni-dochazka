@@ -165,8 +165,82 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     // 4. Posuneme čas pro zpracování naplánovaného následného syncu (50ms timeout)
     await vi.advanceTimersByTimeAsync(100);
 
-    // Nyní proběhla druhá návazná synchronizace
+    // Nyní proběhla druhá návazná synchronizace a zachovala lehké options z 10s pollingu
     expect(syncSpy).toHaveBeenCalledTimes(2);
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
+      pushLocalDays: false,
+      incremental: true,
+      fetchProfile: false
+    });
+
+    stopForegroundSync();
+  });
+
+  it('pending follow-up preserves lightweight incremental options from 10s polling and does not turn into full sync, while upgrading if a full sync was also requested', async () => {
+    let resolveFirstSync;
+    const firstSyncPromise = new Promise((resolve) => {
+      resolveFirstSync = resolve;
+    });
+
+    const syncSpy = vi.spyOn(syncService, 'performFullSync')
+      .mockImplementationOnce(() => firstSyncPromise)
+      .mockResolvedValue({ status: 'online', recordsMap: new Map() });
+
+    const { sync, startForegroundSync, triggerPeriodicSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, currentSettings);
+
+    // 1. První lehký sync běží
+    const activePromise = triggerPeriodicSync();
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
+      pushLocalDays: false,
+      incremental: true,
+      fetchProfile: false
+    });
+
+    // 2. Během něj přijde další 10s periodický sync (a ještě jeden) -> nesmí běžet paralelně
+    await triggerPeriodicSync();
+    await triggerPeriodicSync();
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+
+    // 3. Dokončíme první sync
+    resolveFirstSync({ status: 'online', recordsMap: new Map() });
+    await activePromise;
+
+    // 4. Po 50ms proběhne follow-up a MUSÍ mít stále incremental:true, fetchProfile:false, pushLocalDays:false
+    await vi.advanceTimersByTimeAsync(60);
+    expect(syncSpy).toHaveBeenCalledTimes(2);
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
+      pushLocalDays: false,
+      incremental: true,
+      fetchProfile: false
+    });
+
+    // 5. Ověření sloučení: pokud během lehkého syncu přijde i požadavek na plný sync, follow-up provede plný sync
+    let resolveSecondSync;
+    const secondSyncPromise = new Promise((resolve) => {
+      resolveSecondSync = resolve;
+    });
+    syncSpy.mockImplementationOnce(() => secondSyncPromise);
+
+    const secondActive = triggerPeriodicSync();
+    expect(syncSpy).toHaveBeenCalledTimes(3);
+
+    // Během lehkého syncu přijde jak lehký, tak plný požadavek
+    await triggerPeriodicSync();
+    await sync(currentUser, currentSettings, { pushLocalDays: true, incremental: false, fetchProfile: true });
+    expect(syncSpy).toHaveBeenCalledTimes(3);
+
+    resolveSecondSync({ status: 'online', recordsMap: new Map() });
+    await secondActive;
+    await vi.advanceTimersByTimeAsync(60);
+
+    expect(syncSpy).toHaveBeenCalledTimes(4);
+    expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
+      pushLocalDays: true,
+      incremental: false,
+      fetchProfile: true
+    });
 
     stopForegroundSync();
   });
@@ -381,6 +455,81 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     });
     expect(onSyncCompletedFn).toHaveBeenCalledWith(pulledMap, expect.any(Object));
     expect(res.status).toBe('pulled');
+  });
+
+  it('frequent visibilitychange does NOT postpone 5min session verify indefinitely', async () => {
+    vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+    const fakeVerify = vi.fn().mockResolvedValue(true);
+
+    const { startForegroundSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, () => currentSettings, null, {
+      onVerifySession: fakeVerify
+    });
+
+    // Uživatel každou minutu na 5 sekund přepne záložku pryč a zpět
+    for (let minute = 1; minute <= 4; minute++) {
+      await vi.advanceTimersByTimeAsync(55000);
+      globalThis.document.visibilityState = 'hidden';
+      globalThis.document.dispatchEvent({ type: 'visibilitychange' });
+
+      await vi.advanceTimersByTimeAsync(5000);
+      globalThis.document.visibilityState = 'visible';
+      globalThis.document.dispatchEvent({ type: 'visibilitychange' });
+    }
+
+    // Po 4 minutách ještě verifySession neproběhl
+    expect(fakeVerify).not.toHaveBeenCalled();
+
+    // Po uplynutí zbývající 5. minuty (celkem 5 minut od startu) MUSÍ verifySession proběhnout
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(fakeVerify).toHaveBeenCalledTimes(1);
+
+    stopForegroundSync();
+  });
+
+  it('returning to foreground before 5 min does not trigger verifySession, returning after >= 5 min triggers it immediately', async () => {
+    vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
+      status: 'online',
+      recordsMap: new Map()
+    });
+    const fakeVerify = vi.fn().mockResolvedValue(true);
+
+    const { startForegroundSync, stopForegroundSync } = useSync();
+    startForegroundSync(currentUser, () => currentSettings, null, {
+      onVerifySession: fakeVerify
+    });
+
+    // 1. Aplikace jde na pozadí a vrátí se po 2 minutách (< 5 min)
+    globalThis.document.visibilityState = 'hidden';
+    globalThis.document.dispatchEvent({ type: 'visibilitychange' });
+
+    await vi.advanceTimersByTimeAsync(120000); // 2 minuty
+    globalThis.document.visibilityState = 'visible';
+    globalThis.document.dispatchEvent({ type: 'visibilitychange' });
+    await Promise.resolve();
+
+    // Před 5 minutami se verifySession nespustí
+    expect(fakeVerify).not.toHaveBeenCalled();
+
+    // 2. Znovu přepneme na pozadí na 4 minuty (celkem 6 minut od posledního ověření >= 5 min)
+    globalThis.document.visibilityState = 'hidden';
+    globalThis.document.dispatchEvent({ type: 'visibilitychange' });
+
+    await vi.advanceTimersByTimeAsync(240000); // další 4 minuty
+    expect(fakeVerify).not.toHaveBeenCalled(); // na pozadí neběží
+
+    // 3. Návrat do popředí po > 5 minutách vyvolá okamžitý verifySession()
+    globalThis.document.visibilityState = 'visible';
+    globalThis.document.dispatchEvent({ type: 'visibilitychange' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fakeVerify).toHaveBeenCalledTimes(1);
+
+    stopForegroundSync();
   });
 });
 

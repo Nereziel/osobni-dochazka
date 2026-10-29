@@ -62,7 +62,7 @@ const pendingCount = ref(0);
 
 // Řízení synchronizace a 10s foreground pollingu + 5min ověření session
 let syncInProgress = false;
-let pendingFollowupSync = false;
+let pendingFollowupOptions = null;
 let pollingTimer = null;
 let sessionVerifyTimer = null;
 let activeUser = null;
@@ -72,6 +72,18 @@ let onVerifySessionCallback = null;
 let onInvalidSessionCallback = null;
 let listenersAttached = false;
 let lastVisibilitySyncAt = 0;
+let lastSessionVerifyAt = 0;
+
+function mergeFollowupOptions(existing, incoming) {
+  if (!existing) {
+    return { ...incoming };
+  }
+  return {
+    pushLocalDays: Boolean(existing.pushLocalDays || incoming.pushLocalDays),
+    incremental: Boolean(existing.incremental && incoming.incremental),
+    fetchProfile: Boolean(existing.fetchProfile || incoming.fetchProfile)
+  };
+}
 
 function getActiveSettings() {
   if (typeof activeSettings === 'function') {
@@ -102,7 +114,7 @@ export function useSync() {
       stopPollingTimer();
       return true;
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       stopPollingTimer();
       return true;
     }
@@ -123,6 +135,7 @@ export function useSync() {
         }
         return false;
       }
+      lastSessionVerifyAt = Date.now();
       return true;
     } catch {
       return true;
@@ -137,7 +150,7 @@ export function useSync() {
       stopPollingTimer();
       return;
     }
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       stopPollingTimer();
       return;
     }
@@ -160,15 +173,31 @@ export function useSync() {
     }
   }
 
+  function scheduleSessionVerifyTimer() {
+    if (sessionVerifyTimer) {
+      clearTimeout(sessionVerifyTimer);
+      sessionVerifyTimer = null;
+    }
+    const now = Date.now();
+    const elapsed = lastSessionVerifyAt > 0 ? now - lastSessionVerifyAt : 0;
+    const remaining = Math.max(0, SESSION_VERIFY_INTERVAL_MS - elapsed);
+
+    sessionVerifyTimer = setTimeout(async () => {
+      sessionVerifyTimer = null;
+      const isValid = await triggerPeriodicSessionVerify();
+      if (isValid && activeUser?.userKey && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
+        scheduleSessionVerifyTimer();
+      }
+    }, remaining);
+  }
+
   function startPollingTimer() {
     stopPollingTimer();
     pollingTimer = setInterval(() => {
       triggerPeriodicSync();
     }, FOREGROUND_SYNC_INTERVAL_MS);
 
-    sessionVerifyTimer = setInterval(() => {
-      triggerPeriodicSessionVerify();
-    }, SESSION_VERIFY_INTERVAL_MS);
+    scheduleSessionVerifyTimer();
   }
 
   function stopPollingTimer() {
@@ -177,26 +206,54 @@ export function useSync() {
       pollingTimer = null;
     }
     if (sessionVerifyTimer) {
-      clearInterval(sessionVerifyTimer);
+      clearTimeout(sessionVerifyTimer);
       sessionVerifyTimer = null;
     }
+  }
+
+  async function handleForegroundResume() {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (!activeUser?.userKey || !isSupabaseConfigured()) return;
+
+    const now = Date.now();
+    // Pokud od posledního ověření session uplynulo >= 5 minut, provedeme verifySession() okamžitě
+    if (lastSessionVerifyAt > 0 && now - lastSessionVerifyAt >= SESSION_VERIFY_INTERVAL_MS) {
+      const isValid = await triggerPeriodicSessionVerify();
+      if (!isValid) {
+        return;
+      }
+    }
+
+    // Ochrana proti rychlému přepínání oken/tabů – minimální odstup 3s pro datový sync
+    if (Date.now() - lastVisibilitySyncAt >= 3000) {
+      lastVisibilitySyncAt = Date.now();
+      triggerPeriodicSync();
+    }
+    startPollingTimer();
   }
 
   function onVisibilityChange() {
     if (typeof document === 'undefined') return;
     if (document.visibilityState === 'visible') {
-      if (typeof navigator === 'undefined' || navigator.onLine) {
-        const now = Date.now();
-        // Ochrana proti rychlému přepínání oken/tabů – minimální odstup 3s
-        if (now - lastVisibilitySyncAt >= 3000) {
-          lastVisibilitySyncAt = now;
-          triggerPeriodicSync();
-        }
-        startPollingTimer();
-      }
+      handleForegroundResume();
     } else {
       // Pozastavit polling, pokud je aplikace na pozadí
       stopPollingTimer();
+    }
+  }
+
+  function onWindowFocus() {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    if (!activeUser?.userKey || !isSupabaseConfigured()) return;
+
+    const now = Date.now();
+    if (lastSessionVerifyAt > 0 && now - lastSessionVerifyAt >= SESSION_VERIFY_INTERVAL_MS) {
+      triggerPeriodicSessionVerify().then((isValid) => {
+        if (isValid && activeUser?.userKey) {
+          scheduleSessionVerifyTimer();
+        }
+      });
     }
   }
 
@@ -214,6 +271,7 @@ export function useSync() {
           }
           return;
         }
+        lastSessionVerifyAt = Date.now();
       }
 
       try {
@@ -262,15 +320,20 @@ export function useSync() {
       return;
     }
 
+    if (lastSessionVerifyAt === 0) {
+      lastSessionVerifyAt = Date.now();
+    }
+
     if (!listenersAttached && typeof window !== 'undefined') {
       document.addEventListener('visibilitychange', onVisibilityChange);
+      window.addEventListener('focus', onWindowFocus);
       window.addEventListener('online', onOnline);
       window.addEventListener('offline', onOffline);
       listenersAttached = true;
     }
 
     if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-      if (syncState.value === 'local' && (typeof navigator === 'undefined' || navigator.onLine)) {
+      if (syncState.value === 'local' && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
         syncState.value = 'online';
       }
       startPollingTimer();
@@ -288,9 +351,12 @@ export function useSync() {
     onVerifySessionCallback = null;
     onInvalidSessionCallback = null;
     lastVisibilitySyncAt = 0;
+    lastSessionVerifyAt = 0;
+    pendingFollowupOptions = null;
 
     if (listenersAttached && typeof window !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onWindowFocus);
       window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       listenersAttached = false;
@@ -315,7 +381,7 @@ export function useSync() {
     };
 
     if (syncInProgress) {
-      pendingFollowupSync = true;
+      pendingFollowupOptions = mergeFollowupOptions(pendingFollowupOptions, syncOptions);
       return { status: 'syncing' };
     }
 
@@ -343,10 +409,17 @@ export function useSync() {
     } finally {
       syncInProgress = false;
 
-      if (pendingFollowupSync) {
-        pendingFollowupSync = false;
+      if (pendingFollowupOptions) {
+        const nextOptions = pendingFollowupOptions;
+        pendingFollowupOptions = null;
         setTimeout(() => {
-          sync(currentUser, getActiveSettings(), { pushLocalDays: false }).catch(() => {});
+          sync(currentUser, getActiveSettings(), nextOptions)
+            .then((res) => {
+              if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
+                onSyncCompletedCallback(res.recordsMap, res.serverProfile);
+              }
+            })
+            .catch(() => {});
         }, 50);
       }
     }
@@ -382,6 +455,7 @@ export function useSync() {
       }
       return { verified: false, mode: 'invalid_session' };
     }
+    lastSessionVerifyAt = Date.now();
 
     const userKey = currentUser.userKey;
     const now = Date.now();
