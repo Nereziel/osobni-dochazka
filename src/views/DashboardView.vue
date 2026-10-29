@@ -6,7 +6,7 @@
       :daily-target="todayMetrics.target"
       :settings="settings"
       :credited-minutes="todayMetrics.credited"
-      @end-shift="handleEndShiftNow"
+      @end-shift="$emit('end-shift')"
     />
 
     <div class="dashboard-grid-layout">
@@ -229,11 +229,11 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, onMounted, onUnmounted } from 'vue';
 import ActiveShiftBanner from '../components/Attendance/ActiveShiftBanner.vue';
-import { fmtDayFull, todayKey, localDateKey, parseDateKey, isWeekendDate, fmtMonthTitle } from '../utils/dates.js';
+import { fmtDayFull, todayKey, localDateKey, isWeekendDate, fmtMonthTitle } from '../utils/dates.js';
 import { holidayName } from '../utils/holidays.js';
-import { formatDuration } from '../utils/time.js';
+import { formatDuration, formatClock, timeToMinutes } from '../utils/time.js';
 import {
   dayMetrics,
   defaultHoursForDate,
@@ -283,8 +283,34 @@ const todayFormattedDate = computed(() => fmtDayFull(new Date()));
 
 const todayHoliday = computed(() => holidayName(currentKey));
 
+const nowClock = ref(formatClock(new Date()));
+let clockInterval = null;
+
+onMounted(() => {
+  clockInterval = setInterval(() => {
+    nowClock.value = formatClock(new Date());
+  }, 15000);
+});
+
+onUnmounted(() => {
+  if (clockInterval) {
+    clearInterval(clockInterval);
+    clockInterval = null;
+  }
+});
+
+const isShiftRunningToday = computed(() => {
+  return Boolean(props.activeShift?.isActive && props.todayRecord?.start && !props.todayRecord?.end);
+});
+
 const todayMetrics = computed(() => {
   if (props.todayRecord) {
+    if (
+      isShiftRunningToday.value &&
+      timeToMinutes(nowClock.value) >= timeToMinutes(props.todayRecord.start)
+    ) {
+      return dayMetrics({ ...props.todayRecord, end: nowClock.value }, props.settings);
+    }
     return dayMetrics(props.todayRecord, props.settings);
   }
   const defaultHours = defaultHoursForDate(currentKey, props.settings);
@@ -308,6 +334,9 @@ const todayBreakDisplay = computed(() => {
     return { value: `${rec.breakMinutes ?? standardBreak} min`, sub: 'vlastní' };
   }
   if (rec.start && !rec.end) {
+    if (todayMetrics.value.breakMinutes > 0) {
+      return { value: `${todayMetrics.value.breakMinutes} min`, sub: 'odečteno' };
+    }
     return { value: `${standardBreak} min`, sub: 'bude odečteno' };
   }
   return {
@@ -326,6 +355,9 @@ const todayTypeLabel = computed(() => {
 const todayShiftTimes = computed(() => {
   if (props.todayRecord?.start && props.todayRecord?.end) {
     return `${props.todayRecord.start} – ${props.todayRecord.end}`;
+  }
+  if (props.todayRecord?.start && !props.todayRecord?.end) {
+    return `${props.todayRecord.start} – probíhá (${nowClock.value})`;
   }
   const defaultHours = defaultHoursForDate(currentKey, props.settings);
   return `${defaultHours.start} – ${defaultHours.end}`;
@@ -355,9 +387,11 @@ const progressSubText = computed(() => {
   const target = todayMetrics.value.target;
   const counted = todayMetrics.value.counted;
   if (target <= 0) return 'Dnes není předepsán žádný fond';
-  if (counted >= target) return `Fond splněn (${formatDuration(counted)} z ${formatDuration(target)})`;
 
   if (props.activeShift?.isActive && props.activeShift?.startTime) {
+    if (counted >= target) {
+      return `Fond splněn (${formatDuration(counted)} z ${formatDuration(target)}) · směna probíhá`;
+    }
     const endTime = calculateWorkEndTime(
       props.activeShift.startTime,
       props.settings,
@@ -365,8 +399,10 @@ const progressSubText = computed(() => {
       props.activeShift.manualBreak ? props.activeShift.breakMinutes : null,
       todayMetrics.value.target
     );
-    return `Zbývá ${formatDuration(target - counted)} (odchod v ${endTime})`;
+    return `Odpracováno ${formatDuration(counted)} · zbývá ${formatDuration(target - counted)} (odchod v ${endTime})`;
   }
+
+  if (counted >= target) return `Fond splněn (${formatDuration(counted)} z ${formatDuration(target)})`;
   return `Zbývá ${formatDuration(target - counted)} do splnění fondu`;
 });
 
@@ -392,7 +428,9 @@ const weekDays = computed(() => {
     const isToday = key === today;
     const isWeekend = isWeekendDate(cur);
     const status = statusClassForDay(key, rec, props.settings, today);
-    const m = rec ? dayMetrics(rec, props.settings) : null;
+    const m = isToday && isShiftRunningToday.value
+      ? todayMetrics.value
+      : (rec ? dayMetrics(rec, props.settings) : null);
     const h = holidayName(key);
 
     let hoursText = '—';
