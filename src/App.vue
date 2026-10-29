@@ -615,10 +615,23 @@ async function openLoginModal() {
   loginModalRef.value?.open();
 }
 
+function clearInviteQueryParam() {
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('invite')) {
+      url.searchParams.delete('invite');
+      window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+    }
+  } catch {
+    // ignore history errors
+  }
+}
+
 async function handleLoginSubmit({ username, pin, rememberMe }) {
   loginModalRef.value?.setLoading(true);
   try {
     const { message } = await login(username, pin, rememberMe);
+    clearInviteQueryParam();
     loginModalRef.value?.close();
     showToast(message, '✓');
     const userKey = currentUser.value?.userKey;
@@ -653,6 +666,7 @@ async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, in
   registerModalRef.value?.setLoading(true);
   try {
     const { message } = await register(username, displayName, pin, pinConfirm, inviteCode);
+    clearInviteQueryParam();
     try {
       sessionStorage.removeItem('dochazka_reg_status_cache_v1');
     } catch {
