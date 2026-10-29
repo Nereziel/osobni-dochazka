@@ -25,6 +25,7 @@ let onSyncCompletedCallback = null;
 let onVerifySessionCallback = null;
 let onInvalidSessionCallback = null;
 let listenersAttached = false;
+let lastVisibilitySyncAt = 0;
 
 function getActiveSettings() {
   if (typeof activeSettings === 'function') {
@@ -100,8 +101,12 @@ export function useSync() {
     if (typeof document === 'undefined') return;
     if (document.visibilityState === 'visible') {
       if (typeof navigator === 'undefined' || navigator.onLine) {
-        // Okamžitá synchronizace při návratu do foreground a restart 10s intervalu
-        triggerPeriodicSync();
+        const now = Date.now();
+        // Ochrana proti rychlému přepínání oken/tabů – minimální odstup 3s
+        if (now - lastVisibilitySyncAt >= 3000) {
+          lastVisibilitySyncAt = now;
+          triggerPeriodicSync();
+        }
         startPollingTimer();
       }
     } else {
@@ -180,6 +185,9 @@ export function useSync() {
     }
 
     if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      if (syncState.value === 'local' && (typeof navigator === 'undefined' || navigator.onLine)) {
+        syncState.value = 'online';
+      }
       startPollingTimer();
     }
   }
@@ -194,6 +202,7 @@ export function useSync() {
     onSyncCompletedCallback = null;
     onVerifySessionCallback = null;
     onInvalidSessionCallback = null;
+    lastVisibilitySyncAt = 0;
 
     if (listenersAttached && typeof window !== 'undefined') {
       document.removeEventListener('visibilitychange', onVisibilityChange);

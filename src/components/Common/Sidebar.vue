@@ -13,8 +13,8 @@
           </svg>
         </div>
         <div class="brand-info">
-          <span class="brand-name">Docházka 11</span>
-          <span class="brand-badge">Enterprise Cloud · v{{ APP_VERSION }}</span>
+          <span class="brand-name">Docházka</span>
+          <span class="brand-badge">osobní · v{{ APP_VERSION }}</span>
         </div>
       </div>
 

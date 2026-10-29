@@ -153,7 +153,54 @@
           <div class="account-profile-view">
             <div class="avatar-large">{{ userInitials }}</div>
             <div class="account-text-info">
-              <strong>{{ accountFullName }}</strong>
+              <div v-if="!isEditingName" class="account-name-row">
+                <strong>{{ accountFullName }}</strong>
+                <button
+                  v-if="currentUser"
+                  class="icon-edit-name-btn"
+                  type="button"
+                  title="Upravit zobrazované jméno"
+                  aria-label="Upravit zobrazované jméno"
+                  @click="startEditingName"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <path d="M12 20h9" />
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                </button>
+              </div>
+              <div v-else class="account-name-edit-row">
+                <input
+                  ref="nameInputRef"
+                  v-model="editableDisplayName"
+                  type="text"
+                  class="inline-name-input"
+                  placeholder="Celé jméno"
+                  @keyup.enter="saveDisplayName"
+                  @keyup.esc="cancelEditingName"
+                >
+                <button
+                  class="inline-name-btn save"
+                  type="button"
+                  title="Uložit jméno (Enter)"
+                  @click="saveDisplayName"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </button>
+                <button
+                  class="inline-name-btn cancel"
+                  type="button"
+                  title="Zrušit úpravu (Esc)"
+                  @click="cancelEditingName"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
               <span class="muted">{{ accountUsernameText }}</span>
               <div style="display: flex; gap: 6px; align-items: center; margin-top: 4px; flex-wrap: wrap;">
                 <span class="status-indicator-pill" :class="syncBadgeClass">{{ syncBadgeText }}</span>
@@ -162,29 +209,6 @@
                 </span>
               </div>
             </div>
-          </div>
-
-          <div v-if="currentUser" style="margin-top: 12px;">
-            <label class="win-field">
-              <span>Celé jméno (zobrazované na výkazu docházky)</span>
-              <div class="win-input-suffix">
-                <input
-                  v-model="editableDisplayName"
-                  type="text"
-                  placeholder="např. Jan Novák"
-                  @keyup.enter="saveDisplayName"
-                >
-                <button
-                  class="win-btn-accent compact-btn"
-                  type="button"
-                  :disabled="!isDisplayNameModified"
-                  @click="saveDisplayName"
-                >
-                  Uložit jméno
-                </button>
-              </div>
-              <small class="muted" style="margin-top: 2px;">Přihlašovací login ({{ accountUsernameText }}) a role jsou pevně dané z bezpečnostních důvodů.</small>
-            </label>
           </div>
 
           <div class="account-actions-row">
@@ -335,31 +359,10 @@
             </div>
           </div>
 
-          <div class="about-card-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
-            <button class="win-btn-subtle" type="button" @click="showChangelog = !showChangelog">
-              <span>{{ showChangelog ? '▲ Skrýt historii verzí' : '📋 Historie verzí (Changelog)' }}</span>
-            </button>
+          <div class="about-card-actions">
             <button class="win-btn-subtle" type="button" @click="$emit('open-pwa-help')">
               <span>Návod k instalaci aplikace</span>
             </button>
-          </div>
-
-          <div v-if="showChangelog" style="margin-top: 12px; border-top: 1px solid var(--border-subtle); padding-top: 12px;">
-            <div
-              v-for="item in VERSION_HISTORY"
-              :key="item.version"
-              style="margin-bottom: 12px;"
-            >
-              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                <strong>v{{ item.version }}</strong>
-                <span class="win-badge neutral" style="font-size: 11px;">{{ item.date }}</span>
-              </div>
-              <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.5;">
-                <li v-for="(change, idx) in item.changes" :key="idx">
-                  {{ change }}
-                </li>
-              </ul>
-            </div>
           </div>
         </article>
       </div>
@@ -368,11 +371,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, toRaw } from 'vue';
+import { ref, computed, watch, toRaw, nextTick } from 'vue';
 import { minutesToTime, timeToMinutes, durationMinutes } from '../utils/time.js';
 import { clampNumber, cloneDeep } from '../utils/validation.js';
 import { getSupabaseConfig, saveManualSupabaseConfig } from '../services/supabase.js';
-import { APP_VERSION, APP_BUILD_DATE, VERSION_HISTORY } from '../utils/version.js';
+import { APP_VERSION, APP_BUILD_DATE } from '../utils/version.js';
 
 const props = defineProps({
   settings: {
@@ -481,21 +484,34 @@ function submitScheduleSettings() {
 
 // Účet info
 const editableDisplayName = ref(props.currentUser?.displayName || '');
-const showChangelog = ref(false);
+const isEditingName = ref(false);
+const nameInputRef = ref(null);
 
 watch(() => props.currentUser?.displayName, (newVal) => {
   editableDisplayName.value = newVal || '';
 });
 
-const isDisplayNameModified = computed(() => {
-  const clean = editableDisplayName.value.trim();
-  return clean.length > 0 && clean !== (props.currentUser?.displayName || '');
-});
+function startEditingName() {
+  editableDisplayName.value = props.currentUser?.displayName || props.currentUser?.username || '';
+  isEditingName.value = true;
+  nextTick(() => {
+    nameInputRef.value?.focus();
+    nameInputRef.value?.select();
+  });
+}
+
+function cancelEditingName() {
+  editableDisplayName.value = props.currentUser?.displayName || '';
+  isEditingName.value = false;
+}
 
 function saveDisplayName() {
   const clean = editableDisplayName.value.trim();
   if (!clean) return;
-  emit('update-profile-name', clean);
+  isEditingName.value = false;
+  if (clean !== (props.currentUser?.displayName || '')) {
+    emit('update-profile-name', clean);
+  }
 }
 
 const accountStatusSubtitle = computed(() => {

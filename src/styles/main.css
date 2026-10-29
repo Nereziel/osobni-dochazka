@@ -1893,11 +1893,91 @@ input:focus, .win-select:focus, textarea:focus {
   font-weight: 750;
 }
 
+.account-text-info {
+  flex: 1;
+  min-width: 0;
+}
+
 .account-text-info strong {
-  display: block;
+  display: inline-block;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.2px;
+}
+
+.account-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-edit-name-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.icon-edit-name-btn:hover {
+  background: var(--surface-card);
+  border-color: var(--line);
+  color: var(--accent);
+}
+
+.account-name-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.inline-name-input {
+  height: 30px !important;
+  min-height: 30px !important;
+  padding: 4px 10px !important;
+  font-size: 14px !important;
+  font-weight: 600;
+  max-width: 220px;
+}
+
+.inline-name-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface-card);
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.inline-name-btn.save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.inline-name-btn.save:hover {
+  filter: brightness(1.08);
+}
+
+.inline-name-btn.cancel:hover {
+  background: var(--danger-bg, rgba(220, 38, 38, 0.1));
+  color: var(--danger, #dc2626);
+  border-color: var(--danger, #dc2626);
 }
 
 .account-actions-row {

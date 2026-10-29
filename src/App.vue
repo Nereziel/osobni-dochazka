@@ -169,7 +169,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Header from './components/Common/Header.vue';
 import Sidebar from './components/Common/Sidebar.vue';
 import MobileNav from './components/Common/MobileNav.vue';
@@ -293,8 +293,64 @@ const timesheetStats = computed(() => calcMonthStats(timesheetMonth.value, setti
 const yearVacationCount = computed(() => calcYearVacation(timesheetMonth.value.getFullYear()));
 const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value));
 
+// Ochrana proti držení F5 / spamování reloadu a nadměrnému čerpání limitu Supabase
+const RELOAD_KEY_COOLDOWN_MS = 4000;
+const BOOT_SYNC_SKIP_COOLDOWN_MS = 15000;
+const BOOT_INCREMENTAL_WINDOW_MS = 300000; // 5 minut
+const MANUAL_SYNC_COOLDOWN_MS = 5000;
+const REG_STATUS_CACHE_TTL_MS = 30000;
+
+let lastManualSyncAt = 0;
+
+function getBootSyncTimestamp(userKey) {
+  try {
+    return Number(sessionStorage.getItem(`dochazka_boot_sync_ts_${userKey}`) || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function setBootSyncTimestamp(userKey, ts = Date.now()) {
+  try {
+    if (ts) {
+      sessionStorage.setItem(`dochazka_boot_sync_ts_${userKey}`, String(ts));
+    } else {
+      sessionStorage.removeItem(`dochazka_boot_sync_ts_${userKey}`);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function handleKeyDownReloadGuard(e) {
+  const key = (e.key || '').toLowerCase();
+  const isF5 = e.key === 'F5';
+  const isCtrlR = (e.ctrlKey || e.metaKey) && !e.altKey && key === 'r';
+  if (!isF5 && !isCtrlR) return;
+
+  // Pokud uživatel drží klávesu F5 / Ctrl+R stisknutou (auto-repeat), okamžitě zablokujeme opakování
+  if (e.repeat) {
+    e.preventDefault();
+    return;
+  }
+
+  try {
+    const now = Date.now();
+    const lastReloadKey = Number(sessionStorage.getItem('dochazka_last_reload_key_ts') || 0);
+    if (now - lastReloadKey < RELOAD_KEY_COOLDOWN_MS) {
+      e.preventDefault();
+      showToast('Aplikace byla právě obnovena – šetřím limit databáze', '🛡️');
+      return;
+    }
+    sessionStorage.setItem('dochazka_last_reload_key_ts', String(now));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 // Init
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeyDownReloadGuard);
   try {
     await openDatabase();
     const userKey = currentUser.value?.userKey || 'user:local';
@@ -312,20 +368,45 @@ onMounted(async () => {
       openRegisterModal(inviteParam.trim().toUpperCase());
       showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
     } else if (isSupabaseConfigured() && currentUser.value) {
-      const isValid = await verifySession();
-      if (isValid && currentUser.value) {
-        await triggerSync(false);
+      const now = Date.now();
+      const lastBootSync = getBootSyncTimestamp(userKey);
+      const elapsedSinceLastBoot = now - lastBootSync;
+
+      if (elapsedSinceLastBoot < BOOT_SYNC_SKIP_COOLDOWN_MS && pendingCount.value === 0) {
+        // Ochrana proti F5 / reload spamu: pokud proběhl plný start před méně než 15 s a nic nečeká v outboxu,
+        // přeskočíme okamžité dotazy na server a pouze zapneme standardní 10s periodický interval.
         startSyncService();
       } else {
-        handleInvalidSession();
+        const isValid = await verifySession();
+        if (isValid && currentUser.value) {
+          if (elapsedSinceLastBoot < BOOT_INCREMENTAL_WINDOW_MS && pendingCount.value === 0) {
+            // V témže okně již nedávno proběhl plný sync -> stačí lehký inkrementální dotaz
+            const res = await sync(currentUser.value, settings.value, {
+              pushLocalDays: false,
+              incremental: true,
+              fetchProfile: false
+            });
+            if (res?.recordsMap) records.value = res.recordsMap;
+            setBootSyncTimestamp(userKey, Date.now());
+          } else {
+            await triggerSync(false, { isBoot: true });
+          }
+          startSyncService();
+        } else {
+          handleInvalidSession();
+        }
       }
     } else if (isSupabaseConfigured() && !currentUser.value) {
       openLoginModal();
     }
   } catch (err) {
     console.error('Inicializace aplikace selhala:', err);
-    showToast('Inicializace selhala', '⚠️');
+    showToast('Inicializace aplikace selhala', '⚠️');
   }
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDownReloadGuard);
 });
 
 async function applyServerProfile(serverProfile) {
@@ -348,6 +429,9 @@ async function handleSyncUpdate(recordsMap, serverProfile) {
 }
 
 function performLocalLogout() {
+  if (currentUser.value?.userKey) {
+    setBootSyncTimestamp(currentUser.value.userKey, 0);
+  }
   stopForegroundSync();
   logout();
   const userKey = 'user:local';
@@ -369,13 +453,23 @@ function startSyncService() {
   });
 }
 
-async function triggerSync(pushLocalDays = true) {
+async function triggerSync(pushLocalDays = true, options = {}) {
   if (!currentUser.value) {
     openLoginModal();
     return;
   }
+
+  const now = Date.now();
+  if (!options.isBoot && now - lastManualSyncAt < MANUAL_SYNC_COOLDOWN_MS && pendingCount.value === 0) {
+    showToast('Data jsou již aktuální (synchronizováno před okamžikem)', '✓');
+    return;
+  }
+
   try {
     const res = await sync(currentUser.value, settings.value, { pushLocalDays });
+    const finishedAt = Date.now();
+    lastManualSyncAt = finishedAt;
+    setBootSyncTimestamp(currentUser.value.userKey, finishedAt);
     if (res?.recordsMap) {
       records.value = res.recordsMap;
     }
@@ -517,12 +611,39 @@ function handleMonthPickerSelect(selectedDate) {
 }
 
 // Auth Handlers
+async function fetchRegistrationStatusCached() {
+  try {
+    const cachedRaw = sessionStorage.getItem('dochazka_reg_status_cache_v1');
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw);
+      if (cached && Date.now() - cached.ts < REG_STATUS_CACHE_TTL_MS) {
+        return cached.data;
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+
+  const statusRes = await supabaseRequest('/rest/v1/rpc/registration_status', {
+    method: 'POST'
+  });
+
+  try {
+    sessionStorage.setItem('dochazka_reg_status_cache_v1', JSON.stringify({
+      ts: Date.now(),
+      data: statusRes
+    }));
+  } catch {
+    // ignore storage errors
+  }
+
+  return statusRes;
+}
+
 async function openLoginModal() {
   if (isSupabaseConfigured()) {
     try {
-      const statusRes = await supabaseRequest('/rest/v1/rpc/registration_status', {
-        method: 'POST'
-      });
+      const statusRes = await fetchRegistrationStatusCached();
       // Pokud v databázi dosud není žádný profil, přesměrujeme rovnou na registraci prvního správce
       if (statusRes?.requires_invite === false) {
         openRegisterModal();
@@ -544,7 +665,7 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
     const userKey = currentUser.value?.userKey;
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
     if (isSupabaseConfigured()) {
-      await triggerSync(false);
+      await triggerSync(false, { isBoot: true });
       startSyncService();
     }
   } catch (err) {
@@ -559,9 +680,7 @@ async function openRegisterModal(prefilledInvite = '') {
   let isFirst = false;
   if (isSupabaseConfigured()) {
     try {
-      const statusRes = await supabaseRequest('/rest/v1/rpc/registration_status', {
-        method: 'POST'
-      });
+      const statusRes = await fetchRegistrationStatusCached();
       // requires_invite je false právě tehdy, když v DB ještě není žádný profil (první uživatel)
       isFirst = statusRes?.requires_invite === false;
     } catch {
@@ -575,13 +694,18 @@ async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, in
   registerModalRef.value?.setLoading(true);
   try {
     const { message } = await register(username, displayName, pin, pinConfirm, inviteCode);
+    try {
+      sessionStorage.removeItem('dochazka_reg_status_cache_v1');
+    } catch {
+      // ignore
+    }
     registerModalRef.value?.close();
     showToast(message, '✓');
     const userKey = currentUser.value?.userKey;
     await loadSettings(userKey);
     await loadRecords(userKey);
     if (isSupabaseConfigured()) {
-      await triggerSync(mergeLocal);
+      await triggerSync(mergeLocal, { isBoot: true });
       startSyncService();
     }
   } catch (err) {

@@ -242,16 +242,47 @@ export async function drainOutboxQueue(currentUser) {
 }
 
 let lastSuccessfulPullTimestamps = new Map();
+const SS_LAST_PULL_PREFIX = 'dochazka_last_pull_v1_';
 
 export function getLastSuccessfulPullAt(userKey) {
-  return lastSuccessfulPullTimestamps.get(userKey) || null;
+  if (!userKey) return null;
+  if (lastSuccessfulPullTimestamps.has(userKey)) {
+    return lastSuccessfulPullTimestamps.get(userKey);
+  }
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem(`${SS_LAST_PULL_PREFIX}${userKey}`);
+      if (stored) {
+        lastSuccessfulPullTimestamps.set(userKey, stored);
+        return stored;
+      }
+    }
+  } catch {
+    // ignore storage access errors
+  }
+  return null;
 }
 
 export function setLastSuccessfulPullAt(userKey, timestamp) {
+  if (!userKey) return;
   if (timestamp) {
     lastSuccessfulPullTimestamps.set(userKey, timestamp);
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(`${SS_LAST_PULL_PREFIX}${userKey}`, timestamp);
+      }
+    } catch {
+      // ignore storage access errors
+    }
   } else {
     lastSuccessfulPullTimestamps.delete(userKey);
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(`${SS_LAST_PULL_PREFIX}${userKey}`);
+      }
+    } catch {
+      // ignore storage access errors
+    }
   }
 }
 
