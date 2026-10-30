@@ -5,9 +5,11 @@ import path from 'path';
 import fs from 'fs';
 
 const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
+const isCloudflarePages = Boolean(process.env.CF_PAGES || process.env.CF_PAGES_URL);
+const appBase = isCloudflarePages ? '/' : '/osobni-dochazka/';
 
 export default defineConfig({
-  base: '/osobni-dochazka/',
+  base: appBase,
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_BUILD_DATE__: JSON.stringify(new Date().toISOString().split('T')[0])
@@ -29,8 +31,8 @@ export default defineConfig({
         short_name: 'Docházka',
         description: 'Evidence osobní docházky s offline podporou a synchronizací',
         lang: 'cs',
-        start_url: '/osobni-dochazka/',
-        scope: '/osobni-dochazka/',
+        start_url: appBase,
+        scope: appBase,
         display: 'standalone',
         background_color: '#0f172a',
         theme_color: '#0f172a',
@@ -51,7 +53,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
-        navigateFallback: '/osobni-dochazka/index.html',
+        navigateFallback: `${appBase}index.html`,
         cleanupOutdatedCaches: true
       }
     })
@@ -66,4 +68,3 @@ export default defineConfig({
     environment: 'node'
   }
 });
-
