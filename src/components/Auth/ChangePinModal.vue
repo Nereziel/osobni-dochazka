@@ -24,6 +24,16 @@
         class="dialog-body-scroll"
         @submit.prevent="handleSubmit"
       >
+        <input
+          :value="currentUsername"
+          type="text"
+          name="username"
+          autocomplete="username"
+          tabindex="-1"
+          aria-hidden="true"
+          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;"
+        >
+
         <p class="dialog-info-text">
           Pro změnu zadej svůj dosavadní PIN a zvol si nový (min. 4 znaky). Nový PIN se zabezpečeně zahashuje a uloží v databázi.
         </p>
@@ -91,12 +101,24 @@ import { ref } from 'vue';
 const emit = defineEmits(['change-pin-submit']);
 
 const dialogRef = ref(null);
+const currentUsername = ref('');
 const oldPin = ref('');
 const newPin = ref('');
 const newPinConfirm = ref('');
 const loading = ref(false);
 
 function open() {
+  currentUsername.value = '';
+  try {
+    const stored = JSON.parse(
+      localStorage.getItem('dochazka_active_user_v2') ||
+      sessionStorage.getItem('dochazka_active_user_v2') ||
+      'null'
+    );
+    currentUsername.value = stored?.username || '';
+  } catch {
+    // Password manager metadata is optional; ignore unreadable local session data.
+  }
   oldPin.value = '';
   newPin.value = '';
   newPinConfirm.value = '';
@@ -128,4 +150,3 @@ function onBackdropClick(e) {
 
 defineExpose({ open, close, setLoading: (l) => { loading.value = l; } });
 </script>
-
