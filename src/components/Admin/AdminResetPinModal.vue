@@ -24,6 +24,16 @@
         class="dialog-body-scroll"
         @submit.prevent="handleSubmit"
       >
+        <input
+          :value="targetUsername"
+          type="text"
+          name="username"
+          autocomplete="username"
+          tabindex="-1"
+          aria-hidden="true"
+          style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;"
+        >
+
         <p class="dialog-info-text">
           Nastav nový dočasný PIN pro uživatele <strong>{{ targetDisplayName }}</strong> (<code>{{ targetUsername }}</code>).
         </p>
@@ -121,4 +131,3 @@ function onBackdropClick(e) {
 
 defineExpose({ open, close, setLoading: (l) => { loading.value = l; } });
 </script>
-
