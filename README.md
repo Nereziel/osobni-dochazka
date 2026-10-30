@@ -4,7 +4,7 @@
 
 Jednoduchá webová aplikace pro evidenci osobní docházky. Funguje na počítači i mobilu, lze ji nainstalovat jako PWA a po přihlášení pracuje i bez připojení k internetu.
 
-**Aplikace:** https://nereziel.github.io/osobni-dochazka/
+**Aplikace:** https://osobni-dochazka.pages.dev/
 
 ## Funkce
 
@@ -26,7 +26,8 @@ Jednoduchá webová aplikace pro evidenci osobní docházky. Funguje na počíta
 - **IndexedDB** pro lokální offline data
 - **Workbox / vite-plugin-pwa**
 - **Vitest + ESLint**
-- **GitHub Actions + GitHub Pages**
+- **Cloudflare Pages**
+- **GitHub Actions** pro CI
 - **Dependabot** pro kontrolu aktualizací závislostí
 
 ## Lokální spuštění
@@ -88,23 +89,21 @@ Podrobnosti k autentizaci jsou v [`docs/AUTH.md`](./docs/AUTH.md).
 
 ## Nasazení
 
-GitHub Actions při změně `main` automaticky provede:
+Produkce běží na Cloudflare Pages a nasazuje se automaticky z větve `main`.
+
+Build nastavení:
 
 ```text
-npm ci
-npm run lint
-npm run test
-npm run build
+Build command: npm run build
+Output directory: dist
 ```
 
-a následně nasadí obsah `dist/` na GitHub Pages.
+V Cloudflare Pages musí být pro produkční build nastavené:
 
-Pro produkční build musí být v **Settings → Secrets and variables → Actions** nastavené:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-
-Pull requesty navíc procházejí workflow **Test and build**. Dependabot sleduje npm balíčky i GitHub Actions.
+Pull requesty procházejí workflow **Test and build**. Dependabot sleduje npm balíčky i GitHub Actions.
 
 ## Licence
 
