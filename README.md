@@ -1,122 +1,111 @@
-# Osobní docházka (v3.0.0 · Vue 3 + Vite + Supabase + PWA)
+# Osobní docházka
 
-Moderní, bezpečná a plně responzivní progresivní webová aplikace (PWA) pro evidenci osobní docházky, pracovní doby, směn, víkendů a absencí. Funguje jako čistě statická aplikace na **GitHub Pages**, na **mobilních zařízeních (iPhone / iOS Safari, Android)** i na **počítači**, a to jak online, tak **100% offline přes IndexedDB**.
+**v3.1.3 · Vue 3 · Vite · Supabase · PWA**
 
-Běží na adrese: `https://nereziel.github.io/osobni-dochazka/`
+Jednoduchá webová aplikace pro evidenci osobní docházky. Funguje na počítači i mobilu, lze ji nainstalovat jako PWA a po přihlášení pracuje i bez připojení k internetu.
 
----
+**Aplikace:** https://nereziel.github.io/osobni-dochazka/
 
-## 🚀 Rychlý start pro vývoj
+## Funkce
 
-### Požadavky
-- Node.js (v20 nebo novější)
-- npm (v10 nebo novější)
+- příchod, odchod, pracovní doba a přestávky
+- měsíční fond, odpracovaný čas a saldo
+- dovolená, půlden dovolené, nemoc, lékař, home office, služební cesta a další typy absence
+- české státní svátky
+- vlastní pracovní dny a pracovní doba včetně víkendů
+- offline režim přes IndexedDB
+- automatická synchronizace mezi zařízeními
+- instalovatelná PWA s upozorněním na novou verzi
+- více uživatelů, role správce a pozvánky pro nové uživatele
 
-### 1. Instalace závislostí
+## Technologie
+
+- **Vue 3**
+- **Vite 8**
+- **Supabase / PostgreSQL**
+- **IndexedDB** pro lokální offline data
+- **Workbox / vite-plugin-pwa**
+- **Vitest + ESLint**
+- **GitHub Actions + GitHub Pages**
+- **Dependabot** pro kontrolu aktualizací závislostí
+
+## Lokální spuštění
+
+Požadován je **Node.js 22.12 nebo novější**.
+
 ```bash
 npm install
-```
-
-### 2. Spuštění lokálního vývojového serveru
-```bash
 npm run dev
 ```
-Aplikace poběží na `http://localhost:5173/osobni-dochazka/`.
 
-### 3. Kontrola kódu a testy
+Kontrola projektu:
+
 ```bash
 npm run lint
 npm run test
-```
-
-### 4. Sestavení produkčního buildu
-```bash
 npm run build
+npm audit --omit=dev
 ```
-Statický build se vygeneruje do složky `./dist`.
 
----
+Na Windows lze při blokovaném `npm.ps1` použít například:
 
-## 🛠️ Architektura a technologie
+```powershell
+npm.cmd run test
+npm.cmd run build
+```
 
-- **Frontend framework**: Vue 3 (Composition API s `<script setup>`)
-- **Build nástroj**: Vite (s bází `/osobni-dochazka/`)
-- **PWA**: `vite-plugin-pwa` s Workbox serviceworkerem, offline shell a automatickým promptem pro aktualizaci nové verze
-- **Lokální databáze**: IndexedDB (verze 4) s rozdělením dat podle uživatele `[userId, date]`, per-user nastavením a transakčním potvrzováním zápisů (`oncomplete`)
-- **Synchronizace**: Robustní offline-first outbox fronta se sloučením změn (`coalesce`), skutečnými tombstones (`deleted_at`) a atomickým serverovým Last-Write-Wins (LWW)
-- **Backend / Databáze**: Supabase (PostgreSQL, Row Level Security, RPC funkce s `search_path = public`)
-- **Testy**: Vitest pro testování výpočtů, absencí, českých svátků, časových převodů i reálného integračního sync motoru
+## Supabase
 
----
-
-## 🔐 Supabase konfigurace a bezpečnost
-
-### Environment proměnné
-Pro vývoj i produkci se používají standardní Vite environment proměnné:
-- Vytvořte soubor `.env` na základě `.env.example`:
+Vytvoř `.env` podle `.env.example`:
 
 ```ini
 VITE_SUPABASE_URL=https://vas-projekt.supabase.co
 VITE_SUPABASE_ANON_KEY=vas-anon-public-klic
 ```
 
-> [!IMPORTANT]
-> - `VITE_SUPABASE_ANON_KEY` je veřejný publishable klíč, nikdy nepoužívejte `service_role` klíč!
-> - Aplikace neakceptuje injektování URL z query parametrů (`?sb_url=`), což brání phishingu a krádeži relací.
+> Používej pouze veřejný Supabase anon/publishable klíč. `service_role` klíč do klientské aplikace nepatří.
 
----
+Kompletní databázové schéma je v:
 
-## 📜 Inicializace databáze v Supabase
+```text
+supabase/schema.sql
+```
 
-Veškerá struktura databáze je uceleně definována v jediném souboru [`supabase/schema.sql`](./supabase/schema.sql).
+Při vytvoření nové databáze stačí schéma spustit v Supabase SQL Editoru. První registrovaný uživatel se stane administrátorem, další registrace vyžadují pozvánku.
 
-Tento skript obsahuje:
-- **Rozšíření `pgcrypto`**: Pro bezpečné generování náhodných session tokenů a bcrypt hashování PINu.
-- **Oddělení citlivých tabulek**: Veřejný profil v `attendance_profiles`, privátní přihlašovací údaje v `attendance_credentials`, relace v `attendance_sessions`.
-- **Zákaz přímého zápisu přes REST**: Zápis docházky probíhá přes RPC `upsert_attendance_day_lww` a nastavení přes RPC `update_own_settings`.
-- **Pohled `v_monthly_attendance_summary`**: S volbou `security_invoker = true` pro respektování RLS politik a kanonickými typy docházky.
-- **Session systém**: Ověřování relací přes HTTP hlavičku `X-Attendance-Session`, serverový lockout counter s garancí uložení.
-- **Automatický první administrátor a Invite-only registrace**: Pokud je databáze prázdná, první registrovaný uživatel se automaticky stává správcem systému (role `admin`) bez nutnosti pozvánky. Každá další registrace striktně vyžaduje platný kód pozvánky vytvořený správcem a získává roli `employee`. Souběh prvních registrací je ošetřen transakčním advisory lockem.
-- **Atomický LWW upsert**: RPC funkce `upsert_attendance_day_lww` pro spolehlivou synchronizaci a řešení souběžných konfliktů.
-- **Row Level Security (RLS)**: Striktní autorizace pro všechny operace.
+## Synchronizace a bezpečnost
 
-Pro inicializaci nebo čistý restart stačí obsah [`supabase/schema.sql`](./supabase/schema.sql) vložit do **Supabase SQL Editoru** a spustit. Prvního administrátora si následně zaregistrujete přímo přes registrační formulář aplikace.
+Aplikace používá vlastní session systém nad Supabase:
 
----
+- PIN/heslo je na serveru hashováno pomocí bcrypt
+- session tokeny jsou náhodné a v databázi se ukládá pouze jejich hash
+- přístup k datům omezuje PostgreSQL Row Level Security
+- zápisy docházky a nastavení probíhají přes kontrolované RPC funkce
+- synchronizace je offline-first s outbox frontou, tombstones a serverovým Last-Write-Wins
+- aplikace po návratu online automaticky odešle čekající změny a stáhne novější data
 
-## 📊 Přehled stavu funkcí
+Podrobnosti k autentizaci jsou v [`docs/AUTH.md`](./docs/AUTH.md).
 
-### Plně implementováno
-- **Vlastní bezpečný session systém**: Uživatel nepotřebuje e-mail ani externí účet. Přihlášení probíhá přes `username + PIN`. Server vystavuje 256-bitový session token odesílaný v hlavičce `X-Attendance-Session`.
-- **Bcrypt hashování na serveru**: PIN je v databázi chráněn funkcí `crypt(pin, gen_salt('bf', 10))`.
-- **10s synchronizace v popředí**: Namísto Realtime kanálu aplikace periodicky synchronizuje data každých 10 sekund (konfigurovatelné), pokud je otevřená v popředí a online. Při minimalizaci (hidden) se polling zastaví; po návratu do popředí se okamžitě provede synchronizace.
-- **Vue 3 + Vite + Composition API**: Moderní architektura bez starého vanilkového kódu.
-- **PWA & Offline Shell**: Plná funkčnost bez internetu na mobilu i desktopu.
-- **Per-user IndexedDB**: Oddělení záznamů podle `[userId, date]` a per-user nastavení.
-- **Transakční integrita IDB**: Potvrzení zápisu až po `tx.oncomplete`.
-- **Atomický Server-side LWW**: Outbox odesílá změny přes RPC `upsert_attendance_day_lww`.
-- **Spolehlivé Tombstones**: Smazání nastavuje `deleted_at` a spolehlivě odstraňuje dny na všech synchronizovaných zařízeních.
-- **Bezpečnostní RLS a RPC**: Ochrana proti privilege escalation, úniku pozvánek a čtení cizích dat.
+## Nasazení
 
-### Známá omezení
-- **Původní IndexedDB (v1–v3)**: Původní databáze neobsahovala vlastníka záznamu. Při migraci na v4 jsou stará lokální data přiřazena aktuálně známému profilu. Pokud bylo stejné zařízení ve staré verzi používáno více účty, nelze původního vlastníka historických lokálních záznamů spolehlivě určit. Cloudová data v Supabase tím nejsou ovlivněna.
-- **Klientská časová razítka (`updated_at`)**: Last-Write-Wins závisí na správně nastavených systémových hodinách zařízení. Serverová RPC funkce atomicky porovnává `updated_at`, ale při extrémně posunutém systémovém čase na klientu může dojít k nesprávnému vyhodnocení pořadí změn.
+GitHub Actions při změně `main` automaticky provede:
 
----
+```text
+npm ci
+npm run lint
+npm run test
+npm run build
+```
 
-## 📦 Nasazení na GitHub Pages
+a následně nasadí obsah `dist/` na GitHub Pages.
 
-Deploy na GitHub Pages je plně automatizovaný přes GitHub Actions workflow [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml):
+Pro produkční build musí být v **Settings → Secrets and variables → Actions** nastavené:
 
-1. Při pushi do větve `main` workflow spustí:
-   - `npm ci`
-   - `npm run lint`
-   - `npm run test` (ověří testy před nasazením)
-   - `npm run build` (sestaví aplikaci s klíči ze Secrets)
-   - Publikuje složku `./dist` na GitHub Pages
-2. **Nastavení GitHub Secrets**:
-   - V repozitáři přejděte do **Settings → Secrets and variables → Actions**.
-   - Přidejte:
-     - `SUPABASE_URL`: URL adresa Supabase projektu
-     - `SUPABASE_ANON_KEY`: Veřejný anon klíč projektu
-   - V **Settings → Pages** vyberte Source: **GitHub Actions**.
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+
+Pull requesty navíc procházejí workflow **Test and build**. Dependabot sleduje npm balíčky i GitHub Actions.
+
+## Licence
+
+Projekt používá licenci **PolyForm Noncommercial 1.0.0**. Viz [`LICENSE`](./LICENSE).
