@@ -9,7 +9,8 @@
     </div>
     <div class="shift-live-meta">
       <span>{{ activeShift.typeLabel }} od {{ activeShift.startTime }}</span>
-      <span>Konec pracovní doby: <strong>{{ workEndTime }}</strong></span>
+      <span>Konec směny: <strong>{{ workEndTime }}</strong></span>
+      <span v-if="earlyLeaveText" class="early-leave-pill">✨ {{ earlyLeaveText }}</span>
     </div>
     <div class="shift-live-actions">
       <button class="win-btn-accent" type="button" @click="$emit('endShift')">
@@ -24,7 +25,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { timeToMinutes, pad } from '../../utils/time.js';
+import { timeToMinutes, pad, formatDuration } from '../../utils/time.js';
 import { calculateWorkEndTime } from '../../utils/attendance.js';
 
 const props = defineProps({
@@ -41,6 +42,10 @@ const props = defineProps({
     default: () => ({})
   },
   creditedMinutes: {
+    type: Number,
+    default: 0
+  },
+  priorBalance: {
     type: Number,
     default: 0
   }
@@ -60,6 +65,20 @@ const workEndTime = computed(() => {
     customBreak,
     props.dailyTarget
   );
+});
+
+const earlyLeaveText = computed(() => {
+  if (!props.priorBalance || props.priorBalance <= 0) return '';
+  const customBreak = props.activeShift?.manualBreak ? props.activeShift.breakMinutes : null;
+  const reducedTarget = Math.max(0, props.dailyTarget - props.priorBalance);
+  const earlyTime = calculateWorkEndTime(
+    props.activeShift?.startTime,
+    props.settings,
+    props.creditedMinutes,
+    customBreak,
+    reducedTarget
+  );
+  return `S nadpracovaným (+${formatDuration(props.priorBalance)}) už v ${earlyTime}`;
 });
 
 function updateTimer() {

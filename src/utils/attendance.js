@@ -216,17 +216,19 @@ export function dayMetrics(day, settings = DEFAULT_SETTINGS) {
   };
 }
 
-export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS) {
+export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS, today = localDateKey(new Date())) {
   const d = monthDate instanceof Date ? monthDate : parseDateKey(monthDate);
   const year = d.getFullYear();
   const month = d.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const today = localDateKey(new Date());
 
   let fund = 0;
   let worked = 0;
   let credited = 0;
   let balance = 0;
+  let completedBalance = 0;
+  let completedFund = 0;
+  let completedCounted = 0;
   let recorded = 0;
   let missing = 0;
   let scheduledWorkdays = 0;
@@ -243,7 +245,8 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS) {
     }
 
     const rec = recordsMap instanceof Map ? recordsMap.get(key) : recordsMap?.[key];
-    fund += rec ? targetForDay(rec, settings) : baseTarget;
+    const dayTarget = rec ? targetForDay(rec, settings) : baseTarget;
+    fund += dayTarget;
 
     if (rec) {
       const m = dayMetrics(rec, settings);
@@ -255,6 +258,13 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS) {
       if (isWeekendDate(dateObj)) {
         weekendWorked += m.worked;
       }
+
+      const isTodayOngoing = key === today && Boolean(rec.start && !rec.end) && allowsWork(rec.type);
+      if (!isTodayOngoing) {
+        completedBalance += m.balance;
+        completedFund += dayTarget;
+        completedCounted += m.counted;
+      }
     } else if (baseTarget > 0 && key < today) {
       missing++;
     }
@@ -265,6 +275,9 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS) {
     worked,
     credited,
     balance,
+    completedBalance,
+    completedFund,
+    completedCounted,
     recorded,
     missing,
     scheduledWorkdays,

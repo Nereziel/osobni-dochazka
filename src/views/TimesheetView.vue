@@ -55,7 +55,7 @@
     <div class="timesheet-kpi-grid no-print">
       <div class="win-card ts-kpi-tile highlight">
         <span class="ts-kpi-label">Celkové saldo měsíce</span>
-        <strong class="ts-kpi-val" :class="balanceClass">{{ formatDuration(stats.balance, true) }}</strong>
+        <strong class="ts-kpi-val" :class="balanceClass">{{ formatDuration(effectiveBalance, true) }}</strong>
         <small class="muted">{{ balanceStatusText }}</small>
       </div>
       <div class="win-card ts-kpi-tile">
@@ -128,8 +128,8 @@
               <td colspan="6"><strong>CELKEM ZA MĚSÍC</strong></td>
               <td><strong>{{ formatDuration(stats.worked) }}</strong></td>
               <td><strong>{{ formatDuration(stats.credited) }}</strong></td>
-              <td :class="stats.balance > 0 ? 'positive' : stats.balance < 0 ? 'negative' : ''">
-                <strong>{{ formatDuration(stats.balance, true) }}</strong>
+              <td :class="effectiveBalance > 0 ? 'positive' : effectiveBalance < 0 ? 'negative' : ''">
+                <strong>{{ formatDuration(effectiveBalance, true) }}</strong>
               </td>
               <td>Fond: {{ formatDuration(stats.fund) }}</td>
             </tr>
@@ -145,6 +145,7 @@ import { computed } from 'vue';
 import {
   fmtMonthTitle,
   localDateKey,
+  todayKey,
   isWeekendDate,
   fmtWeekdayShort,
   addMonths,
@@ -154,6 +155,7 @@ import { holidayName } from '../utils/holidays.js';
 import { formatDuration } from '../utils/time.js';
 import {
   dayMetrics,
+  allowsWork,
   TYPE_LABELS,
   formatVacationDays
 } from '../utils/attendance.js';
@@ -209,15 +211,31 @@ const employeeDisplayName = computed(() => {
   return props.currentUser?.displayName || props.currentUser?.username || 'Lokální uživatel';
 });
 
+const hasOngoingShiftInMonth = computed(() => {
+  return typeof props.stats.completedBalance === 'number' && props.stats.completedBalance !== props.stats.balance;
+});
+
+const effectiveBalance = computed(() => {
+  if (hasOngoingShiftInMonth.value) {
+    return props.stats.completedBalance;
+  }
+  return props.stats.balance;
+});
+
 const balanceClass = computed(() => {
-  if (props.stats.balance > 0) return 'positive';
-  if (props.stats.balance < 0) return 'negative';
+  if (effectiveBalance.value > 0) return 'positive';
+  if (effectiveBalance.value < 0) return 'negative';
   return '';
 });
 
 const balanceStatusText = computed(() => {
-  if (props.stats.balance > 0) return 'nadpracováno';
-  if (props.stats.balance < 0) return 'nedoplatek';
+  if (hasOngoingShiftInMonth.value) {
+    if (effectiveBalance.value > 0) return `nadpracováno (můžeš jít o ${formatDuration(effectiveBalance.value)} dříve)`;
+    if (effectiveBalance.value < 0) return 'nedoplatek (uzavřené dny)';
+    return 'vyrovnáno (bez probíhající směny)';
+  }
+  if (effectiveBalance.value > 0) return `nadpracováno (lze odejít o ${formatDuration(effectiveBalance.value)} dříve)`;
+  if (effectiveBalance.value < 0) return 'nedoplatek';
   return 'vyrovnáno';
 });
 
@@ -238,6 +256,7 @@ const tableRows = computed(() => {
   const year = props.currentMonth.getFullYear();
   const month = props.currentMonth.getMonth();
   const daysInMonth = getDaysInMonth(year, month);
+  const today = todayKey();
   const rows = [];
 
   for (let d = 1; d <= daysInMonth; d++) {
@@ -247,6 +266,7 @@ const tableRows = computed(() => {
     const m = rec ? dayMetrics(rec, props.settings) : null;
     const h = holidayName(dateKey);
     const isWeekend = isWeekendDate(curDate);
+    const isOngoingToday = dateKey === today && Boolean(rec?.start && !rec?.end) && allowsWork(rec?.type);
 
     let typeLabel = '—';
     if (rec) {
@@ -257,10 +277,10 @@ const tableRows = computed(() => {
       typeLabel = 'Víkend';
     }
 
-    const workedText = rec ? formatDuration(m.worked) : '—';
+    const workedText = rec ? (isOngoingToday ? 'Probíhá…' : formatDuration(m.worked)) : '—';
     const creditedText = rec && m.credited > 0 ? formatDuration(m.credited) : '—';
-    const balanceText = rec ? formatDuration(m.balance, true) : '—';
-    const balanceClassVal = rec ? (m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : '') : '';
+    const balanceText = rec ? (isOngoingToday ? 'Probíhá' : formatDuration(m.balance, true)) : '—';
+    const balanceClassVal = rec && !isOngoingToday ? (m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : '') : 'muted';
     const breakLabel = rec && m.breakMinutes > 0 ? `${m.breakMinutes}m` : '—';
 
     rows.push({
@@ -271,7 +291,7 @@ const tableRows = computed(() => {
       isWeekend,
       typeLabel,
       start: rec?.start || '—',
-      end: rec?.end || '—',
+      end: isOngoingToday ? 'probíhá' : (rec?.end || '—'),
       breakLabel,
       workedText,
       creditedText,

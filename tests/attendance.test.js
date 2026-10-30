@@ -224,6 +224,36 @@ describe('Attendance calculations and business logic', () => {
     expect(stats.worked).toBe(540);
     expect(stats.credited).toBe(510);
     expect(stats.balance).toBe(30);
+    expect(stats.completedBalance).toBe(30);
+  });
+
+  it('excludes today ongoing shift from completedBalance so daily target does not create artificial -8h deficit while shift is running', () => {
+    const monthDate = new Date(2026, 9, 1, 12); // Říjen 2026
+    const recordsMap = new Map();
+
+    // 2026-10-01 uzavřený den s +30 min saldem
+    recordsMap.set('2026-10-01', {
+      date: '2026-10-01',
+      type: 'work',
+      start: '06:00',
+      end: '15:30',
+      manualBreak: false
+    });
+
+    // 2026-10-02 právě probíhající směna (start vyplněn, end prázdný)
+    recordsMap.set('2026-10-02', {
+      date: '2026-10-02',
+      type: 'work',
+      start: '06:30',
+      end: '',
+      manualBreak: false
+    });
+
+    const stats = monthStats(monthDate, recordsMap, customSettings, '2026-10-02');
+    // completedBalance ukazuje čistých +30 min z uzavřených dnů (neodečítá 510m dnešního neukončeného fondu)
+    expect(stats.completedBalance).toBe(30);
+    // surové balance obsahuje i neukončený dnešek (-510 + 30 = -480)
+    expect(stats.balance).toBe(-480);
   });
 
   it('calculates work end time correctly based on start, target, break and credited absence', () => {

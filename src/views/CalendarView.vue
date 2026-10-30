@@ -104,8 +104,8 @@
             </div>
             <div>
               <span>Saldo</span>
-              <strong :class="stats.balance > 0 ? 'positive' : stats.balance < 0 ? 'negative' : ''">
-                {{ formatDuration(stats.balance, true) }}
+              <strong :class="effectiveBalance > 0 ? 'positive' : effectiveBalance < 0 ? 'negative' : ''">
+                {{ formatDuration(effectiveBalance, true) }}
               </strong>
             </div>
           </div>
@@ -137,8 +137,9 @@
                 </div>
               </div>
               <div class="cal-rec-hours-col">
-                <strong class="cal-rec-hours-val">{{ formatDuration(rec.metrics.worked || rec.metrics.credited) }}</strong>
+                <strong class="cal-rec-hours-val">{{ rec.isOngoing ? 'Probíhá' : formatDuration(rec.metrics.worked || rec.metrics.credited) }}</strong>
                 <span
+                  v-if="!rec.isOngoing"
                   class="cal-rec-balance-val"
                   :class="rec.metrics.balance > 0 ? 'positive' : rec.metrics.balance < 0 ? 'negative' : 'neutral'"
                 >
@@ -202,6 +203,13 @@ const props = defineProps({
 const emit = defineEmits(['change-month', 'open-month-picker', 'fill-missing', 'edit-day']);
 
 const monthTitle = computed(() => fmtMonthTitle(props.currentMonth));
+
+const effectiveBalance = computed(() => {
+  if (typeof props.stats.completedBalance === 'number' && props.stats.completedBalance !== props.stats.balance) {
+    return props.stats.completedBalance;
+  }
+  return props.stats.balance;
+});
 
 function prevMonth() {
   emit('change-month', addMonths(props.currentMonth, -1));
@@ -302,9 +310,10 @@ const monthRecordsList = computed(() => {
 
     if (rec) {
       const metrics = dayMetrics(rec, props.settings);
+      const isOngoing = dateKey === today && Boolean(rec.start && !rec.end);
       let timeSpan = '—';
       if (rec.start && rec.end) timeSpan = `${rec.start} – ${rec.end}`;
-      else if (rec.start) timeSpan = `od ${rec.start}`;
+      else if (rec.start) timeSpan = `od ${rec.start} (probíhá)`;
 
       list.push({
         date: dateKey,
@@ -313,6 +322,7 @@ const monthRecordsList = computed(() => {
         weekday: fmtWeekdayShort(curDate),
         typeLabel: TYPE_LABELS[rec.type] || rec.type,
         timeSpan,
+        isOngoing,
         note: rec.note || '',
         metrics
       });

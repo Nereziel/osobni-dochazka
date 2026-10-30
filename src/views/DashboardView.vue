@@ -6,6 +6,7 @@
       :daily-target="todayMetrics.target"
       :settings="settings"
       :credited-minutes="todayMetrics.credited"
+      :prior-balance="monthKpi.completedBalance"
       @end-shift="$emit('end-shift')"
     />
 
@@ -51,6 +52,7 @@
               </div>
               <div class="progress-sub-info">
                 <span>{{ progressSubText }}</span>
+                <span v-if="earlyDepartureHint" class="early-departure-hint">{{ earlyDepartureHint }}</span>
               </div>
             </div>
           </div>
@@ -200,7 +202,7 @@
           <div class="kpi-cards-grid">
             <div class="kpi-card">
               <span class="kpi-title">Měsíční saldo</span>
-              <strong class="kpi-value" :class="monthBalanceClass">{{ formatDuration(monthKpi.balance, true) }}</strong>
+              <strong class="kpi-value" :class="monthBalanceClass">{{ formatDuration(displayedMonthBalance, true) }}</strong>
               <span class="kpi-sub">{{ monthBalanceSub }}</span>
             </div>
 
@@ -406,6 +408,39 @@ const progressSubText = computed(() => {
   return `Zbývá ${formatDuration(target - counted)} do splnění fondu`;
 });
 
+const earlyDepartureHint = computed(() => {
+  const prior = monthKpi.value.completedBalance ?? 0;
+  if (prior <= 0) return '';
+
+  const target = todayMetrics.value.target;
+  if (target <= 0) return '';
+
+  const startTime = props.activeShift?.isActive && props.activeShift?.startTime
+    ? props.activeShift.startTime
+    : (props.todayRecord?.start || defaultHoursForDate(currentKey, props.settings).start);
+
+  const customBreak = (props.todayRecord?.manualBreak || props.activeShift?.manualBreak)
+    ? (props.todayRecord?.breakMinutes ?? props.activeShift?.breakMinutes)
+    : null;
+
+  const reducedTarget = Math.max(0, target - prior);
+  const earlyTime = calculateWorkEndTime(
+    startTime,
+    props.settings,
+    todayMetrics.value.credited,
+    customBreak,
+    reducedTarget
+  );
+
+  if (props.activeShift?.isActive) {
+    return `💡 S nadpracovaným saldem (+${formatDuration(prior)}) máš fond splněn už v ${earlyTime} (dnes stačí odpracovat ${formatDuration(reducedTarget)}).`;
+  }
+  if (!props.todayRecord?.end) {
+    return `💡 Máš nadpracováno +${formatDuration(prior)} — dnes můžeš jít domů o ${formatDuration(Math.min(target, prior))} dříve (při příchodu v ${startTime} už v ${earlyTime}).`;
+  }
+  return '';
+});
+
 const defaultShiftHours = computed(() => {
   return `${props.settings.workStart || '06:30'} – ${props.settings.workEnd || '15:00'}`;
 });
@@ -471,15 +506,27 @@ const weekDays = computed(() => {
 const currentMonthTitle = computed(() => fmtMonthTitle(new Date()));
 const monthKpi = computed(() => props.monthStats);
 
+const displayedMonthBalance = computed(() => {
+  if (isShiftRunningToday.value && typeof monthKpi.value.completedBalance === 'number') {
+    return monthKpi.value.completedBalance;
+  }
+  return monthKpi.value.balance;
+});
+
 const monthBalanceClass = computed(() => {
-  if (monthKpi.value.balance > 0) return 'positive';
-  if (monthKpi.value.balance < 0) return 'negative';
+  if (displayedMonthBalance.value > 0) return 'positive';
+  if (displayedMonthBalance.value < 0) return 'negative';
   return '';
 });
 
 const monthBalanceSub = computed(() => {
-  const b = monthKpi.value.balance;
-  if (b > 0) return 'kladné saldo';
+  const b = displayedMonthBalance.value;
+  if (isShiftRunningToday.value) {
+    if (b > 0) return `uzavřené dny (můžeš jít o ${formatDuration(b)} dříve)`;
+    if (b < 0) return 'nedoplatek z uzavřených dnů';
+    return 'vyrovnané (bez dnešní probíhající směny)';
+  }
+  if (b > 0) return 'kladné saldo (nadpracováno)';
   if (b < 0) return 'nedoplatek fondu';
   return 'vyrovnané saldo';
 });
