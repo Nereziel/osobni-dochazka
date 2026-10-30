@@ -5,8 +5,7 @@ import path from 'path';
 import fs from 'fs';
 
 const pkg = JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf-8'));
-const isCloudflarePages = Boolean(process.env.CF_PAGES || process.env.CF_PAGES_URL);
-const appBase = isCloudflarePages ? '/' : '/osobni-dochazka/';
+const appBase = '/';
 
 export default defineConfig({
   base: appBase,
@@ -53,7 +52,7 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest}'],
-        navigateFallback: `${appBase}index.html`,
+        navigateFallback: '/index.html',
         cleanupOutdatedCaches: true
       }
     })
