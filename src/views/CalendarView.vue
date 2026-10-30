@@ -3,22 +3,49 @@
     <!-- Toolbar -->
     <div class="win-toolbar-bar">
       <div class="toolbar-nav-group">
-        <button class="win-btn-standard icon-btn" type="button" aria-label="Předchozí měsíc" @click="prevMonth">
+        <button
+          class="win-btn-standard icon-btn"
+          type="button"
+          aria-label="Předchozí měsíc"
+          @click="prevMonth"
+        >
           ‹
         </button>
-        <button class="win-btn-subtle title-btn" type="button" title="Kliknutím vybereš měsíc" @click="$emit('open-month-picker')">
+        <button
+          class="win-btn-subtle title-btn"
+          type="button"
+          title="Kliknutím vybereš měsíc"
+          @click="$emit('open-month-picker')"
+        >
           <span>{{ monthTitle }}</span>
           <span class="title-sub-pill">Měsíce</span>
         </button>
-        <button class="win-btn-standard icon-btn" type="button" aria-label="Další měsíc" @click="nextMonth">
+        <button
+          class="win-btn-standard icon-btn"
+          type="button"
+          aria-label="Další měsíc"
+          @click="nextMonth"
+        >
           ›
         </button>
       </div>
 
       <div class="toolbar-actions-group">
         <span class="schedule-summary-pill">{{ scheduleHint }}</span>
-        <button class="win-btn-standard toolbar-action-btn" type="button" title="Doplnit běžnou dobu do prázdných dnů" @click="$emit('fill-missing', currentMonth)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16">
+        <button
+          class="win-btn-standard toolbar-action-btn"
+          type="button"
+          title="Doplnit běžnou dobu do prázdných dnů"
+          @click="$emit('fill-missing', currentMonth)"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            width="16"
+            height="16"
+          >
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <span class="btn-label-desktop">Doplnit běžnou dobu do prázdných dnů</span>
@@ -30,7 +57,10 @@
     <div class="calendar-workspace-layout">
       <!-- Velká kalendářní mřížka -->
       <div class="win-card calendar-card-shell">
-        <div class="calendar-weekdays-header" aria-hidden="true">
+        <div
+          class="calendar-weekdays-header"
+          aria-hidden="true"
+        >
           <span title="Pondělí"><span class="wd-full">Pondělí</span><span class="wd-short">Po</span></span>
           <span title="Úterý"><span class="wd-full">Úterý</span><span class="wd-short">Út</span></span>
           <span title="Středa"><span class="wd-full">Středa</span><span class="wd-short">St</span></span>
@@ -59,13 +89,24 @@
             <div class="cal-day-top">
               <span class="cal-day-num">{{ cell.dayNumber }}</span>
               <div class="cal-day-top-badges">
-                <span v-if="cell.holiday" class="cal-holiday-star" :title="cell.holiday">★</span>
-                <span v-if="cell.status" class="cal-dot" :class="cell.status"></span>
+                <span
+                  v-if="cell.holiday"
+                  class="cal-holiday-star"
+                  :title="cell.holiday"
+                >★</span>
+                <span
+                  v-if="cell.status"
+                  class="cal-dot"
+                  :class="cell.status"
+                />
               </div>
             </div>
 
             <div class="cal-day-bottom">
-              <span v-if="cell.timeText" class="cal-time-range">{{ cell.timeText }}</span>
+              <span
+                v-if="cell.timeText"
+                class="cal-time-range"
+              >{{ cell.timeText }}</span>
               <span
                 v-if="cell.tagText"
                 class="cal-tag-pill"
@@ -79,13 +120,13 @@
 
         <!-- Legenda -->
         <div class="calendar-legend-bar">
-          <span><i class="dot work"></i> Běžná směna</span>
-          <span><i class="dot home"></i> Home office</span>
-          <span><i class="dot trip"></i> Služební cesta</span>
-          <span><i class="dot leave"></i> Dovolená / Volno</span>
-          <span><i class="dot doctor"></i> Lékař / Nemoc</span>
-          <span><i class="dot weekend-work"></i> Směna o víkendu</span>
-          <span><i class="dot missing"></i> Nevyplněno</span>
+          <span><i class="dot work" /> Běžná směna</span>
+          <span><i class="dot home" /> Home office</span>
+          <span><i class="dot trip" /> Služební cesta</span>
+          <span><i class="dot leave" /> Dovolená / Volno</span>
+          <span><i class="dot doctor" /> Lékař / Nemoc</span>
+          <span><i class="dot weekend-work" /> Směna o víkendu</span>
+          <span><i class="dot missing" /> Nevyplněno</span>
         </div>
       </div>
 
@@ -130,10 +171,15 @@
                 <span class="cal-rec-day-wd">{{ rec.weekday }}</span>
               </div>
               <div class="cal-rec-main-col">
-                <div class="cal-rec-type-line">{{ rec.typeLabel }}</div>
+                <div class="cal-rec-type-line">
+                  {{ rec.typeLabel }}
+                </div>
                 <div class="cal-rec-meta-line">
                   <span class="cal-rec-timespan">{{ rec.timeSpan }}</span>
-                  <span v-if="rec.note" class="cal-rec-note">· {{ rec.note }}</span>
+                  <span
+                    v-if="rec.note"
+                    class="cal-rec-note"
+                  >· {{ rec.note }}</span>
                 </div>
               </div>
               <div class="cal-rec-hours-col">
@@ -148,7 +194,11 @@
               </div>
             </button>
 
-            <p v-if="monthRecordsList.length === 0" class="muted" style="margin: 8px 0; font-size: 13px;">
+            <p
+              v-if="monthRecordsList.length === 0"
+              class="muted"
+              style="margin: 8px 0; font-size: 13px;"
+            >
               V tomto měsíci zatím nejsou žádné záznamy.
             </p>
           </div>

@@ -1,14 +1,22 @@
 <template>
   <header class="win11-header no-print">
     <div class="header-breadcrumb">
-      <div class="header-eyebrow">{{ greeting }}</div>
-      <h1 class="header-title">{{ viewTitle }}</h1>
+      <div class="header-eyebrow">
+        {{ greeting }}
+      </div>
+      <h1 class="header-title">
+        {{ viewTitle }}
+      </h1>
     </div>
 
     <div class="header-right">
       <!-- Živý stav cloudu & outbox fronty -->
-      <div class="cloud-status-widget" :class="statusClass" :title="statusTooltip">
-        <span class="status-pulse-dot"></span>
+      <div
+        class="cloud-status-widget"
+        :class="statusClass"
+        :title="statusTooltip"
+      >
+        <span class="status-pulse-dot" />
         <span>{{ statusLabel }}</span>
         <button
           class="icon-tiny-btn"
@@ -22,7 +30,12 @@
       </div>
 
       <!-- Uživatelská pilulka -->
-      <button class="win-user-pill" type="button" title="Uživatelský účet" @click="$emit('user-click')">
+      <button
+        class="win-user-pill"
+        type="button"
+        title="Uživatelský účet"
+        @click="$emit('user-click')"
+      >
         <span class="mini-avatar">{{ userInitials }}</span>
         <span class="header-user-text">{{ userDisplayName }}</span>
       </button>

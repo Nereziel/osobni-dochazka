@@ -3,36 +3,97 @@
     <!-- Toolbar -->
     <div class="win-toolbar-bar no-print">
       <div class="toolbar-nav-group">
-        <button class="win-btn-standard icon-btn" type="button" aria-label="Předchozí měsíc" @click="prevMonth">
+        <button
+          class="win-btn-standard icon-btn"
+          type="button"
+          aria-label="Předchozí měsíc"
+          @click="prevMonth"
+        >
           ‹
         </button>
-        <button class="win-btn-subtle title-btn" type="button" title="Kliknutím vybereš měsíc" @click="$emit('open-month-picker')">
+        <button
+          class="win-btn-subtle title-btn"
+          type="button"
+          title="Kliknutím vybereš měsíc"
+          @click="$emit('open-month-picker')"
+        >
           <span>{{ monthTitle }}</span>
           <span class="title-sub-pill">Měsíce</span>
         </button>
-        <button class="win-btn-standard icon-btn" type="button" aria-label="Další měsíc" @click="nextMonth">
+        <button
+          class="win-btn-standard icon-btn"
+          type="button"
+          aria-label="Další měsíc"
+          @click="nextMonth"
+        >
           ›
         </button>
       </div>
 
       <div class="toolbar-actions-group timesheet-actions">
-        <button class="win-btn-standard toolbar-action-btn" type="button" title="Doplnit chybějící dny" @click="$emit('fill-missing', currentMonth)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="16" height="16">
+        <button
+          class="win-btn-standard toolbar-action-btn"
+          type="button"
+          title="Doplnit chybějící dny"
+          @click="$emit('fill-missing', currentMonth)"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.2"
+            width="16"
+            height="16"
+          >
             <polyline points="20 6 9 17 4 12" />
           </svg>
           <span class="btn-label-desktop">Doplnit chybějící dny</span>
           <span class="btn-label-mobile">Doplnit</span>
         </button>
-        <button class="win-btn-standard toolbar-action-btn" type="button" title="Exportovat výkaz do CSV" @click="$emit('export-csv', currentMonth)">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+        <button
+          class="win-btn-standard toolbar-action-btn"
+          type="button"
+          title="Exportovat výkaz do CSV"
+          @click="$emit('export-csv', currentMonth)"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            width="16"
+            height="16"
+          >
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line
+              x1="12"
+              y1="15"
+              x2="12"
+              y2="3"
+            />
           </svg>
           <span class="btn-label-desktop">Export do CSV</span>
           <span class="btn-label-mobile">Export CSV</span>
         </button>
-        <button class="win-btn-accent toolbar-action-btn" type="button" title="Vytisknout výkaz nebo uložit do PDF" @click="printTimesheet">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" />
+        <button
+          class="win-btn-accent toolbar-action-btn"
+          type="button"
+          title="Vytisknout výkaz nebo uložit do PDF"
+          @click="printTimesheet"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            width="16"
+            height="16"
+          >
+            <polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect
+              x="6"
+              y="14"
+              width="12"
+              height="8"
+            />
           </svg>
           <span class="btn-label-desktop">Tisk / PDF výkaz</span>
           <span class="btn-label-mobile">Tisk / PDF</span>
@@ -55,7 +116,10 @@
     <div class="timesheet-kpi-grid no-print">
       <div class="win-card ts-kpi-tile highlight">
         <span class="ts-kpi-label">Celkové saldo měsíce</span>
-        <strong class="ts-kpi-val" :class="balanceClass">{{ formatDuration(effectiveBalance, true) }}</strong>
+        <strong
+          class="ts-kpi-val"
+          :class="balanceClass"
+        >{{ formatDuration(effectiveBalance, true) }}</strong>
         <small class="muted">{{ balanceStatusText }}</small>
       </div>
       <div class="win-card ts-kpi-tile">
@@ -119,13 +183,17 @@
               <td>{{ row.breakLabel }}</td>
               <td><strong>{{ row.workedText }}</strong></td>
               <td>{{ row.creditedText }}</td>
-              <td :class="row.balanceClass"><strong>{{ row.balanceText }}</strong></td>
+              <td :class="row.balanceClass">
+                <strong>{{ row.balanceText }}</strong>
+              </td>
               <td>{{ row.note }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr>
-              <td colspan="6"><strong>CELKEM ZA MĚSÍC</strong></td>
+              <td colspan="6">
+                <strong>CELKEM ZA MĚSÍC</strong>
+              </td>
               <td><strong>{{ formatDuration(stats.worked) }}</strong></td>
               <td><strong>{{ formatDuration(stats.credited) }}</strong></td>
               <td :class="effectiveBalance > 0 ? 'positive' : effectiveBalance < 0 ? 'negative' : ''">

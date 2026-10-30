@@ -1,17 +1,36 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
     <div class="win11-dialog-surface compact">
       <header class="dialog-header">
         <div class="year-selector-row">
-          <button class="win-btn-standard icon-btn" type="button" aria-label="Předchozí rok" @click="selectedYear--">
+          <button
+            class="win-btn-standard icon-btn"
+            type="button"
+            aria-label="Předchozí rok"
+            @click="selectedYear--"
+          >
             ‹
           </button>
           <strong class="picker-year-title">{{ selectedYear }}</strong>
-          <button class="win-btn-standard icon-btn" type="button" aria-label="Další rok" @click="selectedYear++">
+          <button
+            class="win-btn-standard icon-btn"
+            type="button"
+            aria-label="Další rok"
+            @click="selectedYear++"
+          >
             ›
           </button>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>
@@ -32,11 +51,22 @@
         </button>
       </div>
 
-      <footer class="dialog-footer" style="justify-content: space-between;">
-        <button class="win-btn-subtle" type="button" @click="selectTodayMonth">
+      <footer
+        class="dialog-footer"
+        style="justify-content: space-between;"
+      >
+        <button
+          class="win-btn-subtle"
+          type="button"
+          @click="selectTodayMonth"
+        >
           Přejít na dnešní měsíc
         </button>
-        <button class="win-btn-standard" type="button" @click="close">
+        <button
+          class="win-btn-standard"
+          type="button"
+          @click="close"
+        >
           Zavřít
         </button>
       </footer>

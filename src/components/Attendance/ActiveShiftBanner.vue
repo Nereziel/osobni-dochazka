@@ -1,7 +1,10 @@
 <template>
-  <div v-if="activeShift.isActive" class="win-active-shift-card">
+  <div
+    v-if="activeShift.isActive"
+    class="win-active-shift-card"
+  >
     <div class="shift-live-indicator">
-      <span class="pulse-indicator"></span>
+      <span class="pulse-indicator" />
       <div class="shift-live-text">
         <span class="shift-live-tag">SMĚNA PROBÍHÁ</span>
         <strong class="shift-live-clock">{{ elapsedTime }}</strong>
@@ -10,12 +13,32 @@
     <div class="shift-live-meta">
       <span>{{ activeShift.typeLabel }} od {{ activeShift.startTime }}</span>
       <span>Konec směny: <strong>{{ workEndTime }}</strong></span>
-      <span v-if="earlyLeaveText" class="early-leave-pill">✨ {{ earlyLeaveText }}</span>
+      <span
+        v-if="earlyLeaveText"
+        class="early-leave-pill"
+      >✨ {{ earlyLeaveText }}</span>
     </div>
     <div class="shift-live-actions">
-      <button class="win-btn-accent" type="button" @click="$emit('endShift')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
-          <rect x="6" y="6" width="12" height="12" rx="2" />
+      <button
+        class="win-btn-accent"
+        type="button"
+        @click="$emit('endShift')"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          width="16"
+          height="16"
+        >
+          <rect
+            x="6"
+            y="6"
+            width="12"
+            height="12"
+            rx="2"
+          />
         </svg>
         <span>Ukončit směnu (Odchod teď)</span>
       </button>

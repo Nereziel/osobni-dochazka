@@ -1,12 +1,21 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
     <div class="win11-dialog-surface compact">
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Mobil &amp; Počítač</span>
           <h2>Jak aplikaci nainstalovat na plochu</h2>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>

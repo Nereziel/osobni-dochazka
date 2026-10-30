@@ -1,39 +1,78 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
     <div class="win11-dialog-surface compact">
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Správa týmu</span>
           <h2>Vytvoření pozvánky pro kolegu</h2>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>
 
-      <form class="dialog-body-scroll" @submit.prevent="generateInvite">
+      <form
+        class="dialog-body-scroll"
+        @submit.prevent="generateInvite"
+      >
         <p class="dialog-info-text">
           Vygeneruj jednorázový odkaz pozvánky. Nový uživatel získá účet s rolí zaměstnance. Povýšení na správce můžeš provést kdykoliv v přehledu týmu.
         </p>
 
-        <div v-if="generatedUrl" class="dialog-subcard" style="margin-top: 14px;">
+        <div
+          v-if="generatedUrl"
+          class="dialog-subcard"
+          style="margin-top: 14px;"
+        >
           <span class="field-sub-label">Vygenerovaný odkaz s pozvánkou:</span>
-          <div class="win-input-suffix" style="margin-top: 6px;">
-            <input :value="generatedUrl" type="text" readonly>
-            <button class="win-btn-accent compact-btn" type="button" @click="copyUrl">
+          <div
+            class="win-input-suffix"
+            style="margin-top: 6px;"
+          >
+            <input
+              :value="generatedUrl"
+              type="text"
+              readonly
+            >
+            <button
+              class="win-btn-accent compact-btn"
+              type="button"
+              @click="copyUrl"
+            >
               Kopírovat
             </button>
           </div>
-          <small class="muted" style="margin-top: 4px; display: block;">
+          <small
+            class="muted"
+            style="margin-top: 4px; display: block;"
+          >
             Kód pozvánky: <strong>{{ generatedCode }}</strong>
           </small>
         </div>
 
         <div class="dialog-footer-block">
-          <button class="win-btn-accent full-width-btn" type="submit" :disabled="loading">
+          <button
+            class="win-btn-accent full-width-btn"
+            type="submit"
+            :disabled="loading"
+          >
             {{ loading ? 'Generování...' : 'Vygenerovat pozvánku' }}
           </button>
-          <button class="win-btn-standard full-width-btn" type="button" style="margin-top: 6px;" @click="close">
+          <button
+            class="win-btn-standard full-width-btn"
+            type="button"
+            style="margin-top: 6px;"
+            @click="close"
+          >
             Zavřít
           </button>
         </div>

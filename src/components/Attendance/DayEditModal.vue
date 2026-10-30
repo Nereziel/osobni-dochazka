@@ -1,13 +1,28 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
-    <form class="win11-dialog-surface" @submit.prevent="submitSave">
-      <div class="dialog-drag-handle" aria-hidden="true"></div>
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
+    <form
+      class="win11-dialog-surface"
+      @submit.prevent="submitSave"
+    >
+      <div
+        class="dialog-drag-handle"
+        aria-hidden="true"
+      />
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">{{ headerSubtitle }}</span>
           <h2>{{ headerTitle }}</h2>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>
@@ -16,7 +31,10 @@
         <!-- Režim dne -->
         <label class="win-field">
           <span>Typ směny / Absence</span>
-          <select v-model="formData.type" class="win-select">
+          <select
+            v-model="formData.type"
+            class="win-select"
+          >
             <option value="work">Práce (běžná směna)</option>
             <option value="homeOffice">Home office (práce z domova)</option>
             <option value="businessTrip">Služební cesta</option>
@@ -31,21 +49,34 @@
         </label>
 
         <!-- Pracovní doba sekce -->
-        <div v-if="showsWorkSection" class="dialog-subcard">
+        <div
+          v-if="showsWorkSection"
+          class="dialog-subcard"
+        >
           <div class="subcard-header-flex">
             <h4>Pracovní doba</h4>
-            <button class="win-btn-subtle compact-btn" type="button" @click="applyDefaultSchedule">
+            <button
+              class="win-btn-subtle compact-btn"
+              type="button"
+              @click="applyDefaultSchedule"
+            >
               Použít běžný rozvrh
             </button>
           </div>
           <div class="dialog-form-row">
             <label class="win-field">
               <span>Příchod</span>
-              <input v-model="formData.start" type="time">
+              <input
+                v-model="formData.start"
+                type="time"
+              >
             </label>
             <label class="win-field">
               <span>Odchod</span>
-              <input v-model="formData.end" type="time">
+              <input
+                v-model="formData.end"
+                type="time"
+              >
             </label>
           </div>
 
@@ -55,22 +86,34 @@
               <div class="break-info-col">
                 <div class="break-label-row">
                   <span class="break-title">Přestávka na oběd</span>
-                  <span class="break-badge" :class="breakBadgeClass">
+                  <span
+                    class="break-badge"
+                    :class="breakBadgeClass"
+                  >
                     {{ breakBadgeText }}
                   </span>
                 </div>
                 <small class="break-hint">{{ breakHintText }}</small>
               </div>
 
-              <label class="win-mini-toggle" title="Zapnout vlastní délku přestávky">
-                <input v-model="formData.manualBreak" type="checkbox">
-                <span class="mini-toggle-slider"></span>
+              <label
+                class="win-mini-toggle"
+                title="Zapnout vlastní délku přestávky"
+              >
+                <input
+                  v-model="formData.manualBreak"
+                  type="checkbox"
+                >
+                <span class="mini-toggle-slider" />
                 <span class="mini-toggle-label">Vlastní</span>
               </label>
             </div>
 
             <!-- Vlastní zadání délky přestávky -->
-            <div v-if="formData.manualBreak" class="break-manual-box">
+            <div
+              v-if="formData.manualBreak"
+              class="break-manual-box"
+            >
               <div class="break-input-row">
                 <label class="win-field compact">
                   <span>Délka přestávky</span>
@@ -104,37 +147,64 @@
         </div>
 
         <!-- Lékař sekce -->
-        <div v-if="formData.type === 'doctor'" class="dialog-subcard">
+        <div
+          v-if="formData.type === 'doctor'"
+          class="dialog-subcard"
+        >
           <h4>Návštěva lékaře</h4>
-          <div class="win-toggle-control" style="margin-bottom: 8px;">
+          <div
+            class="win-toggle-control"
+            style="margin-bottom: 8px;"
+          >
             <label class="switch-label">
-              <input v-model="formData.doctorFullDay" type="checkbox">
-              <span class="switch-slider"></span>
+              <input
+                v-model="formData.doctorFullDay"
+                type="checkbox"
+              >
+              <span class="switch-slider" />
               <div class="switch-text">
                 <strong>Celý den u lékaře</strong>
                 <small>Započítá se celý denní fond jako omluvená doba.</small>
               </div>
             </label>
           </div>
-          <div v-if="!formData.doctorFullDay" class="dialog-form-row">
+          <div
+            v-if="!formData.doctorFullDay"
+            class="dialog-form-row"
+          >
             <label class="win-field">
               <span>Čas u lékaře od</span>
-              <input v-model="formData.doctorStart" type="time">
+              <input
+                v-model="formData.doctorStart"
+                type="time"
+              >
             </label>
             <label class="win-field">
               <span>Čas do</span>
-              <input v-model="formData.doctorEnd" type="time">
+              <input
+                v-model="formData.doctorEnd"
+                type="time"
+              >
             </label>
           </div>
         </div>
 
         <!-- Jiná omluvená doba -->
-        <div v-if="formData.type === 'other'" class="dialog-subcard">
+        <div
+          v-if="formData.type === 'other'"
+          class="dialog-subcard"
+        >
           <h4>Omluvený čas</h4>
           <label class="win-field">
             <span>Počet minut k započtení</span>
             <div class="win-input-suffix">
-              <input v-model.number="formData.otherMinutes" type="number" min="0" max="1440" step="5">
+              <input
+                v-model.number="formData.otherMinutes"
+                type="number"
+                min="0"
+                max="1440"
+                step="5"
+              >
               <span>min</span>
             </div>
           </label>
@@ -143,7 +213,11 @@
         <!-- Poznámka -->
         <label class="win-field">
           <span>Poznámka ke dni</span>
-          <textarea v-model="formData.note" rows="2" placeholder="Např. projekt, pohotovost, přesčas..."></textarea>
+          <textarea
+            v-model="formData.note"
+            rows="2"
+            placeholder="Např. projekt, pohotovost, přesčas..."
+          />
         </label>
 
         <!-- Live souhrn výsledku dne -->
@@ -179,10 +253,17 @@
           Smazat záznam
         </button>
         <div class="dialog-actions-right">
-          <button class="win-btn-standard" type="button" @click="close">
+          <button
+            class="win-btn-standard"
+            type="button"
+            @click="close"
+          >
             Zrušit
           </button>
-          <button class="win-btn-accent" type="submit">
+          <button
+            class="win-btn-accent"
+            type="submit"
+          >
             Uložit den
           </button>
         </div>

@@ -1,27 +1,51 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
     <div class="win11-dialog-surface compact">
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Nový profil</span>
           <h2>{{ isFirstUser ? 'První registrace (Správce)' : 'Registrace uživatele' }}</h2>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>
 
-      <form class="dialog-body-scroll" @submit.prevent="handleSubmit">
-        <div v-if="isFirstUser" class="win-infobar success" style="margin-bottom: 12px;">
-          <div class="infobar-icon">🛡️</div>
+      <form
+        class="dialog-body-scroll"
+        @submit.prevent="handleSubmit"
+      >
+        <div
+          v-if="isFirstUser"
+          class="win-infobar success"
+          style="margin-bottom: 12px;"
+        >
+          <div class="infobar-icon">
+            🛡️
+          </div>
           <div class="infobar-body">
             <strong>První registrace (Správce systému)</strong>
             <p>V databázi dosud není vytvořen žádný uživatel. Tento účet získá roli administrátora a nepotřebuje pozvánku.</p>
           </div>
         </div>
 
-        <div v-else class="win-infobar info" style="margin-bottom: 12px;">
-          <div class="infobar-icon">🔒</div>
+        <div
+          v-else
+          class="win-infobar info"
+          style="margin-bottom: 12px;"
+        >
+          <div class="infobar-icon">
+            🔒
+          </div>
           <div class="infobar-body">
             <strong>Registrace na pozvánku (Invite-Only)</strong>
             <p>Pro vytvoření osobního účtu je vyžadován platný kód pozvánky od správce docházky.</p>
@@ -80,7 +104,11 @@
           </label>
         </div>
 
-        <label v-if="!isFirstUser" class="win-field" style="margin-top: 6px;">
+        <label
+          v-if="!isFirstUser"
+          class="win-field"
+          style="margin-top: 6px;"
+        >
           <span>Kód pozvánky od správce (Invite code) *</span>
           <input
             v-model="inviteCode"
@@ -89,15 +117,24 @@
             autocomplete="off"
             required
           >
-          <small class="muted" style="font-size: 11px; margin-top: 3px; display: block;">
+          <small
+            class="muted"
+            style="font-size: 11px; margin-top: 3px; display: block;"
+          >
             Registrace nových uživatelů je uzamčena. Zadej kód pozvánky od správce.
           </small>
         </label>
 
-        <div class="win-toggle-control" style="margin: 6px 0 12px;">
+        <div
+          class="win-toggle-control"
+          style="margin: 6px 0 12px;"
+        >
           <label class="switch-label">
-            <input v-model="mergeLocal" type="checkbox">
-            <span class="switch-slider"></span>
+            <input
+              v-model="mergeLocal"
+              type="checkbox"
+            >
+            <span class="switch-slider" />
             <div class="switch-text">
               <strong>Nahrát dosavadní záznamy z tohoto zařízení do nového účtu</strong>
             </div>
@@ -105,12 +142,20 @@
         </div>
 
         <div class="dialog-footer-block">
-          <button class="win-btn-accent full-width-btn" type="submit" :disabled="loading">
+          <button
+            class="win-btn-accent full-width-btn"
+            type="submit"
+            :disabled="loading"
+          >
             {{ loading ? 'Vytváření účtu...' : 'Vytvořit účet v databázi' }}
           </button>
           <div class="modal-switch-link">
             <span>Už máš účet?</span>
-            <button class="text-link-btn" type="button" @click="switchToLogin">
+            <button
+              class="text-link-btn"
+              type="button"
+              @click="switchToLogin"
+            >
               Přihlásit se k existujícímu účtu
             </button>
           </div>

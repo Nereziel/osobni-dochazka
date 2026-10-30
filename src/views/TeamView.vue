@@ -1,8 +1,19 @@
 <template>
   <section class="win11-view active">
     <div class="team-back-row">
-      <button class="win-btn-subtle" type="button" @click="$emit('back-to-settings')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="16" height="16">
+      <button
+        class="win-btn-subtle"
+        type="button"
+        @click="$emit('back-to-settings')"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+          width="16"
+          height="16"
+        >
           <polyline points="15 18 9 12 15 6" />
         </svg>
         <span>Zpět do Nastavení</span>
@@ -18,13 +29,39 @@
       </div>
 
       <div class="toolbar-actions-group">
-        <button class="win-btn-accent" type="button" @click="$emit('open-create-invite')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        <button
+          class="win-btn-accent"
+          type="button"
+          @click="$emit('open-create-invite')"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            width="16"
+            height="16"
+          >
+            <line
+              x1="12"
+              y1="5"
+              x2="12"
+              y2="19"
+            /><line
+              x1="5"
+              y1="12"
+              x2="19"
+              y2="12"
+            />
           </svg>
           <span>Vytvořit pozvánku</span>
         </button>
-        <button class="win-btn-standard icon-btn" type="button" title="Obnovit data týmu" @click="refreshData">
+        <button
+          class="win-btn-standard icon-btn"
+          type="button"
+          title="Obnovit data týmu"
+          @click="refreshData"
+        >
           ↻
         </button>
       </div>
@@ -55,32 +92,55 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="inv in invites" :key="inv.code">
+                <tr
+                  v-for="inv in invites"
+                  :key="inv.code"
+                >
                   <td><strong><code>{{ inv.code }}</code></strong></td>
                   <td>
-                    <span class="role-badge" :class="inv.target_role">
+                    <span
+                      class="role-badge"
+                      :class="inv.target_role"
+                    >
                       {{ inv.target_role === 'admin' ? 'Správce' : 'Zaměstnanec' }}
                     </span>
                   </td>
                   <td>
-                    <span class="invite-status-badge" :class="inv.is_used ? 'used' : 'unused'">
+                    <span
+                      class="invite-status-badge"
+                      :class="inv.is_used ? 'used' : 'unused'"
+                    >
                       {{ inv.is_used ? 'Využita' : 'Aktivní' }}
                     </span>
                   </td>
                   <td>{{ inv.used_by ? inv.used_by.replace('user:', '') : '—' }}</td>
                   <td>
                     <div class="table-action-cell">
-                      <button class="win-btn-standard compact-btn" type="button" title="Kopírovat odkaz pozvánky" @click="copyInviteUrl(inv.code)">
+                      <button
+                        class="win-btn-standard compact-btn"
+                        type="button"
+                        title="Kopírovat odkaz pozvánky"
+                        @click="copyInviteUrl(inv.code)"
+                      >
                         🔗 Odkaz
                       </button>
-                      <button class="win-btn-subtle compact-btn danger-btn" type="button" title="Smazat pozvánku" @click="deleteInvite(inv)">
+                      <button
+                        class="win-btn-subtle compact-btn danger-btn"
+                        type="button"
+                        title="Smazat pozvánku"
+                        @click="deleteInvite(inv)"
+                      >
                         ✕ Smazat
                       </button>
                     </div>
                   </td>
                 </tr>
                 <tr v-if="invites.length === 0">
-                  <td colspan="5" style="text-align:center; padding: 20px;" class="muted">
+                  <td
+                    colspan="5"
+                    style="text-align:center; padding: 20px;"
+                    class="muted"
+                  >
                     Zatím nebyly vytvořeny žádné pozvánky. Klikni nahoře na "Vytvořit pozvánku".
                   </td>
                 </tr>
@@ -111,28 +171,52 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="prof in profiles" :key="prof.user_key">
+                <tr
+                  v-for="prof in profiles"
+                  :key="prof.user_key"
+                >
                   <td>
                     <strong>{{ prof.display_name || prof.username }}</strong>
-                    <small v-if="prof.user_key === currentUser?.userKey" class="muted"> (ty)</small>
+                    <small
+                      v-if="prof.user_key === currentUser?.userKey"
+                      class="muted"
+                    > (ty)</small>
                   </td>
                   <td><code>{{ prof.username }}</code></td>
                   <td>
-                    <span class="role-badge" :class="prof.role === 'admin' ? 'admin' : 'employee'">
+                    <span
+                      class="role-badge"
+                      :class="prof.role === 'admin' ? 'admin' : 'employee'"
+                    >
                       {{ prof.role === 'admin' ? 'Správce' : 'Zaměstnanec' }}
                     </span>
                   </td>
                   <td>{{ formatDate(prof.created_at) }}</td>
                   <td>
                     <div class="table-action-cell">
-                      <button class="win-btn-standard compact-btn" type="button" title="Nastavit nový PIN" @click="$emit('open-reset-pin', prof)">
+                      <button
+                        class="win-btn-standard compact-btn"
+                        type="button"
+                        title="Nastavit nový PIN"
+                        @click="$emit('open-reset-pin', prof)"
+                      >
                         🔑 Reset PIN
                       </button>
                       <template v-if="prof.user_key !== currentUser?.userKey">
-                        <button class="win-btn-subtle compact-btn" type="button" title="Změnit roli" @click="toggleRole(prof)">
+                        <button
+                          class="win-btn-subtle compact-btn"
+                          type="button"
+                          title="Změnit roli"
+                          @click="toggleRole(prof)"
+                        >
                           {{ prof.role === 'admin' ? 'Odebrat admin' : 'Dát admin' }}
                         </button>
-                        <button class="win-btn-subtle compact-btn danger-btn" type="button" title="Smazat uživatele" @click="deleteUser(prof)">
+                        <button
+                          class="win-btn-subtle compact-btn danger-btn"
+                          type="button"
+                          title="Smazat uživatele"
+                          @click="deleteUser(prof)"
+                        >
                           ✕ Smazat
                         </button>
                       </template>
@@ -140,7 +224,11 @@
                   </td>
                 </tr>
                 <tr v-if="profiles.length === 0">
-                  <td colspan="5" style="text-align:center; padding: 20px;" class="muted">
+                  <td
+                    colspan="5"
+                    style="text-align:center; padding: 20px;"
+                    class="muted"
+                  >
                     V databázi zatím nejsou žádní uživatelé.
                   </td>
                 </tr>
@@ -167,7 +255,9 @@
               class="team-summary-item"
             >
               <div class="team-user-meta">
-                <div class="mini-avatar">{{ (s.display_name || s.username || '?')[0].toUpperCase() }}</div>
+                <div class="mini-avatar">
+                  {{ (s.display_name || s.username || '?')[0].toUpperCase() }}
+                </div>
                 <div>
                   <strong>{{ s.display_name || s.username }}</strong>
                   <small>{{ s.total_days_recorded ?? s.recorded_days ?? 0 }} evidovaných dnů · Dovolená: {{ s.vacation_days_count ?? s.vacation_days_used ?? 0 }} d.</small>
@@ -181,7 +271,11 @@
               </div>
             </div>
 
-            <p v-if="summaries.length === 0" class="muted" style="font-size: 13px; margin: 10px 0;">
+            <p
+              v-if="summaries.length === 0"
+              class="muted"
+              style="font-size: 13px; margin: 10px 0;"
+            >
               V tomto měsíci zatím nejsou evidována žádná data docházky týmu.
             </p>
           </div>

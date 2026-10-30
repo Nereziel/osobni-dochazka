@@ -20,12 +20,26 @@
               <span class="hero-date-text">{{ todayFormattedDate }}</span>
               <div class="hero-badges-row">
                 <span class="win-badge accent">{{ todayTypeLabel }}</span>
-                <span v-if="todayHoliday" class="win-badge warning">{{ todayHoliday }}</span>
+                <span
+                  v-if="todayHoliday"
+                  class="win-badge warning"
+                >{{ todayHoliday }}</span>
                 <span class="win-badge neutral">{{ todayShiftTimes }}</span>
               </div>
             </div>
-            <button class="win-btn-standard" type="button" @click="$emit('edit-day', currentKey)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <button
+              class="win-btn-standard"
+              type="button"
+              @click="$emit('edit-day', currentKey)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                width="16"
+                height="16"
+              >
                 <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
               </svg>
               <span>Upravit den</span>
@@ -36,7 +50,10 @@
           <div class="hero-gauge-section">
             <div class="gauge-balance-container">
               <span class="gauge-label">Dnešní saldo</span>
-              <div class="gauge-number-val" :class="balanceClass">
+              <div
+                class="gauge-number-val"
+                :class="balanceClass"
+              >
                 {{ formatDuration(todayMetrics.balance, true) }}
               </div>
               <span class="gauge-sub-hint">{{ balanceSubHint }}</span>
@@ -48,11 +65,17 @@
                 <strong>{{ progressPercent }} %</strong>
               </div>
               <div class="win-progress-track">
-                <div class="win-progress-bar" :style="{ width: progressPercent + '%' }"></div>
+                <div
+                  class="win-progress-bar"
+                  :style="{ width: progressPercent + '%' }"
+                />
               </div>
               <div class="progress-sub-info">
                 <span>{{ progressSubText }}</span>
-                <span v-if="earlyDepartureHint" class="early-departure-hint">{{ earlyDepartureHint }}</span>
+                <span
+                  v-if="earlyDepartureHint"
+                  class="early-departure-hint"
+                >{{ earlyDepartureHint }}</span>
               </div>
             </div>
           </div>
@@ -90,9 +113,24 @@
           </div>
 
           <div class="quick-primary-grid">
-            <button class="win-btn-accent quick-tile-btn" type="button" @click="$emit('quick-arrival')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
-                <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 14 14" />
+            <button
+              class="win-btn-accent quick-tile-btn"
+              type="button"
+              @click="$emit('quick-arrival')"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                width="22"
+                height="22"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                /><polyline points="12 6 12 12 14 14" />
               </svg>
               <div>
                 <strong>Příchod teď</strong>
@@ -100,9 +138,25 @@
               </div>
             </button>
 
-            <button class="win-btn-standard quick-tile-btn" type="button" @click="$emit('quick-departure')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22">
-                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line x1="12" y1="2" x2="12" y2="12" />
+            <button
+              class="win-btn-standard quick-tile-btn"
+              type="button"
+              @click="$emit('quick-departure')"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                width="22"
+                height="22"
+              >
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><line
+                  x1="12"
+                  y1="2"
+                  x2="12"
+                  y2="12"
+                />
               </svg>
               <div>
                 <strong>Odchod teď</strong>
@@ -110,9 +164,26 @@
               </div>
             </button>
 
-            <button class="win-btn-standard quick-tile-btn" type="button" @click="$emit('quick-normal')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="22" height="22">
-                <rect x="3" y="4" width="18" height="18" rx="2" /><polyline points="9 11 12 14 22 4" />
+            <button
+              class="win-btn-standard quick-tile-btn"
+              type="button"
+              @click="$emit('quick-normal')"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                width="22"
+                height="22"
+              >
+                <rect
+                  x="3"
+                  y="4"
+                  width="18"
+                  height="18"
+                  rx="2"
+                /><polyline points="9 11 12 14 22 4" />
               </svg>
               <div>
                 <strong>Běžná pracovní doba</strong>
@@ -120,9 +191,24 @@
               </div>
             </button>
 
-            <button class="win-btn-standard quick-tile-btn" type="button" @click="$emit('quick-vacation')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" width="22" height="22">
-                <circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+            <button
+              class="win-btn-standard quick-tile-btn"
+              type="button"
+              @click="$emit('quick-vacation')"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                width="22"
+                height="22"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="5"
+                /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
               </svg>
               <div>
                 <strong>Dovolená (celý den)</strong>
@@ -134,16 +220,32 @@
           <!-- Rychlé předvolby režimu -->
           <div class="quick-presets-strip">
             <span class="preset-label">Rychlé předvolby:</span>
-            <button class="win-btn-subtle chip-btn" type="button" @click="$emit('quick-preset', 'homeOffice')">
+            <button
+              class="win-btn-subtle chip-btn"
+              type="button"
+              @click="$emit('quick-preset', 'homeOffice')"
+            >
               🏠 Home office
             </button>
-            <button class="win-btn-subtle chip-btn" type="button" @click="$emit('quick-preset', 'doctor')">
+            <button
+              class="win-btn-subtle chip-btn"
+              type="button"
+              @click="$emit('quick-preset', 'doctor')"
+            >
               🩺 Lékař (celodenní)
             </button>
-            <button class="win-btn-subtle chip-btn" type="button" @click="$emit('quick-preset', 'businessTrip')">
+            <button
+              class="win-btn-subtle chip-btn"
+              type="button"
+              @click="$emit('quick-preset', 'businessTrip')"
+            >
               🚗 Služební cesta
             </button>
-            <button class="win-btn-subtle chip-btn" type="button" @click="$emit('quick-preset', 'compTime')">
+            <button
+              class="win-btn-subtle chip-btn"
+              type="button"
+              @click="$emit('quick-preset', 'compTime')"
+            >
               ⏱️ Náhradní volno
             </button>
           </div>
@@ -157,7 +259,9 @@
           <div class="card-header-row">
             <div>
               <h3>Tento týden</h3>
-              <p class="muted">Po–Ne rozvrh směn</p>
+              <p class="muted">
+                Po–Ne rozvrh směn
+              </p>
             </div>
             <span class="card-hint-badge">Kliknutím upravíš</span>
           </div>
@@ -178,7 +282,11 @@
             >
               <span class="week-day-name">{{ item.name }}</span>
               <span class="week-day-number">{{ item.num }}</span>
-              <span v-if="item.status" class="cal-dot" :class="item.status"></span>
+              <span
+                v-if="item.status"
+                class="cal-dot"
+                :class="item.status"
+              />
               <span class="week-day-hours">{{ item.hoursText }}</span>
             </button>
           </div>
@@ -189,11 +297,24 @@
           <div class="card-header-row">
             <div>
               <h3>Tento měsíc</h3>
-              <p class="muted">{{ currentMonthTitle }}</p>
+              <p class="muted">
+                {{ currentMonthTitle }}
+              </p>
             </div>
-            <button class="win-btn-subtle" type="button" @click="$emit('go-to-timesheet')">
+            <button
+              class="win-btn-subtle"
+              type="button"
+              @click="$emit('go-to-timesheet')"
+            >
               <span>Otevřít výkaz</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                width="14"
+                height="14"
+              >
                 <polyline points="9 18 15 12 9 6" />
               </svg>
             </button>
@@ -202,7 +323,10 @@
           <div class="kpi-cards-grid">
             <div class="kpi-card">
               <span class="kpi-title">Měsíční saldo</span>
-              <strong class="kpi-value" :class="monthBalanceClass">{{ formatDuration(displayedMonthBalance, true) }}</strong>
+              <strong
+                class="kpi-value"
+                :class="monthBalanceClass"
+              >{{ formatDuration(displayedMonthBalance, true) }}</strong>
               <span class="kpi-sub">{{ monthBalanceSub }}</span>
             </div>
 
@@ -220,7 +344,10 @@
 
             <div class="kpi-card">
               <span class="kpi-title">Nevyplněné dny</span>
-              <strong class="kpi-value" :class="{ warning: monthKpi.missing > 0 }">{{ monthKpi.missing }}</strong>
+              <strong
+                class="kpi-value"
+                :class="{ warning: monthKpi.missing > 0 }"
+              >{{ monthKpi.missing }}</strong>
               <span class="kpi-sub">minulé pracovní dny</span>
             </div>
           </div>

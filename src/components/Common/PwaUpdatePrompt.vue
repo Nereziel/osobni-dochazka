@@ -1,10 +1,18 @@
 <template>
-  <div v-if="needRefresh" class="pwa-update-bar" role="alert">
+  <div
+    v-if="needRefresh"
+    class="pwa-update-bar"
+    role="alert"
+  >
     <div class="pwa-update-content">
       <span class="pwa-update-icon">✨</span>
       <span class="pwa-update-text">Je dostupná nová verze aplikace.</span>
     </div>
-    <button class="win-btn-accent compact-btn update-btn" type="button" @click="updateApp">
+    <button
+      class="win-btn-accent compact-btn update-btn"
+      type="button"
+      @click="updateApp"
+    >
       Aktualizovat
     </button>
   </div>

@@ -1,17 +1,29 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
     <div class="win11-dialog-surface compact">
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Osobní účet</span>
           <h2>Přihlášení do docházky</h2>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>
 
-      <form class="dialog-body-scroll" @submit.prevent="handleSubmit">
+      <form
+        class="dialog-body-scroll"
+        @submit.prevent="handleSubmit"
+      >
         <p class="dialog-info-text">
           Zadej své <strong>uživatelské jméno</strong> a <strong>PIN / heslo</strong>. Aplikace načte tvůj rozvrh a docházku ze společné databáze.
         </p>
@@ -38,24 +50,41 @@
           >
         </label>
 
-        <div class="win-toggle-control" style="margin: 6px 0 10px;">
+        <div
+          class="win-toggle-control"
+          style="margin: 6px 0 10px;"
+        >
           <label class="switch-label">
-            <input v-model="rememberMe" type="checkbox">
-            <span class="switch-slider"></span>
+            <input
+              v-model="rememberMe"
+              type="checkbox"
+            >
+            <span class="switch-slider" />
             <div class="switch-text">
               <strong>Pamatovat si mě na tomto zařízení</strong>
-              <small class="muted" style="display:block; font-size:11px;">Automatické přihlášení při každém otevření aplikace</small>
+              <small
+                class="muted"
+                style="display:block; font-size:11px;"
+              >Automatické přihlášení při každém otevření aplikace</small>
             </div>
           </label>
         </div>
 
         <div class="dialog-footer-block">
-          <button class="win-btn-accent full-width-btn" type="submit" :disabled="loading">
+          <button
+            class="win-btn-accent full-width-btn"
+            type="submit"
+            :disabled="loading"
+          >
             {{ loading ? 'Přihlašování...' : 'Přihlásit se' }}
           </button>
           <div class="modal-switch-link">
             <span>Nemáš ještě vytvořený účet?</span>
-            <button class="text-link-btn" type="button" @click="switchToRegister">
+            <button
+              class="text-link-btn"
+              type="button"
+              @click="switchToRegister"
+            >
               Registrace nového účtu
             </button>
           </div>

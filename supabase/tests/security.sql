@@ -426,6 +426,27 @@ begin
   perform public.admin_change_user_role('user:second_admin', 'employee');
   delete from public.attendance_profiles where user_key = 'user:second_admin';
 
+  -- 4. Ověření NOT FOUND při neexistujícím user_key u admin_change_user_role a admin_delete_user
+  begin
+    perform public.admin_change_user_role('user:nonexistent_ghost', 'admin');
+    raise exception 'TEST 11 SELHAL: admin_change_user_role nezahlásil chybu pro neexistujícího uživatele!';
+  exception
+    when others then
+      if sqlerrm like 'TEST 11 SELHAL%' then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.admin_delete_user('user:nonexistent_ghost');
+    raise exception 'TEST 11 SELHAL: admin_delete_user nezahlásil chybu pro neexistujícího uživatele!';
+  exception
+    when others then
+      if sqlerrm like 'TEST 11 SELHAL%' then
+        raise;
+      end if;
+  end;
+
   raise notice '✓ TEST 11 PROŠEL: Ochrana administrátorských účtů funguje deterministicky bez zásahu do produkčních dat.';
 
   -- --------------------------------------------------------------------------

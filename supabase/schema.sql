@@ -1029,6 +1029,10 @@ begin
       updated_at = now()
   where user_key = p_target_user_key;
 
+  if not found then
+    raise exception 'Uživatel nebyl nalezen.';
+  end if;
+
   return true;
 end;
 $$;
@@ -1077,6 +1081,10 @@ begin
   -- Kaskádové smazání profilu (díky ON DELETE CASCADE smaže credentials, sessions a attendance_days)
   delete from public.attendance_profiles
   where user_key = p_target_user_key;
+
+  if not found then
+    raise exception 'Uživatel nebyl nalezen.';
+  end if;
 
   return true;
 end;

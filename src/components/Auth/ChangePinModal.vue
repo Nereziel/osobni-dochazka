@@ -1,17 +1,29 @@
 <template>
-  <dialog ref="dialogRef" class="win11-dialog" @click="onBackdropClick">
+  <dialog
+    ref="dialogRef"
+    class="win11-dialog"
+    @click="onBackdropClick"
+  >
     <div class="win11-dialog-surface compact">
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Zabezpečení profilu</span>
           <h2>Změna osobního PINu / hesla</h2>
         </div>
-        <button class="win-btn-subtle icon-only" type="button" aria-label="Zavřít" @click="close">
+        <button
+          class="win-btn-subtle icon-only"
+          type="button"
+          aria-label="Zavřít"
+          @click="close"
+        >
           ×
         </button>
       </header>
 
-      <form class="dialog-body-scroll" @submit.prevent="handleSubmit">
+      <form
+        class="dialog-body-scroll"
+        @submit.prevent="handleSubmit"
+      >
         <p class="dialog-info-text">
           Pro změnu zadej svůj dosavadní PIN a zvol si nový (min. 4 znaky). Nový PIN se zabezpečeně zahashuje a uloží v databázi.
         </p>
@@ -52,10 +64,19 @@
         </label>
 
         <div class="dialog-footer-block">
-          <button class="win-btn-accent full-width-btn" type="submit" :disabled="loading">
+          <button
+            class="win-btn-accent full-width-btn"
+            type="submit"
+            :disabled="loading"
+          >
             {{ loading ? 'Ukládání...' : 'Uložit nový PIN v databázi' }}
           </button>
-          <button class="win-btn-standard full-width-btn" type="button" style="margin-top: 6px;" @click="close">
+          <button
+            class="win-btn-standard full-width-btn"
+            type="button"
+            style="margin-top: 6px;"
+            @click="close"
+          >
             Zrušit
           </button>
         </div>

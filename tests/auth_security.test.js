@@ -379,7 +379,10 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     }
 
     const profile = profilesTable.find(p => p.user_key === targetUserKey);
-    if (profile) profile.role = newRole;
+    if (!profile) {
+      throw new Error('Uživatel nebyl nalezen.');
+    }
+    profile.role = newRole;
     return true;
   }
 
@@ -390,7 +393,10 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
     if (targetUserKey === callerKey) throw new Error('Nemůžeš smazat svůj vlastní přihlášený administrátorský účet.');
 
     const target = profilesTable.find(p => p.user_key === targetUserKey);
-    if (target?.role === 'admin') {
+    if (!target) {
+      throw new Error('Uživatel nebyl nalezen.');
+    }
+    if (target.role === 'admin') {
       const otherAdmins = profilesTable.filter(p => p.role === 'admin' && p.user_key !== targetUserKey).length;
       if (otherAdmins === 0) {
         throw new Error('Operaci nelze provést: Nelze smazat posledního administrátora v systému.');
@@ -960,6 +966,14 @@ describe('Security & Custom Session-Based Auth Authorization Tests (Clean Archit
 
       const schemaContent = fs.readFileSync(path.resolve(process.cwd(), 'supabase/schema.sql'), 'utf8');
       expect(schemaContent).toContain('revoke insert, update, delete on public.attendance_invites from public, anon, authenticated;');
+    });
+
+    it('admin_change_user_role a admin_delete_user vyhodí chybu při neexistujícím user_key (kontrola NOT FOUND)', () => {
+      const adminLogin = login_attendance_user('admin', 'admin1234');
+      setSessionHeader(adminLogin.session_token);
+
+      expect(() => admin_change_user_role('user:nonexistent_ghost', 'admin')).toThrow(/Uživatel nebyl nalezen/);
+      expect(() => admin_delete_user('user:nonexistent_ghost')).toThrow(/Uživatel nebyl nalezen/);
     });
   });
 });
