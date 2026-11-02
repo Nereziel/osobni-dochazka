@@ -7,3 +7,5 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Database backups contain production data and must never be committed.
+/backups/
