@@ -8,7 +8,7 @@
       <header class="dialog-header">
         <div>
           <span class="dialog-subtitle">Nový profil</span>
-          <h2>{{ isFirstUser ? 'První registrace (Správce)' : 'Registrace uživatele' }}</h2>
+          <h2>Registrace uživatele</h2>
         </div>
         <button
           class="win-btn-subtle icon-only"
@@ -25,21 +25,6 @@
         @submit.prevent="handleSubmit"
       >
         <div
-          v-if="isFirstUser"
-          class="win-infobar success"
-          style="margin-bottom: 12px;"
-        >
-          <div class="infobar-icon">
-            🛡️
-          </div>
-          <div class="infobar-body">
-            <strong>První registrace (Správce systému)</strong>
-            <p>V databázi dosud není vytvořen žádný uživatel. Tento účet získá roli administrátora a nepotřebuje pozvánku.</p>
-          </div>
-        </div>
-
-        <div
-          v-else
           class="win-infobar info"
           style="margin-bottom: 12px;"
         >
@@ -48,7 +33,7 @@
           </div>
           <div class="infobar-body">
             <strong>Registrace na pozvánku (Invite-Only)</strong>
-            <p>Pro vytvoření osobního účtu je vyžadován platný kód pozvánky od správce docházky.</p>
+            <p>Pro vytvoření osobního účtu je vždy vyžadován platný kód pozvánky od správce docházky.</p>
           </div>
         </div>
 
@@ -85,9 +70,9 @@
             <input
               v-model="pin"
               type="password"
-              placeholder="Minimálně 4 znaky"
+              placeholder="Minimálně 6 znaků"
               required
-              minlength="4"
+              minlength="6"
               autocomplete="new-password"
             >
           </label>
@@ -98,14 +83,13 @@
               type="password"
               placeholder="Zopakuj PIN/heslo"
               required
-              minlength="4"
+              minlength="6"
               autocomplete="new-password"
             >
           </label>
         </div>
 
         <label
-          v-if="!isFirstUser"
           class="win-field"
           style="margin-top: 6px;"
         >
@@ -121,7 +105,7 @@
             class="muted"
             style="font-size: 11px; margin-top: 3px; display: block;"
           >
-            Registrace nových uživatelů je uzamčena. Zadej kód pozvánky od správce.
+            Bez platné jednorázové pozvánky server registraci nepovolí.
           </small>
         </label>
 
@@ -171,7 +155,6 @@ import { ref } from 'vue';
 const emit = defineEmits(['register-submit', 'switch-to-login']);
 
 const dialogRef = ref(null);
-const isFirstUser = ref(false);
 const username = ref('');
 const displayName = ref('');
 const pin = ref('');
@@ -185,8 +168,6 @@ function open(firstArg = false, secondArg = '') {
   displayName.value = '';
   pin.value = '';
   pinConfirm.value = '';
-  isFirstUser.value = typeof firstArg === 'boolean' ? firstArg : false;
-  // Podpora volání open(prefilledInvite) i legacy open(isFirst, prefilledInvite)
   const prefilled = typeof firstArg === 'string' ? firstArg : (secondArg || '');
   inviteCode.value = prefilled;
   mergeLocal.value = true;
@@ -204,8 +185,16 @@ function switchToLogin() {
 }
 
 function handleSubmit() {
+  if (pin.value.length < 6) {
+    alert('PIN/heslo musí mít alespoň 6 znaků.');
+    return;
+  }
   if (pin.value !== pinConfirm.value) {
     alert('Zadané PINy/hesla se neshodují.');
+    return;
+  }
+  if (!inviteCode.value.trim()) {
+    alert('Zadej platný kód pozvánky od správce.');
     return;
   }
   emit('register-submit', {
