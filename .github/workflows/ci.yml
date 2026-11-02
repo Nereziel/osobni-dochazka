@@ -82,3 +82,6 @@ jobs:
 
       - name: Run hardening regression suite
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security_hardening.sql
+
+      - name: Run audit follow-up regression suite
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security_audit_followup.sql
