@@ -319,7 +319,10 @@ function formatDate(isoStr) {
 
 async function loadInvites() {
   try {
-    const rows = await supabaseRequest('/rest/v1/attendance_invites?order=created_at.desc', {}, props.currentUser);
+    const rows = await supabaseRequest('/rest/v1/rpc/admin_list_invites', {
+      method: 'POST',
+      body: JSON.stringify({})
+    }, props.currentUser);
     invites.value = rows || [];
   } catch (err) {
     console.warn('Načtení pozvánek selhalo:', err);
@@ -422,4 +425,3 @@ async function deleteUser(prof) {
 
 defineExpose({ refreshData });
 </script>
-
