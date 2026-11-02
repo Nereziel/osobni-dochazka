@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -79,6 +82,9 @@ jobs:
 
       - name: Apply security hardening migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_security_hardening.sql
+
+      - name: Apply audit follow-up migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_security_audit_followup.sql
 
       - name: Run hardening regression suite
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security_hardening.sql
