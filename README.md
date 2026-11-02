@@ -27,7 +27,7 @@ Jednoduchá webová aplikace pro evidenci osobní docházky. Funguje na počíta
 - **Workbox / vite-plugin-pwa**
 - **Vitest + ESLint**
 - **Cloudflare Pages**
-- **GitHub Actions** pro CI
+- **GitHub Actions** pro CI a pravidelný security scan
 - **Dependabot** pro kontrolu aktualizací závislostí
 
 ## Lokální spuštění
@@ -100,6 +100,17 @@ Aplikace používá vlastní session systém nad Supabase:
 Podrobnosti k autentizaci jsou v [`docs/AUTH.md`](./docs/AUTH.md).
 
 Backup a recovery postup je v [`docs/BACKUP_RECOVERY.md`](./docs/BACKUP_RECOVERY.md). Produkční databázové dumpy se nesmí commitovat do tohoto veřejného repozitáře.
+
+### Automatická bezpečnostní kontrola repozitáře
+
+Samostatný workflow `.github/workflows/security.yml` běží automaticky jednou týdně a lze jej spustit i ručně v GitHub Actions. Kontroluje:
+
+- zdrojový JavaScript/Vue kód pomocí GitHub CodeQL se sadou `security-extended`,
+- všechny npm závislosti pomocí `npm audit --audit-level=high`,
+- omylem trackované `.env`, privátní klíče/certifikátové exporty a databázové zálohy,
+- celé PostgreSQL/Supabase bezpečnostní regresní testy.
+
+CodeQL nálezy se zobrazují v GitHub **Security → Code scanning**. Ostatní kontroly jsou vidět v běhu workflow **Security** v GitHub Actions. Tento pravidelný scan není required merge check; běžné PR nadále blokují stávající `Test and build` a `Database security` kontroly.
 
 ## Nasazení
 
