@@ -125,6 +125,12 @@ function parseRememberPreference(route, bodyText, request) {
   return false;
 }
 
+function logoutCookieHeaders(route) {
+  return route.name === 'logout_attendance_session'
+    ? { 'Set-Cookie': clearSessionCookie() }
+    : {};
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
 
@@ -142,7 +148,11 @@ export async function onRequest(context) {
   const supabaseUrl = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
   const publishableKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '';
   if (!supabaseUrl || !publishableKey) {
-    return jsonResponse(503, { error: 'not_configured', message: 'Cloud databáze není nakonfigurována.' });
+    return jsonResponse(
+      503,
+      { error: 'not_configured', message: 'Cloud databáze není nakonfigurována.' },
+      logoutCookieHeaders(route)
+    );
   }
 
   const sessionCredential = getCookie(request, COOKIE_NAME);
@@ -184,7 +194,11 @@ export async function onRequest(context) {
       redirect: 'manual'
     });
   } catch {
-    return jsonResponse(502, { error: 'upstream_unavailable', message: 'Cloud databáze není momentálně dostupná.' });
+    return jsonResponse(
+      502,
+      { error: 'upstream_unavailable', message: 'Cloud databáze není momentálně dostupná.' },
+      logoutCookieHeaders(route)
+    );
   }
 
   const responseHeaders = new Headers({
