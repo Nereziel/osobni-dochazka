@@ -219,7 +219,7 @@
         </form>
       </div>
 
-      <!-- PRAVÝ SLOUPEC: ÚČET, SUPABASE CLOUD A ZÁLOHY -->
+      <!-- PRAVÝ SLOUPEC: ÚČET, CLOUD A ZÁLOHY -->
       <div class="settings-col">
         <!-- ÚČET & PROFIL -->
         <article class="win-card settings-group-card highlight-card">
@@ -459,49 +459,13 @@
             </div>
           </div>
 
-          <div
-            v-if="isBuiltInSupabase"
-            class="win-infobar success"
-          >
+          <div class="win-infobar success">
             <div class="infobar-icon">
               ✓
             </div>
             <div class="infobar-body">
-              <strong>Automaticky připojeno</strong>
-              <p>Aplikace používá cloudovou databázi nastavenou v konfiguraci.</p>
-            </div>
-          </div>
-
-          <div
-            v-else
-            class="supabase-manual-box"
-          >
-            <label class="win-field">
-              <span>Supabase Project URL</span>
-              <input
-                v-model="manualSbUrl"
-                type="url"
-                placeholder="https://abcdef.supabase.co"
-                autocomplete="off"
-              >
-            </label>
-            <label class="win-field">
-              <span>Supabase Anon Public Key</span>
-              <input
-                v-model="manualSbKey"
-                type="password"
-                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                autocomplete="off"
-              >
-            </label>
-            <div class="manual-save-row">
-              <button
-                class="win-btn-accent"
-                type="button"
-                @click="saveManualSupabase"
-              >
-                Uložit a otestovat připojení
-              </button>
+              <strong>Připojeno přes Cloudflare</strong>
+              <p>Databázové připojení je spravované na serveru; URL ani klíče se neukládají v prohlížeči.</p>
             </div>
           </div>
 
@@ -615,11 +579,11 @@
             </div>
             <div class="app-version-item">
               <span class="muted">Hostováno:</span>
-              <span class="win-badge neutral">GitHub Pages</span>
+              <span class="win-badge neutral">Cloudflare Pages</span>
             </div>
             <div class="app-version-item">
               <span class="muted">Architektura:</span>
-              <span class="win-badge accent">IndexedDB + Supabase</span>
+              <span class="win-badge accent">IndexedDB + Cloudflare + Supabase</span>
             </div>
           </div>
 
@@ -642,7 +606,6 @@
 import { ref, computed, watch, toRaw, nextTick } from 'vue';
 import { minutesToTime, timeToMinutes, durationMinutes } from '../utils/time.js';
 import { clampNumber, cloneDeep } from '../utils/validation.js';
-import { getSupabaseConfig, saveManualSupabaseConfig } from '../services/supabase.js';
 import { APP_VERSION, APP_BUILD_DATE } from '../utils/version.js';
 
 const props = defineProps({
@@ -810,18 +773,6 @@ const syncBadgeText = computed(() => {
   return 'Pouze lokální úložiště';
 });
 
-// Supabase config
-const sbConfig = getSupabaseConfig();
-const isBuiltInSupabase = ref(sbConfig.isBuiltIn);
-const manualSbUrl = ref(sbConfig.url);
-const manualSbKey = ref(sbConfig.anonKey);
-
-function saveManualSupabase() {
-  saveManualSupabaseConfig(manualSbUrl.value, manualSbKey.value);
-  emit('toast', 'Supabase konfigurace uložena', '✓');
-  emit('sync');
-}
-
 // Backup Import / Export
 const fileInputRef = ref(null);
 
@@ -837,4 +788,3 @@ function handleFileChange(e) {
   e.target.value = '';
 }
 </script>
-
