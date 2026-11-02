@@ -78,7 +78,7 @@ jobs:
           SQL
 
       - name: Apply base schema
-        run: psql -v ON_ERROR_STOP=1 -f supabase/schema.sql
+        run: psql -v ON_ERROR_STOP=1 -f supabase/schema_base.sql
 
       - name: Apply security hardening migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_security_hardening.sql
