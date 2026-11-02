@@ -6,13 +6,34 @@ const LS_USER_KEY = 'dochazka_active_user_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
 const MIN_PIN_LENGTH = 6;
 
+function sanitizeStoredUser(user) {
+  if (!user || typeof user !== 'object' || !user.userKey) return null;
+  return {
+    userKey: user.userKey,
+    username: user.username || '',
+    displayName: user.displayName || user.username || '',
+    role: user.role || 'employee',
+    expiresAt: user.expiresAt || null
+  };
+}
+
 function loadInitialUser() {
   try {
     const remember = localStorage.getItem(LS_REMEMBER_KEY);
-    if (remember === 'false') {
-      return JSON.parse(sessionStorage.getItem(LS_USER_KEY) || 'null');
+    const storage = remember === 'false' ? sessionStorage : localStorage;
+    const fallbackStorage = remember === 'false' ? null : sessionStorage;
+    const parsed = JSON.parse(
+      storage.getItem(LS_USER_KEY) || fallbackStorage?.getItem(LS_USER_KEY) || 'null'
+    );
+    const cleanUser = sanitizeStoredUser(parsed);
+
+    // Rewrite legacy persisted profile data through the allowlist above. This removes
+    // any fields from older application versions without ever reading them explicitly.
+    if (cleanUser) {
+      storage.setItem(LS_USER_KEY, JSON.stringify(cleanUser));
+      fallbackStorage?.removeItem(LS_USER_KEY);
     }
-    return JSON.parse(localStorage.getItem(LS_USER_KEY) || sessionStorage.getItem(LS_USER_KEY) || 'null');
+    return cleanUser;
   } catch {
     return null;
   }
@@ -21,7 +42,7 @@ function loadInitialUser() {
 const currentUser = ref(loadInitialUser());
 
 export function useAuth() {
-  const isAuthenticated = computed(() => Boolean(currentUser.value?.userKey && currentUser.value?.sessionToken));
+  const isAuthenticated = computed(() => Boolean(currentUser.value?.userKey));
   const isAdmin = computed(() => currentUser.value?.role === 'admin');
 
   function isRememberedSession() {
@@ -33,13 +54,14 @@ export function useAuth() {
   }
 
   function saveUserSession(user, remember = false) {
-    currentUser.value = user;
+    const cleanUser = sanitizeStoredUser(user);
+    currentUser.value = cleanUser;
     try {
-      if (user) {
+      if (cleanUser) {
         if (remember) {
           if (typeof localStorage !== 'undefined') {
             localStorage.setItem(LS_REMEMBER_KEY, 'true');
-            localStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+            localStorage.setItem(LS_USER_KEY, JSON.stringify(cleanUser));
           }
           if (typeof sessionStorage !== 'undefined') {
             sessionStorage.removeItem(LS_USER_KEY);
@@ -50,7 +72,7 @@ export function useAuth() {
             localStorage.removeItem(LS_USER_KEY);
           }
           if (typeof sessionStorage !== 'undefined') {
-            sessionStorage.setItem(LS_USER_KEY, JSON.stringify(user));
+            sessionStorage.setItem(LS_USER_KEY, JSON.stringify(cleanUser));
           }
         }
       } else {
@@ -73,7 +95,7 @@ export function useAuth() {
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
 
     if (!isSupabaseConfigured()) {
-      throw new Error('Supabase databáze není nakonfigurována. Pro přihlášení je nutné nastavit spojení s databází.');
+      throw new Error('Cloud databáze není nakonfigurována.');
     }
 
     const res = await supabaseRequest('/rest/v1/rpc/login_attendance_user', {
@@ -89,17 +111,12 @@ export function useAuth() {
       throw new Error(res.message || res.error || 'Přihlášení se nezdařilo.');
     }
 
-    if (!res?.session_token) {
-      throw new Error('Přihlášení se nezdařilo: server nevydal session token.');
-    }
-
     const userObj = {
-      sessionToken: res.session_token,
-      userKey: res.user_key || `user:${cleanUser}`,
-      username: res.username || cleanUser,
-      displayName: res.display_name || cleanUser,
-      role: res.role || 'employee',
-      expiresAt: res.expires_at
+      userKey: res?.user_key || `user:${cleanUser}`,
+      username: res?.username || cleanUser,
+      displayName: res?.display_name || cleanUser,
+      role: res?.role || 'employee',
+      expiresAt: res?.expires_at || null
     };
 
     saveUserSession(userObj, rememberMe);
@@ -117,7 +134,7 @@ export function useAuth() {
     if (!cleanInvite) throw new Error('Registrace vyžaduje platný kód pozvánky.');
 
     if (!isSupabaseConfigured()) {
-      throw new Error('Supabase databáze není nakonfigurována. Pro registraci je nutné nastavit spojení s databází.');
+      throw new Error('Cloud databáze není nakonfigurována.');
     }
 
     const rpcRes = await supabaseRequest('/rest/v1/rpc/register_user_with_invite', {
@@ -134,17 +151,12 @@ export function useAuth() {
       throw new Error(rpcRes.message || rpcRes.error || 'Registrace se nezdařila.');
     }
 
-    if (!rpcRes?.session_token) {
-      throw new Error('Registrace proběhla, ale server nevydal session token.');
-    }
-
     const userObj = {
-      sessionToken: rpcRes.session_token,
-      userKey: rpcRes.user_key || `user:${cleanUser}`,
-      username: rpcRes.username || cleanUser,
-      displayName: rpcRes.display_name || displayNameInput.trim(),
-      role: rpcRes.role || 'employee',
-      expiresAt: rpcRes.expires_at
+      userKey: rpcRes?.user_key || `user:${cleanUser}`,
+      username: rpcRes?.username || cleanUser,
+      displayName: rpcRes?.display_name || displayNameInput.trim(),
+      role: rpcRes?.role || 'employee',
+      expiresAt: rpcRes?.expires_at || null
     };
 
     saveUserSession(userObj, false);
@@ -155,15 +167,11 @@ export function useAuth() {
   }
 
   async function changePin(oldPin, newPin, newPinConfirm) {
-    if (!currentUser.value?.sessionToken) throw new Error('Pro změnu PINu musíš být přihlášen.');
+    if (!currentUser.value?.userKey) throw new Error('Pro změnu PINu musíš být přihlášen.');
     if (!oldPin) throw new Error('Zadej svůj současný PIN / heslo.');
     if (!newPin || newPin.length < MIN_PIN_LENGTH) throw new Error(`Nový PIN musí mít alespoň ${MIN_PIN_LENGTH} znaků.`);
     if (newPin !== newPinConfirm) throw new Error('Nový PIN a jeho potvrzení se neshodují.');
     if (oldPin === newPin) throw new Error('Nový PIN musí být jiný než současný.');
-
-    if (!isSupabaseConfigured()) {
-      throw new Error('Supabase databáze není nakonfigurována.');
-    }
 
     const remember = isRememberedSession();
     const res = await supabaseRequest('/rest/v1/rpc/change_attendance_pin', {
@@ -173,19 +181,15 @@ export function useAuth() {
         p_new_pin: newPin,
         p_revoke_others: true
       })
-    }, currentUser.value);
+    });
 
     if (res?.success === false) {
       throw new Error(res.message || res.error || 'Změna PINu selhala.');
     }
-    if (!res?.session_token) {
-      throw new Error('PIN byl změněn, ale server nevydal nový bezpečnostní token. Přihlas se znovu.');
-    }
 
     currentUser.value = {
       ...currentUser.value,
-      sessionToken: res.session_token,
-      expiresAt: res.expires_at || currentUser.value.expiresAt
+      expiresAt: res?.expires_at || currentUser.value.expiresAt
     };
     saveUserSession(currentUser.value, remember);
 
@@ -197,13 +201,13 @@ export function useAuth() {
     const cleanName = (newDisplayName || '').trim();
     if (!cleanName) throw new Error('Celé jméno nesmí být prázdné.');
 
-    if (isSupabaseConfigured() && currentUser.value?.sessionToken) {
+    if (isSupabaseConfigured() && currentUser.value?.userKey) {
       await supabaseRequest('/rest/v1/rpc/update_own_settings', {
         method: 'POST',
         body: JSON.stringify({
           p_settings: { display_name: cleanName }
         })
-      }, currentUser.value);
+      });
     }
 
     currentUser.value = {
@@ -216,10 +220,6 @@ export function useAuth() {
 
   async function logout() {
     const priorUser = currentUser.value;
-
-    // Odstraň bearer token z browser storage okamžitě. Lokální data se čistí
-    // hned potom asynchronně; volající může Promise awaitnout, pokud potřebuje
-    // mít úklid dokončený před dalším krokem UI.
     saveUserSession(null);
 
     if (priorUser?.userKey) {
@@ -228,20 +228,18 @@ export function useAuth() {
       } catch (err) {
         console.warn('Vymazání lokálních dat účtu při odhlášení selhalo:', err?.message || err);
       }
-    }
 
-    if (isSupabaseConfigured() && priorUser?.sessionToken) {
       supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
         method: 'POST',
         body: JSON.stringify({ p_all_devices: false })
-      }, priorUser).catch((err) => {
+      }).catch((err) => {
         console.warn('Odvolání serverové session na pozadí selhalo (best-effort):', err?.message || err);
       });
     }
   }
 
   async function verifySession() {
-    if (!isSupabaseConfigured() || !currentUser.value?.sessionToken) return true;
+    if (!isSupabaseConfigured() || !currentUser.value?.userKey) return true;
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return true;
@@ -250,7 +248,7 @@ export function useAuth() {
     try {
       const res = await supabaseRequest('/rest/v1/rpc/verify_attendance_session', {
         method: 'POST'
-      }, currentUser.value);
+      });
 
       if (res?.success === false) {
         console.warn('Session není platná:', res.message || res.error);
