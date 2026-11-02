@@ -1,37 +1,25 @@
 const COOKIE_NAME = '__Host-dochazka_session';
 
-const PUBLIC_RPCS = new Set([
-  'login_attendance_user',
-  'register_user_with_invite',
-  'registration_status'
-]);
-
-const AUTH_RPCS = new Set([
-  'verify_attendance_session',
-  'logout_attendance_session',
-  'change_attendance_pin',
-  'update_own_settings',
-  'upsert_attendance_day_lww',
-  'admin_step_up',
-  'admin_create_invite',
-  'admin_list_invites',
-  'admin_list_audit_log',
-  'admin_delete_invite',
-  'admin_change_user_role',
-  'admin_delete_user',
-  'admin_reset_user_pin'
-]);
-
-const READ_RESOURCES = new Set([
-  'attendance_profiles',
-  'attendance_days',
-  'v_monthly_attendance_summary'
-]);
-
-const TOKEN_ISSUING_RPCS = new Set([
-  'login_attendance_user',
-  'register_user_with_invite',
-  'change_attendance_pin'
+const ROUTES = new Map([
+  ['POST rest/v1/rpc/login_attendance_user', { name: 'login_attendance_user', requiresAuth: false, issuesToken: true }],
+  ['POST rest/v1/rpc/register_user_with_invite', { name: 'register_user_with_invite', requiresAuth: false, issuesToken: true }],
+  ['POST rest/v1/rpc/registration_status', { name: 'registration_status', requiresAuth: false, issuesToken: false }],
+  ['POST rest/v1/rpc/verify_attendance_session', { name: 'verify_attendance_session', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/logout_attendance_session', { name: 'logout_attendance_session', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/change_attendance_pin', { name: 'change_attendance_pin', requiresAuth: true, issuesToken: true }],
+  ['POST rest/v1/rpc/update_own_settings', { name: 'update_own_settings', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/upsert_attendance_day_lww', { name: 'upsert_attendance_day_lww', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_step_up', { name: 'admin_step_up', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_create_invite', { name: 'admin_create_invite', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_list_invites', { name: 'admin_list_invites', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_list_audit_log', { name: 'admin_list_audit_log', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_delete_invite', { name: 'admin_delete_invite', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_change_user_role', { name: 'admin_change_user_role', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_delete_user', { name: 'admin_delete_user', requiresAuth: true, issuesToken: false }],
+  ['POST rest/v1/rpc/admin_reset_user_pin', { name: 'admin_reset_user_pin', requiresAuth: true, issuesToken: false }],
+  ['GET rest/v1/attendance_profiles', { name: 'attendance_profiles', requiresAuth: true, issuesToken: false }],
+  ['GET rest/v1/attendance_days', { name: 'attendance_days', requiresAuth: true, issuesToken: false }],
+  ['GET rest/v1/v_monthly_attendance_summary', { name: 'v_monthly_attendance_summary', requiresAuth: true, issuesToken: false }]
 ]);
 
 function jsonResponse(status, payload, extraHeaders = {}) {
@@ -85,22 +73,7 @@ function rejectCrossOriginMutation(request) {
 }
 
 function classifyRoute(pathParts, method) {
-  if (pathParts.length === 4 && pathParts[0] === 'rest' && pathParts[1] === 'v1' && pathParts[2] === 'rpc') {
-    const rpc = pathParts[3];
-    if (method !== 'POST') return null;
-    if (PUBLIC_RPCS.has(rpc)) return { type: 'rpc', name: rpc, requiresAuth: false };
-    if (AUTH_RPCS.has(rpc)) return { type: 'rpc', name: rpc, requiresAuth: true };
-    return null;
-  }
-
-  if (pathParts.length === 3 && pathParts[0] === 'rest' && pathParts[1] === 'v1') {
-    const resource = pathParts[2];
-    if (method === 'GET' && READ_RESOURCES.has(resource)) {
-      return { type: 'resource', name: resource, requiresAuth: true };
-    }
-  }
-
-  return null;
+  return ROUTES.get(`${method.toUpperCase()} ${pathParts.join('/')}`) || null;
 }
 
 async function readRequestBody(request) {
@@ -145,8 +118,8 @@ export async function onRequest(context) {
     return jsonResponse(404, { error: 'not_found', message: 'API operace není povolena.' });
   }
 
-  const supabaseUrl = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || '').replace(/\/+$/, '');
-  const publishableKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '';
+  const supabaseUrl = (env.SUPABASE_URL || '').replace(/\/+$/, '');
+  const publishableKey = env.SUPABASE_PUBLISHABLE_KEY || '';
   if (!supabaseUrl || !publishableKey) {
     return jsonResponse(
       503,
@@ -209,7 +182,7 @@ export async function onRequest(context) {
 
   let responseText = await upstreamResponse.text();
 
-  if (TOKEN_ISSUING_RPCS.has(route.name) && responseText) {
+  if (route.issuesToken && responseText) {
     try {
       const payload = JSON.parse(responseText);
       if (payload && typeof payload === 'object' && !Array.isArray(payload) && payload.session_token) {
