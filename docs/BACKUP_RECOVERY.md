@@ -146,9 +146,9 @@ Dále ověř:
 
 Pro kontrolu schématu lze znovu spustit databázové security testy z `supabase/tests/` nad testovací/restored DB.
 
-## Recovery po bezpečnostním incidentu
+## Session po obnově
 
-Pokud se obnova provádí kvůli podezření na kompromitaci session tokenů, po obnově zneplatni všechny aktivní sessions:
+Po **každé produkční obnově** zneplatni všechny session uložené v obnoveném snapshotu. Obnovená databáze může obsahovat session, které byly po okamžiku zálohy mezitím odhlášené, revokované nebo kompromitované.
 
 ```sql
 update public.attendance_sessions
@@ -156,7 +156,7 @@ set revoked_at = now()
 where revoked_at is null;
 ```
 
-Uživatelé se následně znovu přihlásí.
+Uživatelé se následně znovu přihlásí. Tento krok je zvlášť důležitý při obnově po bezpečnostním incidentu.
 
 Pokud došlo k úniku databázového hesla nebo privilegovaného Supabase klíče, samotná obnova databáze nestačí — je nutné uniklé přihlašovací údaje/klíče rotovat.
 
