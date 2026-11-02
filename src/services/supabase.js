@@ -1,35 +1,12 @@
 /**
  * Same-origin API client.
  *
- * Supabase credentials and the attendance session credential stay behind
+ * Supabase connection details and the attendance session credential stay behind
  * Cloudflare Pages Functions. Browser JavaScript only talks to /api/supabase.
  */
 
-const LS_SUPABASE_CONFIG_KEY = 'dochazka_supabase_config_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
 const API_BASE = '/api/supabase';
-
-export function getSupabaseConfig() {
-  return {
-    url: API_BASE,
-    anonKey: '',
-    isBuiltIn: true
-  };
-}
-
-export function saveManualSupabaseConfig() {
-  // Direct browser-to-Supabase configuration is intentionally retired.
-  // Remove any legacy locally saved endpoint/key if this old UI action is reached.
-  try {
-    localStorage.removeItem(LS_SUPABASE_CONFIG_KEY);
-  } catch {
-    // ignore storage errors
-  }
-}
-
-export function isSupabaseConfigured() {
-  return true;
-}
 
 function isRememberedSession() {
   try {
