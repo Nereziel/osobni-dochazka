@@ -91,3 +91,11 @@ jobs:
 
       - name: Run unified database security regression suite
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security.sql
+
+      - name: Verify exact production SQL bundle
+        run: |
+          createdb attendance_bundle_test
+          PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/schema_base.sql
+          PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_security_hardening.sql
+          PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/manual/20261102_security_audit_production.sql
+          PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/tests/security.sql
