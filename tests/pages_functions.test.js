@@ -31,8 +31,8 @@ function makeContext(pathParts, {
     request,
     params: { path: pathParts },
     env: {
-      VITE_SUPABASE_URL: 'https://project.supabase.co',
-      VITE_SUPABASE_ANON_KEY: 'publishable-test-key'
+      SUPABASE_URL: 'https://project.supabase.co',
+      SUPABASE_PUBLISHABLE_KEY: 'publishable-test-key'
     }
   };
 }
