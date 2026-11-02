@@ -198,7 +198,7 @@ import { useAttendance } from './composables/useAttendance.js';
 import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
 import { openDatabase, clearUserDays, putUserSettings } from './services/indexedDb.js';
-import { supabaseRequest, isSupabaseConfigured } from './services/supabase.js';
+import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock } from './utils/time.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
@@ -346,7 +346,7 @@ onMounted(async () => {
     if (inviteParam) {
       openRegisterModal(inviteParam.trim().toUpperCase());
       showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
-    } else if (isSupabaseConfigured() && currentUser.value) {
+    } else if (currentUser.value) {
       await runBootSyncFlow({
         currentUser: currentUser.value,
         settingsGetter: () => settings.value,
@@ -356,7 +356,7 @@ onMounted(async () => {
         triggerFullSyncFn: () => triggerSync(false, { isBoot: true }),
         startServiceFn: startSyncService
       });
-    } else if (isSupabaseConfigured() && !currentUser.value) {
+    } else {
       openLoginModal();
     }
   } catch (err) {
@@ -600,17 +600,15 @@ async function fetchRegistrationStatusCached() {
 }
 
 async function openLoginModal() {
-  if (isSupabaseConfigured()) {
-    try {
-      const statusRes = await fetchRegistrationStatusCached();
-      // Pokud v databázi dosud není žádný profil, přesměrujeme rovnou na registraci prvního správce
-      if (statusRes?.requires_invite === false) {
-        openRegisterModal();
-        return;
-      }
-    } catch {
-      // fallback
+  try {
+    const statusRes = await fetchRegistrationStatusCached();
+    // Pokud v databázi dosud není žádný profil, přesměrujeme rovnou na registraci prvního správce
+    if (statusRes?.requires_invite === false) {
+      openRegisterModal();
+      return;
     }
+  } catch {
+    // Při nedostupném backendu stále zobrazíme přihlášení; chyba se projeví až při submitu.
   }
   loginModalRef.value?.open();
 }
@@ -636,10 +634,8 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
     showToast(message, '✓');
     const userKey = currentUser.value?.userKey;
     await Promise.all([loadSettings(userKey), loadRecords(userKey)]);
-    if (isSupabaseConfigured()) {
-      await triggerSync(false, { isBoot: true });
-      startSyncService();
-    }
+    await triggerSync(false, { isBoot: true });
+    startSyncService();
   } catch (err) {
     alert(err.message || 'Přihlášení selhalo');
   } finally {
@@ -650,14 +646,12 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
 async function openRegisterModal(prefilledInvite = '') {
   loginModalRef.value?.close();
   let isFirst = false;
-  if (isSupabaseConfigured()) {
-    try {
-      const statusRes = await fetchRegistrationStatusCached();
-      // requires_invite je false právě tehdy, když v DB ještě není žádný profil (první uživatel)
-      isFirst = statusRes?.requires_invite === false;
-    } catch {
-      // fallback
-    }
+  try {
+    const statusRes = await fetchRegistrationStatusCached();
+    // requires_invite je false právě tehdy, když v DB ještě není žádný profil (první uživatel)
+    isFirst = statusRes?.requires_invite === false;
+  } catch {
+    // Při nedostupném backendu ponecháme standardní invite-only formulář.
   }
   registerModalRef.value?.open(isFirst, prefilledInvite);
 }
@@ -677,10 +671,8 @@ async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, in
     const userKey = currentUser.value?.userKey;
     await loadSettings(userKey);
     await loadRecords(userKey);
-    if (isSupabaseConfigured()) {
-      await triggerSync(mergeLocal, { isBoot: true });
-      startSyncService();
-    }
+    await triggerSync(mergeLocal, { isBoot: true });
+    startSyncService();
   } catch (err) {
     alert(err.message || 'Registrace selhala');
   } finally {
@@ -773,7 +765,7 @@ async function handleImportBackup(file) {
     }
     await loadRecords(userKey);
     showToast('Záloha úspěšně importována', '✓');
-    if (isSupabaseConfigured() && currentUser.value) {
+    if (currentUser.value) {
       triggerSync(true);
     }
   } catch (err) {
@@ -854,4 +846,3 @@ async function handleAdminResetPinSubmit({ targetUserKey, targetUsername, newPin
   }
 }
 </script>
-
