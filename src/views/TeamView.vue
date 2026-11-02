@@ -280,6 +280,49 @@
             </p>
           </div>
         </article>
+
+        <article class="win-card team-card">
+          <div class="card-header-row">
+            <div>
+              <h3>Bezpečnostní audit</h3>
+              <p>Poslední administrátorské bezpečnostní události.</p>
+            </div>
+            <span class="win-badge neutral">{{ auditEntries.length }}</span>
+          </div>
+
+          <div class="team-summary-list">
+            <div
+              v-for="entry in auditEntries"
+              :key="entry.id"
+              class="team-summary-item"
+            >
+              <div class="team-user-meta">
+                <div class="mini-avatar">
+                  🔒
+                </div>
+                <div>
+                  <strong>{{ auditActionLabel(entry.action) }}</strong>
+                  <small>{{ new Date(entry.created_at).toLocaleString('cs-CZ') }}</small>
+                  <small>
+                    {{ auditActorLabel(entry) }}
+                    <template v-if="auditTargetLabel(entry) !== '—'">
+                      → {{ auditTargetLabel(entry) }}
+                    </template>
+                  </small>
+                  <small v-if="auditDetailLabel(entry)">{{ auditDetailLabel(entry) }}</small>
+                </div>
+              </div>
+            </div>
+
+            <p
+              v-if="auditEntries.length === 0"
+              class="muted"
+              style="font-size: 13px; margin: 10px 0;"
+            >
+              Zatím nejsou zaznamenané žádné bezpečnostní události.
+            </p>
+          </div>
+        </article>
       </div>
     </div>
 
@@ -296,6 +339,12 @@ import AdminStepUpModal from '../components/Admin/AdminStepUpModal.vue';
 import { supabaseRequest } from '../services/supabase.js';
 import { formatDuration, pad } from '../utils/time.js';
 import { fmtMonthTitle } from '../utils/dates.js';
+import {
+  auditActionLabel,
+  auditActorLabel,
+  auditTargetLabel,
+  auditDetailLabel
+} from '../utils/audit.js';
 
 const props = defineProps({
   currentUser: {
@@ -314,6 +363,7 @@ const emit = defineEmits([
 const invites = ref([]);
 const profiles = ref([]);
 const summaries = ref([]);
+const auditEntries = ref([]);
 const loading = ref(false);
 const stepUpModalRef = ref(null);
 
@@ -356,9 +406,21 @@ async function loadSummaries() {
   }
 }
 
+async function loadAuditLog() {
+  try {
+    const rows = await supabaseRequest('/rest/v1/rpc/admin_list_audit_log', {
+      method: 'POST',
+      body: JSON.stringify({ p_limit: 50 })
+    }, props.currentUser);
+    auditEntries.value = rows || [];
+  } catch (err) {
+    console.warn('Načtení bezpečnostního auditu selhalo:', err);
+  }
+}
+
 async function refreshData() {
   loading.value = true;
-  await Promise.all([loadInvites(), loadProfiles(), loadSummaries()]);
+  await Promise.all([loadInvites(), loadProfiles(), loadSummaries(), loadAuditLog()]);
   loading.value = false;
   emit('toast', 'Data týmu obnovena', '✓');
 }
@@ -387,6 +449,7 @@ async function deleteInvite(inv) {
 
     emit('toast', `Pozvánka ${inv.code} byla smazána`, '✓');
     await loadInvites();
+    await loadAuditLog();
   } catch (err) {
     alert(err.message || 'Smazání pozvánky selhalo');
   }
@@ -414,6 +477,7 @@ async function toggleRole(prof) {
 
     emit('toast', `Role uživatele ${prof.username} změněna`, '✓');
     await loadProfiles();
+    await loadAuditLog();
   } catch (err) {
     alert(err.message || 'Změna role se nezdařila');
   }
@@ -439,6 +503,7 @@ async function deleteUser(prof) {
     emit('toast', `Uživatel ${prof.username} byl smazán`, '✓');
     await loadProfiles();
     await loadSummaries();
+    await loadAuditLog();
   } catch (err) {
     alert(err.message || 'Smazání uživatele selhalo');
   }
