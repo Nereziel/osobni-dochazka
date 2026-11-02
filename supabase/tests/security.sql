@@ -6,3 +6,4 @@
 \ir security_hardening.sql
 \ir security_audit_followup.sql
 \ir security_isolation.sql
+\ir security_audit_ui.sql
