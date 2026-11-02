@@ -92,9 +92,16 @@ describe('Security architecture – privileged admin actions', () => {
 });
 
 describe('Security architecture – API and browser boundary', () => {
-  it('does not contain a service-role credential in the browser Supabase client', () => {
-    expect(supabaseClient.toLowerCase()).not.toContain('service_role');
-    expect(supabaseClient).toContain('X-Attendance-Session');
+  it('keeps the custom session credential out of browser state and request headers', () => {
+    expect(authSource).not.toContain('sessionToken');
+    expect(authSource).not.toContain('session_token');
+    expect(supabaseClient).not.toContain('X-Attendance-Session');
+    expect(supabaseClient).not.toContain('VITE_SUPABASE_ANON_KEY');
+  });
+
+  it('sends browser data requests only to the same-origin Cloudflare API boundary', () => {
+    expect(supabaseClient).toContain('/api/supabase');
+    expect(supabaseClient).not.toContain('fetch(`${cfg.url}${path}`');
   });
 
   it('uses admin RPC rather than direct REST DELETE for invites', () => {
@@ -106,8 +113,8 @@ describe('Security architecture – API and browser boundary', () => {
     expect(teamView).toContain('#invite=');
   });
 
-  it('restricts CSP connections to the production Supabase origin', () => {
-    expect(headers).toContain("connect-src 'self' https://gbwsvriclbfclaygzyln.supabase.co");
-    expect(headers).not.toContain('https://*.supabase.co');
+  it('restricts browser network connections to same-origin', () => {
+    expect(headers).toContain("connect-src 'self';");
+    expect(headers).not.toContain('supabase.co');
   });
 });
