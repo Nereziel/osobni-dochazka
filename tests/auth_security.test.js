@@ -104,6 +104,7 @@ describe('Security architecture – API and browser boundary', () => {
     expect(authSource).not.toContain('session_token');
     expect(supabaseClient).not.toContain('X-Attendance-Session');
     expect(supabaseClient).not.toContain('VITE_SUPABASE_ANON_KEY');
+    expect(supabaseClient).not.toContain('VITE_SUPABASE_URL');
   });
 
   it('sends browser data requests only to the same-origin Cloudflare API boundary', () => {
@@ -120,9 +121,10 @@ describe('Security architecture – API and browser boundary', () => {
   });
 
   it('allows only the app API surface and rejects cross-origin state changes', () => {
-    expect(gateway).toContain('PUBLIC_RPCS');
-    expect(gateway).toContain('AUTH_RPCS');
-    expect(gateway).toContain('READ_RESOURCES');
+    expect(gateway).toContain('const ROUTES = new Map');
+    expect(gateway).not.toContain('PUBLIC_RPCS');
+    expect(gateway).not.toContain('AUTH_RPCS');
+    expect(gateway).not.toContain('READ_RESOURCES');
     expect(gateway).toContain("request.headers.get('Origin')");
     expect(gateway).toContain("request.headers.get('Sec-Fetch-Site')");
     expect(gateway).toContain("request.headers.get('CF-Connecting-IP')");
