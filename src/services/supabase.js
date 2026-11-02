@@ -1,99 +1,62 @@
 /**
- * Supabase HTTP REST a RPC klient
- * Připojuje se přímo přes standardní fetch API bez nutnosti těžkých knihoven.
- * Využívá HTTP hlavičku X-Attendance-Session pro bezpečnou autentizaci.
+ * Same-origin API client.
+ *
+ * Supabase credentials and the attendance session credential stay behind
+ * Cloudflare Pages Functions. Browser JavaScript only talks to /api/supabase.
  */
 
 const LS_SUPABASE_CONFIG_KEY = 'dochazka_supabase_config_v2';
+const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
+const API_BASE = '/api/supabase';
 
 export function getSupabaseConfig() {
-  const envUrl = import.meta.env?.VITE_SUPABASE_URL;
-  const envKey = import.meta.env?.VITE_SUPABASE_ANON_KEY;
-  const globalConfig = typeof window !== 'undefined' ? window.DOCHAZKA_CONFIG : null;
-
-  if (envUrl && envKey) {
-    return {
-      url: envUrl.trim().replace(/\/+$/, ''),
-      anonKey: envKey.trim(),
-      isBuiltIn: true
-    };
-  }
-
-  if (globalConfig?.supabaseUrl && globalConfig?.supabaseAnonKey) {
-    return {
-      url: globalConfig.supabaseUrl.trim().replace(/\/+$/, ''),
-      anonKey: globalConfig.supabaseAnonKey.trim(),
-      isBuiltIn: true
-    };
-  }
-
-  try {
-    const saved = JSON.parse(localStorage.getItem(LS_SUPABASE_CONFIG_KEY) || 'null');
-    if (saved?.url && saved?.anonKey) {
-      return {
-        url: saved.url.trim().replace(/\/+$/, ''),
-        anonKey: saved.anonKey.trim(),
-        isBuiltIn: false
-      };
-    }
-  } catch {
-    // fallback
-  }
-
-  return { url: '', anonKey: '', isBuiltIn: false };
+  return {
+    url: API_BASE,
+    anonKey: '',
+    isBuiltIn: true
+  };
 }
 
-export function saveManualSupabaseConfig(url, anonKey) {
-  const cleanUrl = (url || '').trim().replace(/\/+$/, '');
-  const cleanKey = (anonKey || '').trim();
-  if (cleanUrl && cleanKey) {
-    localStorage.setItem(LS_SUPABASE_CONFIG_KEY, JSON.stringify({ url: cleanUrl, anonKey: cleanKey }));
-  } else {
+export function saveManualSupabaseConfig() {
+  // Direct browser-to-Supabase configuration is intentionally retired.
+  // Remove any legacy locally saved endpoint/key if this old UI action is reached.
+  try {
     localStorage.removeItem(LS_SUPABASE_CONFIG_KEY);
+  } catch {
+    // ignore storage errors
   }
 }
 
 export function isSupabaseConfigured() {
-  const cfg = getSupabaseConfig();
-  return Boolean(cfg.url && cfg.anonKey);
+  return true;
+}
+
+function isRememberedSession() {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(LS_REMEMBER_KEY) === 'true';
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Zabezpečené volání Supabase REST/RPC API přes session token
+ * Calls the Cloudflare Pages Functions boundary using the existing PostgREST path.
+ * The HttpOnly cookie is attached by the browser and cannot be read here.
  */
-export async function supabaseRequest(path, options = {}, authUser = null) {
-  const cfg = getSupabaseConfig();
-  if (!cfg.url || !cfg.anonKey) {
-    throw new Error('Supabase databáze není nakonfigurována.');
-  }
-
-  let sessionToken = authUser?.sessionToken || null;
-  if (!sessionToken && typeof window !== 'undefined') {
-    try {
-      const stored = JSON.parse(
-        localStorage.getItem('dochazka_active_user_v2') ||
-        sessionStorage.getItem('dochazka_active_user_v2') ||
-        'null'
-      );
-      sessionToken = stored?.sessionToken || null;
-    } catch {
-      // ignorujeme chybu parsování
-    }
+export async function supabaseRequest(path, options = {}) {
+  if (typeof path !== 'string' || !path.startsWith('/rest/v1/')) {
+    throw new Error('Neplatná API cesta.');
   }
 
   const headers = {
-    apikey: cfg.anonKey,
-    Authorization: `Bearer ${cfg.anonKey}`,
     'Content-Type': 'application/json',
+    'X-Remember-Session': isRememberedSession() ? 'true' : 'false',
     ...(options.headers || {})
   };
 
-  if (sessionToken) {
-    headers['X-Attendance-Session'] = sessionToken;
-  }
-
-  const response = await fetch(`${cfg.url}${path}`, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'same-origin',
     headers
   });
 
@@ -105,7 +68,7 @@ export async function supabaseRequest(path, options = {}, authUser = null) {
     } catch {
       detail = await response.text();
     }
-    const error = new Error(detail || `Chyba Supabase (${response.status})`);
+    const error = new Error(detail || `Chyba API (${response.status})`);
     error.status = response.status;
     throw error;
   }
