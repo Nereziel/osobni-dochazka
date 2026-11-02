@@ -77,6 +77,7 @@ supabase/schema_base.sql
 supabase/migrations/20261102_security_hardening.sql
 supabase/migrations/20261102_security_audit_followup.sql
 supabase/migrations/20261102_security_stepup_compat.sql
+supabase/migrations/20261102_admin_audit_read.sql
 ```
 
 Veřejná registrace je vždy **invite-only**. První administrátor se nevytváří automaticky přes veřejnou aplikaci; musí být založen důvěryhodným administrátorským postupem mimo veřejný registrační endpoint.
@@ -92,11 +93,13 @@ Aplikace používá vlastní session systém nad Supabase:
 - odvozené hodnoty docházky se přepočítávají na serveru
 - kritické administrátorské operace vyžadují opětovné ověření admin PINu
 - login používá databázový rate limiting podle zdrojové IP a účtu
-- bezpečnostní administrátorské akce se zapisují do neveřejného audit logu
+- bezpečnostní administrátorské akce se zapisují do neveřejného audit logu a správce je může číst přes vyhrazené read-only RPC
 - synchronizace je offline-first s outbox frontou, tombstones a serverovým Last-Write-Wins
 - aplikace po návratu online automaticky odešle čekající změny a stáhne novější data
 
 Podrobnosti k autentizaci jsou v [`docs/AUTH.md`](./docs/AUTH.md).
+
+Backup a recovery postup je v [`docs/BACKUP_RECOVERY.md`](./docs/BACKUP_RECOVERY.md). Produkční databázové dumpy se nesmí commitovat do tohoto veřejného repozitáře.
 
 ## Nasazení
 
