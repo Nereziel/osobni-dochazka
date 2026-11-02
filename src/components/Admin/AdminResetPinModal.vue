@@ -39,6 +39,17 @@
         </p>
 
         <label class="win-field">
+          <span>Tvůj současný admin PIN / heslo *</span>
+          <input
+            v-model="adminPin"
+            type="password"
+            placeholder="Potvrď svoji identitu"
+            required
+            autocomplete="current-password"
+          >
+        </label>
+
+        <label class="win-field">
           <span>Nový dočasný PIN (min. 6 znaků) *</span>
           <input
             v-model="newPin"
@@ -68,7 +79,7 @@
             type="submit"
             :disabled="loading"
           >
-            {{ loading ? 'Ukládání...' : 'Uložit nový PIN kolegovi' }}
+            {{ loading ? 'Ověřování...' : 'Uložit nový PIN kolegovi' }}
           </button>
           <button
             class="win-btn-standard full-width-btn"
@@ -86,6 +97,7 @@
 
 <script setup>
 import { ref } from 'vue';
+import { supabaseRequest } from '../../services/supabase.js';
 
 const emit = defineEmits(['reset-pin-submit']);
 
@@ -93,6 +105,7 @@ const dialogRef = ref(null);
 const targetUserKey = ref('');
 const targetUsername = ref('');
 const targetDisplayName = ref('');
+const adminPin = ref('');
 const newPin = ref('');
 const newPinConfirm = ref('');
 const loading = ref(false);
@@ -101,6 +114,7 @@ function open(profile) {
   targetUserKey.value = profile.user_key;
   targetUsername.value = profile.username;
   targetDisplayName.value = profile.display_name || profile.username;
+  adminPin.value = '';
   newPin.value = '';
   newPinConfirm.value = '';
   loading.value = false;
@@ -111,7 +125,11 @@ function close() {
   dialogRef.value?.close();
 }
 
-function handleSubmit() {
+async function handleSubmit() {
+  if (!adminPin.value) {
+    alert('Pro reset PINu je nutné potvrdit svůj admin PIN / heslo.');
+    return;
+  }
   if (newPin.value.length < 6) {
     alert('Nový PIN/heslo musí mít alespoň 6 znaků.');
     return;
@@ -120,11 +138,24 @@ function handleSubmit() {
     alert('Nové PINy se neshodují.');
     return;
   }
-  emit('reset-pin-submit', {
-    targetUserKey: targetUserKey.value,
-    targetUsername: targetUsername.value,
-    newPin: newPin.value
-  });
+
+  loading.value = true;
+  try {
+    await supabaseRequest('/rest/v1/rpc/admin_step_up', {
+      method: 'POST',
+      body: JSON.stringify({ p_admin_pin: adminPin.value })
+    });
+    emit('reset-pin-submit', {
+      targetUserKey: targetUserKey.value,
+      targetUsername: targetUsername.value,
+      newPin: newPin.value
+    });
+  } catch (err) {
+    loading.value = false;
+    alert(err.message || 'Ověření admin PINu selhalo.');
+  } finally {
+    adminPin.value = '';
+  }
 }
 
 function onBackdropClick(e) {

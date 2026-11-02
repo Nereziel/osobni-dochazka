@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue';
 import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
+import { clearUserLocalData } from '../services/indexedDb.js';
 
 const LS_USER_KEY = 'dochazka_active_user_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
@@ -146,7 +147,6 @@ export function useAuth() {
       expiresAt: rpcRes.expires_at
     };
 
-    // New registrations default to sessionStorage; the user can opt into persistence on a later login.
     saveUserSession(userObj, false);
     return {
       message: `Účet "${cleanUser}" byl úspěšně vytvořen!`,
@@ -214,9 +214,21 @@ export function useAuth() {
     return cleanName;
   }
 
-  function logout() {
+  async function logout() {
     const priorUser = currentUser.value;
+
+    // Odstraň bearer token z browser storage okamžitě. Lokální data se čistí
+    // hned potom asynchronně; volající může Promise awaitnout, pokud potřebuje
+    // mít úklid dokončený před dalším krokem UI.
     saveUserSession(null);
+
+    if (priorUser?.userKey) {
+      try {
+        await clearUserLocalData(priorUser.userKey);
+      } catch (err) {
+        console.warn('Vymazání lokálních dat účtu při odhlášení selhalo:', err?.message || err);
+      }
+    }
 
     if (isSupabaseConfigured() && priorUser?.sessionToken) {
       supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
@@ -242,7 +254,7 @@ export function useAuth() {
 
       if (res?.success === false) {
         console.warn('Session není platná:', res.message || res.error);
-        logout();
+        await logout();
         return false;
       }
 
@@ -269,7 +281,7 @@ export function useAuth() {
       }
 
       console.warn('Session expirovala nebo byla na serveru zrušena:', err.message);
-      logout();
+      await logout();
       return false;
     }
   }

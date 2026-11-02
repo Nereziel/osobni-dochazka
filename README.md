@@ -66,22 +66,33 @@ VITE_SUPABASE_ANON_KEY=vas-anon-public-klic
 
 > Používej pouze veřejný Supabase anon/publishable klíč. `service_role` klíč do klientské aplikace nepatří.
 
-Kompletní databázové schéma je v:
+### Inicializace databáze
+
+`supabase/schema.sql` je záměrně ochranný soubor a samostatné spuštění odmítne. Bezpečný stav databáze vzniká pouze aplikací základního schématu a všech migrací v pořadí.
+
+Postup je popsaný v [`supabase/README.md`](./supabase/README.md). Pro novou databázi se aktuálně používá:
 
 ```text
-supabase/schema.sql
+supabase/schema_base.sql
+supabase/migrations/20261102_security_hardening.sql
+supabase/migrations/20261102_security_audit_followup.sql
+supabase/migrations/20261102_security_stepup_compat.sql
 ```
 
-Při vytvoření nové databáze stačí schéma spustit v Supabase SQL Editoru. První registrovaný uživatel se stane administrátorem, další registrace vyžadují pozvánku.
+Veřejná registrace je vždy **invite-only**. První administrátor se nevytváří automaticky přes veřejnou aplikaci; musí být založen důvěryhodným administrátorským postupem mimo veřejný registrační endpoint.
 
 ## Synchronizace a bezpečnost
 
 Aplikace používá vlastní session systém nad Supabase:
 
 - PIN/heslo je na serveru hashováno pomocí bcrypt
-- session tokeny jsou náhodné a v databázi se ukládá pouze jejich hash
+- session tokeny jsou kryptograficky náhodné a v databázi se ukládá pouze jejich hash
 - přístup k datům omezuje PostgreSQL Row Level Security
 - zápisy docházky a nastavení probíhají přes kontrolované RPC funkce
+- odvozené hodnoty docházky se přepočítávají na serveru
+- kritické administrátorské operace vyžadují opětovné ověření admin PINu
+- login používá databázový rate limiting podle zdrojové IP a účtu
+- bezpečnostní administrátorské akce se zapisují do neveřejného audit logu
 - synchronizace je offline-first s outbox frontou, tombstones a serverovým Last-Write-Wins
 - aplikace po návratu online automaticky odešle čekající změny a stáhne novější data
 
@@ -103,7 +114,7 @@ V Cloudflare Pages musí být pro produkční build nastavené:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
-Pull requesty procházejí workflow **Test and build**. Dependabot sleduje npm balíčky i GitHub Actions.
+Pull requesty procházejí JavaScriptovým i databázovým bezpečnostním CI. Dependabot sleduje npm balíčky i GitHub Actions.
 
 ## Licence
 

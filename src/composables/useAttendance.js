@@ -28,6 +28,7 @@ import {
 import { cloneDeep } from '../utils/validation.js';
 import { holidayName } from '../utils/holidays.js';
 import { formatDuration, pad } from '../utils/time.js';
+import { sanitizeSpreadsheetCell } from '../utils/security.js';
 
 const records = ref(new Map());
 const calendarMonth = ref(startOfMonth(new Date()));
@@ -52,8 +53,6 @@ export function useAttendance() {
 
     await putUserDay(userId, updated);
     records.value.set(updated.date, updated);
-
-    // Reaktivní trigger
     records.value = new Map(records.value);
 
     if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
@@ -193,7 +192,7 @@ export function useAttendance() {
         formatDuration(m.credited),
         formatDuration(m.target),
         formatDuration(m.balance, true),
-        (rec?.note || '').replace(/"/g, '""')
+        sanitizeSpreadsheetCell(rec?.note || '').replace(/"/g, '""')
       ]);
     }
 
@@ -207,7 +206,6 @@ export function useAttendance() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // Komputované statistiky pro Dnes
   const currentTodayKey = computed(() => todayKey());
   const todayRecord = computed(() => records.value.get(currentTodayKey.value) || null);
 
@@ -244,4 +242,3 @@ export function useAttendance() {
     calcMonthVacation: (date) => calcMonthVacation(date, records.value)
   };
 }
-

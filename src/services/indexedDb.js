@@ -23,7 +23,6 @@ export function openDatabase() {
       const oldVersion = event.oldVersion;
       const tx = req.transaction;
 
-      // 1. Vytvoření nového per-user úložiště docházky
       if (!db.objectStoreNames.contains('user_days')) {
         const store = db.createObjectStore('user_days', { keyPath: ['userId', 'date'] });
         store.createIndex('userId', 'userId', { unique: false });
@@ -31,22 +30,18 @@ export function openDatabase() {
         store.createIndex('updatedAt', 'updatedAt', { unique: false });
       }
 
-      // 2. Vytvoření per-user nastavení
       if (!db.objectStoreNames.contains('user_settings')) {
         db.createObjectStore('user_settings', { keyPath: 'userId' });
       }
 
-      // 3. Vytvoření perzistentní fronty synchronizace (outbox)
       if (!db.objectStoreNames.contains('sync_queue')) {
         const queueStore = db.createObjectStore('sync_queue', { keyPath: 'id', autoIncrement: true });
         queueStore.createIndex('userId', 'userId', { unique: false });
         queueStore.createIndex('createdAt', 'createdAt', { unique: false });
       }
 
-      // 4. Migrace dat ze starých stores (v1/v2/v3: 'days' a 'settings')
       if (oldVersion > 0 && oldVersion < 4) {
         try {
-          // Zjistíme, zda existoval přihlášený uživatel v localStorage
           let activeUserKey = 'user:local';
           try {
             const raw = localStorage.getItem('dochazka_active_user_v2') || sessionStorage.getItem('dochazka_active_user_v2');
@@ -58,7 +53,6 @@ export function openDatabase() {
             // fallback na user:local
           }
 
-          // Převedení 'days' -> 'user_days'
           if (db.objectStoreNames.contains('days')) {
             const oldDaysStore = tx.objectStore('days');
             const newDaysStore = tx.objectStore('user_days');
@@ -88,7 +82,6 @@ export function openDatabase() {
             };
           }
 
-          // Převedení 'settings' -> 'user_settings'
           if (db.objectStoreNames.contains('settings')) {
             const oldSettingsStore = tx.objectStore('settings');
             const newSettingsStore = tx.objectStore('user_settings');
@@ -119,11 +112,6 @@ export function openDatabase() {
   });
 }
 
-/**
- * Pomocné volání IDB transakce.
- * Zápis je považován za úspěšný až při tx.oncomplete (skutečný commit na disk).
- * Správně zachycuje request error, transaction error i transaction abort.
- */
 async function idbAction(storeName, mode, callback) {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -131,31 +119,18 @@ async function idbAction(storeName, mode, callback) {
     const store = tx.objectStore(storeName);
     let result = undefined;
 
-    tx.oncomplete = () => {
-      resolve(result);
-    };
-
-    tx.onerror = () => {
-      reject(tx.error || new Error(`IndexedDB transaction error na store "${storeName}".`));
-    };
-
-    tx.onabort = () => {
-      reject(tx.error || new Error(`IndexedDB transaction abort na store "${storeName}".`));
-    };
+    tx.oncomplete = () => resolve(result);
+    tx.onerror = () => reject(tx.error || new Error(`IndexedDB transaction error na store "${storeName}".`));
+    tx.onabort = () => reject(tx.error || new Error(`IndexedDB transaction abort na store "${storeName}".`));
 
     try {
       const request = callback(store, tx);
       if (request && 'onsuccess' in request) {
         request.onsuccess = () => {
           result = request.result;
-          // U readonly transakce resolveujeme rovnou po onsuccess pro rychlost,
-          // ale u readwrite čekáme na tx.oncomplete pro potvrzení commitu
-          if (mode === 'readonly') {
-            resolve(result);
-          }
+          if (mode === 'readonly') resolve(result);
         };
         request.onerror = (e) => {
-          // Zabráníme nekontrolovanému bublání, tx.onerror zachytí chybu
           e.stopPropagation?.();
           reject(request.error || new Error(`IndexedDB request error na store "${storeName}".`));
         };
@@ -164,7 +139,7 @@ async function idbAction(storeName, mode, callback) {
       try {
         tx.abort();
       } catch {
-        // Ignorujeme případný abort error
+        // ignore abort errors
       }
       reject(err);
     }
@@ -183,9 +158,7 @@ export async function getUserDays(userId) {
 }
 
 export async function getUserDay(userId, date) {
-  return idbAction('user_days', 'readonly', (store) => {
-    return store.get([userId, date]);
-  });
+  return idbAction('user_days', 'readonly', (store) => store.get([userId, date]));
 }
 
 export async function putUserDay(userId, day) {
@@ -194,24 +167,18 @@ export async function putUserDay(userId, day) {
     userId,
     updatedAt: day.updatedAt || new Date().toISOString()
   };
-  await idbAction('user_days', 'readwrite', (store) => {
-    return store.put(record);
-  });
+  await idbAction('user_days', 'readwrite', (store) => store.put(record));
   return record;
 }
 
 export async function deleteUserDay(userId, date) {
-  return idbAction('user_days', 'readwrite', (store) => {
-    return store.delete([userId, date]);
-  });
+  return idbAction('user_days', 'readwrite', (store) => store.delete([userId, date]));
 }
 
 export async function clearUserDays(userId) {
   const days = await getUserDays(userId);
   return idbAction('user_days', 'readwrite', (store) => {
-    for (const d of days) {
-      store.delete([userId, d.date]);
-    }
+    for (const d of days) store.delete([userId, d.date]);
   });
 }
 
@@ -220,21 +187,18 @@ export async function clearUserDays(userId) {
 // ----------------------------------------------------------------------------
 
 export async function getUserSettings(userId) {
-  const result = await idbAction('user_settings', 'readonly', (store) => {
-    return store.get(userId);
-  });
+  const result = await idbAction('user_settings', 'readonly', (store) => store.get(userId));
   return result || null;
 }
 
 export async function putUserSettings(userId, settings) {
-  const record = {
-    ...settings,
-    userId
-  };
-  await idbAction('user_settings', 'readwrite', (store) => {
-    return store.put(record);
-  });
+  const record = { ...settings, userId };
+  await idbAction('user_settings', 'readwrite', (store) => store.put(record));
   return record;
+}
+
+export async function deleteUserSettings(userId) {
+  return idbAction('user_settings', 'readwrite', (store) => store.delete(userId));
 }
 
 // ----------------------------------------------------------------------------
@@ -244,15 +208,13 @@ export async function putUserSettings(userId, settings) {
 export async function enqueueSyncAction(userId, entity, action, payload) {
   const item = {
     userId,
-    entity, // 'attendance_days' | 'attendance_profiles'
-    action, // 'INSERT' | 'UPDATE' | 'UPSERT' | 'DELETE'
+    entity,
+    action,
     payload,
     createdAt: new Date().toISOString(),
     retries: 0
   };
-  return idbAction('sync_queue', 'readwrite', (store) => {
-    return store.add(item);
-  });
+  return idbAction('sync_queue', 'readwrite', (store) => store.add(item));
 }
 
 export async function getPendingSyncActions(userId) {
@@ -263,14 +225,32 @@ export async function getPendingSyncActions(userId) {
 }
 
 export async function removeSyncAction(id) {
-  return idbAction('sync_queue', 'readwrite', (store) => {
-    return store.delete(id);
-  });
+  return idbAction('sync_queue', 'readwrite', (store) => store.delete(id));
 }
 
 export async function updateSyncAction(item) {
+  return idbAction('sync_queue', 'readwrite', (store) => store.put(item));
+}
+
+export async function clearUserSyncQueue(userId) {
+  const items = await getPendingSyncActions(userId);
   return idbAction('sync_queue', 'readwrite', (store) => {
-    return store.put(item);
+    for (const item of items) {
+      if (item?.id != null) store.delete(item.id);
+    }
   });
 }
 
+/**
+ * Bezpečnostní úklid po odhlášení: odstraní lokální cloudová data konkrétního
+ * účtu, aby po revokaci session nezůstala docházka čitelná v offline cache.
+ * Lokální anonymní profil `user:local` se tímto nemaže.
+ */
+export async function clearUserLocalData(userId) {
+  if (!userId || userId === 'user:local') return;
+  await Promise.all([
+    clearUserDays(userId),
+    deleteUserSettings(userId),
+    clearUserSyncQueue(userId)
+  ]);
+}

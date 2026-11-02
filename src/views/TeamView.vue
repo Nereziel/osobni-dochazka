@@ -68,9 +68,7 @@
     </div>
 
     <div class="team-layout-grid">
-      <!-- LEVÝ SLOUPEC: POZVÁNKY A SEZNAM ZAMĚSTNANCŮ -->
       <div class="team-col-main">
-        <!-- KARTA POZVÁNEK -->
         <article class="win-card team-card">
           <div class="card-header-row">
             <div>
@@ -149,7 +147,6 @@
           </div>
         </article>
 
-        <!-- KARTA ZAMĚSTNANCŮ -->
         <article class="win-card team-card">
           <div class="card-header-row">
             <div>
@@ -194,15 +191,15 @@
                   <td>{{ formatDate(prof.created_at) }}</td>
                   <td>
                     <div class="table-action-cell">
-                      <button
-                        class="win-btn-standard compact-btn"
-                        type="button"
-                        title="Nastavit nový PIN"
-                        @click="$emit('open-reset-pin', prof)"
-                      >
-                        🔑 Reset PIN
-                      </button>
                       <template v-if="prof.user_key !== currentUser?.userKey">
+                        <button
+                          class="win-btn-standard compact-btn"
+                          type="button"
+                          title="Nastavit nový PIN"
+                          @click="$emit('open-reset-pin', prof)"
+                        >
+                          🔑 Reset PIN
+                        </button>
                         <button
                           class="win-btn-subtle compact-btn"
                           type="button"
@@ -220,6 +217,10 @@
                           ✕ Smazat
                         </button>
                       </template>
+                      <span
+                        v-else
+                        class="muted"
+                      >Vlastní PIN změň v Nastavení</span>
                     </div>
                   </td>
                 </tr>
@@ -238,7 +239,6 @@
         </article>
       </div>
 
-      <!-- PRAVÝ SLOUPEC: SOUHRN DOCHÁZKY CELÉHO TÝMU -->
       <div class="team-col-side">
         <article class="win-card team-card">
           <div class="card-header-row">
@@ -282,11 +282,17 @@
         </article>
       </div>
     </div>
+
+    <AdminStepUpModal
+      ref="stepUpModalRef"
+      :username="currentUser?.username || ''"
+    />
   </section>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
+import AdminStepUpModal from '../components/Admin/AdminStepUpModal.vue';
 import { supabaseRequest } from '../services/supabase.js';
 import { formatDuration, pad } from '../utils/time.js';
 import { fmtMonthTitle } from '../utils/dates.js';
@@ -309,6 +315,7 @@ const invites = ref([]);
 const profiles = ref([]);
 const summaries = ref([]);
 const loading = ref(false);
+const stepUpModalRef = ref(null);
 
 const currentMonthTitle = computed(() => fmtMonthTitle(new Date()));
 
@@ -361,11 +368,11 @@ onMounted(() => {
 });
 
 function copyInviteUrl(code) {
-  const url = `${window.location.origin}${window.location.pathname}?invite=${code}`;
+  const url = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(code)}`;
   navigator.clipboard?.writeText(url).then(() => {
     emit('toast', `Odkaz s kódem ${code} zkopírován do schránky`, '✓');
   }).catch(() => {
-    prompt('Odkaz pozvánky:', url);
+    emit('toast', 'Schránka není dostupná. Zkopíruj kód pozvánky ručně.', '⚠️');
   });
 }
 
@@ -390,12 +397,18 @@ async function toggleRole(prof) {
   const roleName = nextRole === 'admin' ? 'Správce' : 'Zaměstnanec';
   if (!confirm(`Opravdu změnit roli uživatele ${prof.username} na "${roleName}"?`)) return;
 
+  const adminPin = await stepUpModalRef.value?.request(
+    `Potvrď změnu role uživatele ${prof.username} na „${roleName}“.`
+  );
+  if (!adminPin) return;
+
   try {
     await supabaseRequest('/rest/v1/rpc/admin_change_user_role', {
       method: 'POST',
       body: JSON.stringify({
         p_target_user_key: prof.user_key,
-        p_new_role: nextRole
+        p_new_role: nextRole,
+        p_admin_pin: adminPin
       })
     }, props.currentUser);
 
@@ -409,10 +422,18 @@ async function toggleRole(prof) {
 async function deleteUser(prof) {
   if (!confirm(`OPRAVDU SMAZAT uživatele ${prof.username} (${prof.display_name}) a veškerou jeho docházku? Tuto akci nelze vrátit.`)) return;
 
+  const adminPin = await stepUpModalRef.value?.request(
+    `Potvrď trvalé smazání uživatele ${prof.username} a jeho docházky.`
+  );
+  if (!adminPin) return;
+
   try {
     await supabaseRequest('/rest/v1/rpc/admin_delete_user', {
       method: 'POST',
-      body: JSON.stringify({ p_target_user_key: prof.user_key })
+      body: JSON.stringify({
+        p_target_user_key: prof.user_key,
+        p_admin_pin: adminPin
+      })
     }, props.currentUser);
 
     emit('toast', `Uživatel ${prof.username} byl smazán`, '✓');
