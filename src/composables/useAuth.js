@@ -3,6 +3,7 @@ import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
 
 const LS_USER_KEY = 'dochazka_active_user_v2';
 const LS_REMEMBER_KEY = 'dochazka_remember_login_v1';
+const MIN_PIN_LENGTH = 6;
 
 function loadInitialUser() {
   try {
@@ -24,13 +25,13 @@ export function useAuth() {
 
   function isRememberedSession() {
     try {
-      return typeof localStorage !== 'undefined' && localStorage.getItem(LS_REMEMBER_KEY) !== 'false';
+      return typeof localStorage !== 'undefined' && localStorage.getItem(LS_REMEMBER_KEY) === 'true';
     } catch {
-      return true;
+      return false;
     }
   }
 
-  function saveUserSession(user, remember = true) {
+  function saveUserSession(user, remember = false) {
     currentUser.value = user;
     try {
       if (user) {
@@ -54,6 +55,7 @@ export function useAuth() {
       } else {
         if (typeof localStorage !== 'undefined') {
           localStorage.removeItem(LS_USER_KEY);
+          localStorage.removeItem(LS_REMEMBER_KEY);
         }
         if (typeof sessionStorage !== 'undefined') {
           sessionStorage.removeItem(LS_USER_KEY);
@@ -64,7 +66,7 @@ export function useAuth() {
     }
   }
 
-  async function login(usernameInput, pinInput, rememberMe = true) {
+  async function login(usernameInput, pinInput, rememberMe = false) {
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
@@ -107,10 +109,11 @@ export function useAuth() {
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!displayNameInput.trim()) throw new Error('Zadej celé jméno na výkaz.');
-    if (!pinInput || pinInput.length < 4) throw new Error('PIN/heslo musí mít alespoň 4 znaky.');
+    if (!pinInput || pinInput.length < MIN_PIN_LENGTH) throw new Error(`PIN/heslo musí mít alespoň ${MIN_PIN_LENGTH} znaků.`);
     if (pinInput !== pinConfirmInput) throw new Error('Zadaná hesla/PINy se neshodují.');
 
     const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
+    if (!cleanInvite) throw new Error('Registrace vyžaduje platný kód pozvánky.');
 
     if (!isSupabaseConfigured()) {
       throw new Error('Supabase databáze není nakonfigurována. Pro registraci je nutné nastavit spojení s databází.');
@@ -143,7 +146,8 @@ export function useAuth() {
       expiresAt: rpcRes.expires_at
     };
 
-    saveUserSession(userObj, true);
+    // New registrations default to sessionStorage; the user can opt into persistence on a later login.
+    saveUserSession(userObj, false);
     return {
       message: `Účet "${cleanUser}" byl úspěšně vytvořen!`,
       user: userObj
@@ -153,7 +157,7 @@ export function useAuth() {
   async function changePin(oldPin, newPin, newPinConfirm) {
     if (!currentUser.value?.sessionToken) throw new Error('Pro změnu PINu musíš být přihlášen.');
     if (!oldPin) throw new Error('Zadej svůj současný PIN / heslo.');
-    if (!newPin || newPin.length < 4) throw new Error('Nový PIN musí mít alespoň 4 znaky.');
+    if (!newPin || newPin.length < MIN_PIN_LENGTH) throw new Error(`Nový PIN musí mít alespoň ${MIN_PIN_LENGTH} znaků.`);
     if (newPin !== newPinConfirm) throw new Error('Nový PIN a jeho potvrzení se neshodují.');
     if (oldPin === newPin) throw new Error('Nový PIN musí být jiný než současný.');
 
@@ -161,6 +165,7 @@ export function useAuth() {
       throw new Error('Supabase databáze není nakonfigurována.');
     }
 
+    const remember = isRememberedSession();
     const res = await supabaseRequest('/rest/v1/rpc/change_attendance_pin', {
       method: 'POST',
       body: JSON.stringify({
@@ -173,6 +178,16 @@ export function useAuth() {
     if (res?.success === false) {
       throw new Error(res.message || res.error || 'Změna PINu selhala.');
     }
+    if (!res?.session_token) {
+      throw new Error('PIN byl změněn, ale server nevydal nový bezpečnostní token. Přihlas se znovu.');
+    }
+
+    currentUser.value = {
+      ...currentUser.value,
+      sessionToken: res.session_token,
+      expiresAt: res.expires_at || currentUser.value.expiresAt
+    };
+    saveUserSession(currentUser.value, remember);
 
     return res?.message || 'PIN byl úspěšně změněn.';
   }
@@ -216,7 +231,6 @@ export function useAuth() {
   async function verifySession() {
     if (!isSupabaseConfigured() || !currentUser.value?.sessionToken) return true;
 
-    // Pokud je zařízení offline, neodlašujeme uživatele!
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return true;
     }
@@ -242,7 +256,6 @@ export function useAuth() {
       }
       return true;
     } catch (err) {
-      // Rozlišení síťové/offline chyby od neplatné session (401/403)
       const isNetworkError =
         (typeof navigator !== 'undefined' && navigator.onLine === false) ||
         !err.status ||
