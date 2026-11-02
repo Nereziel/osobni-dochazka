@@ -89,8 +89,5 @@ jobs:
       - name: Apply admin step-up compatibility migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_security_stepup_compat.sql
 
-      - name: Run hardening regression suite
-        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security_hardening.sql
-
-      - name: Run audit follow-up regression suite
-        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security_audit_followup.sql
+      - name: Run unified database security regression suite
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security.sql
