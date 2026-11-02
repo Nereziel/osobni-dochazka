@@ -26,7 +26,7 @@ Jednoduchá webová aplikace pro evidenci osobní docházky. Funguje na počíta
 - **IndexedDB** pro lokální offline data
 - **Workbox / vite-plugin-pwa**
 - **Vitest + ESLint**
-- **Cloudflare Pages**
+- **Cloudflare Pages + Pages Functions**
 - **GitHub Actions** pro CI a pravidelný security scan
 - **Dependabot** pro kontrolu aktualizací závislostí
 
@@ -55,16 +55,18 @@ npm.cmd run test
 npm.cmd run build
 ```
 
-## Supabase
+## Supabase a Cloudflare
 
-Vytvoř `.env` podle `.env.example`:
+Browser nekomunikuje se Supabase přímo. Vue posílá požadavky pouze na same-origin `/api/supabase/*`; Cloudflare Pages Function přidá publishable klíč a serverovou attendance session až při volání Supabase.
+
+Pro Pages Functions nastav podle `.env.example` tyto runtime proměnné v **preview i production** prostředí Cloudflare Pages:
 
 ```ini
-VITE_SUPABASE_URL=https://vas-projekt.supabase.co
-VITE_SUPABASE_ANON_KEY=vas-anon-public-klic
+SUPABASE_URL=https://vas-projekt.supabase.co
+SUPABASE_PUBLISHABLE_KEY=sb_publishable_vas-klic
 ```
 
-> Používej pouze veřejný Supabase anon/publishable klíč. `service_role` klíč do klientské aplikace nepatří.
+`SUPABASE_PUBLISHABLE_KEY` je nízkoprivilegovaný publishable klíč. Privilegovaný `service_role`/secret klíč tato aplikace nepoužívá. Proměnné bez prefixu `VITE_` nejsou součástí Vue browser bundle.
 
 ### Inicializace databáze
 
@@ -88,6 +90,9 @@ Aplikace používá vlastní session systém nad Supabase:
 
 - PIN/heslo je na serveru hashováno pomocí bcrypt
 - session tokeny jsou kryptograficky náhodné a v databázi se ukládá pouze jejich hash
+- raw session token je v browseru pouze v `HttpOnly; Secure; SameSite=Strict` host cookie a není dostupný JavaScriptu
+- Cloudflare Pages Function přidává `X-Attendance-Session` až do upstream požadavku na Supabase
+- browserová síťová komunikace s datovou vrstvou je omezena na same-origin `/api/*`
 - přístup k datům omezuje PostgreSQL Row Level Security
 - zápisy docházky a nastavení probíhají přes kontrolované RPC funkce
 - odvozené hodnoty docházky se přepočítávají na serveru
@@ -123,10 +128,12 @@ Build command: npm run build
 Output directory: dist
 ```
 
-V Cloudflare Pages musí být pro produkční build nastavené:
+V Cloudflare Pages musí být pro **production i preview Pages Functions** nastavené:
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+
+Volitelná browserová build-time konfigurace, například `VITE_SYNC_INTERVAL_MS`, používá prefix `VITE_`. Supabase URL ani klíč se do browserové konfigurace nevkládají.
 
 Pull requesty procházejí JavaScriptovým i databázovým bezpečnostním CI. Dependabot sleduje npm balíčky i GitHub Actions.
 
