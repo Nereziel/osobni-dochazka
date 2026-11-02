@@ -217,6 +217,11 @@ export function useAuth() {
   async function logout() {
     const priorUser = currentUser.value;
 
+    // Odstraň bearer token z browser storage okamžitě. Lokální data se čistí
+    // hned potom asynchronně; volající může Promise awaitnout, pokud potřebuje
+    // mít úklid dokončený před dalším krokem UI.
+    saveUserSession(null);
+
     if (priorUser?.userKey) {
       try {
         await clearUserLocalData(priorUser.userKey);
@@ -224,8 +229,6 @@ export function useAuth() {
         console.warn('Vymazání lokálních dat účtu při odhlášení selhalo:', err?.message || err);
       }
     }
-
-    saveUserSession(null);
 
     if (isSupabaseConfigured() && priorUser?.sessionToken) {
       supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
