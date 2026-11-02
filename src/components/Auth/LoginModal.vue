@@ -44,7 +44,7 @@
           <input
             v-model="pin"
             type="password"
-            placeholder="••••"
+            placeholder="••••••"
             required
             autocomplete="current-password"
           >
@@ -65,7 +65,7 @@
               <small
                 class="muted"
                 style="display:block; font-size:11px;"
-              >Automatické přihlášení při každém otevření aplikace</small>
+              >Zapni pouze na důvěryhodném zařízení. Jinak relace skončí zavřením prohlížeče.</small>
             </div>
           </label>
         </div>
@@ -102,12 +102,13 @@ const emit = defineEmits(['login-submit', 'switch-to-register', 'toast']);
 const dialogRef = ref(null);
 const username = ref('');
 const pin = ref('');
-const rememberMe = ref(true);
+const rememberMe = ref(false);
 const loading = ref(false);
 
 function open() {
   username.value = '';
   pin.value = '';
+  rememberMe.value = false;
   loading.value = false;
   dialogRef.value?.showModal();
 }
@@ -137,4 +138,3 @@ function onBackdropClick(e) {
 
 defineExpose({ open, close, setLoading: (l) => { loading.value = l; } });
 </script>
-

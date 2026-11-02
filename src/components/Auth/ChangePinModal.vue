@@ -35,7 +35,7 @@
         >
 
         <p class="dialog-info-text">
-          Pro změnu zadej svůj dosavadní PIN a zvol si nový (min. 4 znaky). Nový PIN se zabezpečeně zahashuje a uloží v databázi.
+          Pro změnu zadej svůj dosavadní PIN a zvol si nový (min. 6 znaků). Po změně server zneplatní staré relace a vydá nový bezpečnostní token.
         </p>
 
         <label class="win-field">
@@ -43,20 +43,20 @@
           <input
             v-model="oldPin"
             type="password"
-            placeholder="••••"
+            placeholder="••••••"
             required
             autocomplete="current-password"
           >
         </label>
 
         <label class="win-field">
-          <span>Nový PIN / heslo (min. 4 znaky) *</span>
+          <span>Nový PIN / heslo (min. 6 znaků) *</span>
           <input
             v-model="newPin"
             type="password"
             placeholder="Zadej nový PIN"
             required
-            minlength="4"
+            minlength="6"
             autocomplete="new-password"
           >
         </label>
@@ -68,7 +68,7 @@
             type="password"
             placeholder="Zopakuj nový PIN"
             required
-            minlength="4"
+            minlength="6"
             autocomplete="new-password"
           >
         </label>
@@ -131,6 +131,10 @@ function close() {
 }
 
 function handleSubmit() {
+  if (newPin.value.length < 6) {
+    alert('Nový PIN/heslo musí mít alespoň 6 znaků.');
+    return;
+  }
   if (newPin.value !== newPinConfirm.value) {
     alert('Nový PIN a jeho potvrzení se neshodují.');
     return;
