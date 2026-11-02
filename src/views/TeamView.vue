@@ -282,11 +282,17 @@
         </article>
       </div>
     </div>
+
+    <AdminStepUpModal
+      ref="stepUpModalRef"
+      :username="currentUser?.username || ''"
+    />
   </section>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
+import AdminStepUpModal from '../components/Admin/AdminStepUpModal.vue';
 import { supabaseRequest } from '../services/supabase.js';
 import { formatDuration, pad } from '../utils/time.js';
 import { fmtMonthTitle } from '../utils/dates.js';
@@ -309,17 +315,13 @@ const invites = ref([]);
 const profiles = ref([]);
 const summaries = ref([]);
 const loading = ref(false);
+const stepUpModalRef = ref(null);
 
 const currentMonthTitle = computed(() => fmtMonthTitle(new Date()));
 
 function formatDate(isoStr) {
   if (!isoStr) return '—';
   return new Date(isoStr).toLocaleDateString('cs-CZ');
-}
-
-function requestAdminStepUp() {
-  const value = prompt('Pro potvrzení této citlivé operace zadej svůj současný admin PIN / heslo:');
-  return value == null ? null : value;
 }
 
 async function loadInvites() {
@@ -370,7 +372,7 @@ function copyInviteUrl(code) {
   navigator.clipboard?.writeText(url).then(() => {
     emit('toast', `Odkaz s kódem ${code} zkopírován do schránky`, '✓');
   }).catch(() => {
-    prompt('Odkaz pozvánky:', url);
+    emit('toast', 'Schránka není dostupná. Zkopíruj kód pozvánky ručně.', '⚠️');
   });
 }
 
@@ -394,7 +396,10 @@ async function toggleRole(prof) {
   const nextRole = prof.role === 'admin' ? 'employee' : 'admin';
   const roleName = nextRole === 'admin' ? 'Správce' : 'Zaměstnanec';
   if (!confirm(`Opravdu změnit roli uživatele ${prof.username} na "${roleName}"?`)) return;
-  const adminPin = requestAdminStepUp();
+
+  const adminPin = await stepUpModalRef.value?.request(
+    `Potvrď změnu role uživatele ${prof.username} na „${roleName}“.`
+  );
   if (!adminPin) return;
 
   try {
@@ -416,7 +421,10 @@ async function toggleRole(prof) {
 
 async function deleteUser(prof) {
   if (!confirm(`OPRAVDU SMAZAT uživatele ${prof.username} (${prof.display_name}) a veškerou jeho docházku? Tuto akci nelze vrátit.`)) return;
-  const adminPin = requestAdminStepUp();
+
+  const adminPin = await stepUpModalRef.value?.request(
+    `Potvrď trvalé smazání uživatele ${prof.username} a jeho docházky.`
+  );
   if (!adminPin) return;
 
   try {
