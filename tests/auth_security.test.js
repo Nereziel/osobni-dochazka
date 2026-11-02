@@ -6,6 +6,11 @@ function read(relPath) {
   return fs.readFileSync(path.resolve(process.cwd(), relPath), 'utf8');
 }
 
+function readOptional(relPath) {
+  const resolved = path.resolve(process.cwd(), relPath);
+  return fs.existsSync(resolved) ? fs.readFileSync(resolved, 'utf8') : '';
+}
+
 const schemaGuard = read('supabase/schema.sql');
 const schemaBase = read('supabase/schema_base.sql');
 const hardening = read('supabase/migrations/20261102_security_hardening.sql');
@@ -16,6 +21,8 @@ const supabaseClient = read('src/services/supabase.js');
 const teamView = read('src/views/TeamView.vue');
 const resetPinModal = read('src/components/Admin/AdminResetPinModal.vue');
 const headers = read('public/_headers');
+const routes = readOptional('public/_routes.json');
+const gateway = readOptional('functions/api/supabase/[[path]].js');
 
 describe('Security architecture – database bootstrap', () => {
   it('refuses the historical unsafe one-file schema bootstrap', () => {
@@ -102,6 +109,28 @@ describe('Security architecture – API and browser boundary', () => {
   it('sends browser data requests only to the same-origin Cloudflare API boundary', () => {
     expect(supabaseClient).toContain('/api/supabase');
     expect(supabaseClient).not.toContain('fetch(`${cfg.url}${path}`');
+  });
+
+  it('uses an HttpOnly host cookie and never returns the raw credential to Vue', () => {
+    expect(gateway).toContain('__Host-dochazka_session');
+    expect(gateway).toContain('HttpOnly');
+    expect(gateway).toContain('Secure');
+    expect(gateway).toContain('SameSite=Strict');
+    expect(gateway).toContain("delete payload.session_token");
+  });
+
+  it('allows only the app API surface and rejects cross-origin state changes', () => {
+    expect(gateway).toContain('PUBLIC_RPCS');
+    expect(gateway).toContain('AUTH_RPCS');
+    expect(gateway).toContain('READ_RESOURCES');
+    expect(gateway).toContain("request.headers.get('Origin')");
+    expect(gateway).toContain("request.headers.get('Sec-Fetch-Site')");
+    expect(gateway).toContain("request.headers.get('CF-Connecting-IP')");
+    expect(gateway).toContain("upstreamHeaders.set('X-Real-IP'");
+  });
+
+  it('invokes Pages Functions only for /api routes', () => {
+    expect(routes).toContain('"include": ["/api/*"]');
   });
 
   it('uses admin RPC rather than direct REST DELETE for invites', () => {
