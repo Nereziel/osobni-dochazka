@@ -35,17 +35,17 @@
         >
 
         <p class="dialog-info-text">
-          Nastav nový dočasný PIN pro uživatele <strong>{{ targetDisplayName }}</strong> (<code>{{ targetUsername }}</code>).
+          Nastav nový dočasný PIN pro uživatele <strong>{{ targetDisplayName }}</strong> (<code>{{ targetUsername }}</code>). Server po resetu zneplatní všechny jeho aktivní relace.
         </p>
 
         <label class="win-field">
-          <span>Nový dočasný PIN (min. 4 znaky) *</span>
+          <span>Nový dočasný PIN (min. 6 znaků) *</span>
           <input
             v-model="newPin"
             type="password"
             placeholder="Zadej nový PIN"
             required
-            minlength="4"
+            minlength="6"
             autocomplete="new-password"
           >
         </label>
@@ -57,7 +57,7 @@
             type="password"
             placeholder="Zopakuj nový PIN"
             required
-            minlength="4"
+            minlength="6"
             autocomplete="new-password"
           >
         </label>
@@ -112,6 +112,10 @@ function close() {
 }
 
 function handleSubmit() {
+  if (newPin.value.length < 6) {
+    alert('Nový PIN/heslo musí mít alespoň 6 znaků.');
+    return;
+  }
   if (newPin.value !== newPinConfirm.value) {
     alert('Nové PINy se neshodují.');
     return;
