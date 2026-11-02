@@ -64,10 +64,7 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(local.updatedAt).toBe('2026-10-23T18:00:00.000Z');
   });
 
-  // Test 1: Offline outbox UPSERT vs novější server
   it('Test 1 – offline UPSERT vs newer server (server_newer rejection handled safely)', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
-
     const outboxAction = {
       id: 1,
       userId: currentUser.userKey,
@@ -84,8 +81,6 @@ describe('Real Integration Tests for Sync Engine', () => {
 
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([outboxAction]);
     const removeSpy = vi.spyOn(idbService, 'removeSyncAction').mockResolvedValue();
-
-    // RPC vrací applied: false s reason: server_newer
     const supabaseSpy = vi.spyOn(supabaseService, 'supabaseRequest').mockResolvedValue({
       applied: false,
       reason: 'server_newer',
@@ -101,14 +96,10 @@ describe('Real Integration Tests for Sync Engine', () => {
       expect.objectContaining({ method: 'POST' }),
       currentUser
     );
-    // Z outboxu je bezpečně odstraněno, protože server již obsahuje novější stav
     expect(removeSpy).toHaveBeenCalledWith(1);
   });
 
-  // Test 2: Offline UPSERT je novější
   it('Test 2 – offline UPSERT is newer than server (applied: true)', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
-
     const outboxAction = {
       id: 2,
       userId: currentUser.userKey,
@@ -134,15 +125,11 @@ describe('Real Integration Tests for Sync Engine', () => {
     });
 
     const count = await drainOutboxQueue(currentUser);
-
     expect(count).toBe(1);
     expect(removeSpy).toHaveBeenCalledWith(2);
   });
 
-  // Test 3: Offline DELETE (posílá se jako tombstone)
   it('Test 3 – offline DELETE sends tombstone via RPC and removes outbox item', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
-
     const deleteAction = {
       id: 3,
       userId: currentUser.userKey,
@@ -157,7 +144,6 @@ describe('Real Integration Tests for Sync Engine', () => {
 
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([deleteAction]);
     const removeSpy = vi.spyOn(idbService, 'removeSyncAction').mockResolvedValue();
-
     const supabaseSpy = vi.spyOn(supabaseService, 'supabaseRequest').mockResolvedValue({
       applied: true,
       action: 'tombstone_updated',
@@ -172,12 +158,8 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(callBody.p_day.deleted_at).toBe('2026-10-25T12:00:00.000Z');
   });
 
-  // Test 4: Server DELETE je novější než lokální kopie
   it('Test 4 – server DELETE tombstone is newer: removes local day and prevents upload', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
-
-    // Lokální záznam má čas 11:00
     vi.spyOn(idbService, 'getUserDays').mockResolvedValue([
       {
         date: '2026-10-25',
@@ -190,7 +172,6 @@ describe('Real Integration Tests for Sync Engine', () => {
 
     const deleteUserDaySpy = vi.spyOn(idbService, 'deleteUserDay').mockResolvedValue();
 
-    // Server má tombstone s časem 12:00
     vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async (url) => {
       if (url.includes('attendance_profiles')) return [];
       if (url.includes('attendance_days')) {
@@ -208,18 +189,13 @@ describe('Real Integration Tests for Sync Engine', () => {
     });
 
     const result = await performFullSync(currentUser, DEFAULT_SETTINGS);
-
     expect(result.status).toBe('online');
     expect(deleteUserDaySpy).toHaveBeenCalledWith(currentUser.userKey, '2026-10-25');
     expect(result.recordsMap.has('2026-10-25')).toBe(false);
   });
 
-  // Test 5: Starý tombstone vs nový update (nový update oživí záznam)
   it('Test 5 – newer local update resurrects older server tombstone', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
-
-    // Lokální záznam je novější (14:00)
     vi.spyOn(idbService, 'getUserDays').mockResolvedValue([
       {
         date: '2026-10-25',
@@ -234,7 +210,6 @@ describe('Real Integration Tests for Sync Engine', () => {
     vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async (url, opts) => {
       if (url.includes('attendance_profiles')) return [];
       if (url.includes('attendance_days?user_key=')) {
-        // Server měl starý tombstone v 10:00
         return [
           {
             user_key: currentUser.userKey,
@@ -253,7 +228,6 @@ describe('Real Integration Tests for Sync Engine', () => {
     });
 
     const result = await performFullSync(currentUser, DEFAULT_SETTINGS);
-
     expect(result.status).toBe('online');
     expect(result.recordsMap.has('2026-10-25')).toBe(true);
     expect(uploadedPayload).toBeTruthy();
@@ -261,10 +235,7 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(uploadedPayload.updated_at).toBe('2026-10-25T14:00:00.000Z');
   });
 
-  // Test 6: Výpadek sítě při drainOutbox
   it('Test 6 – network failure during drainOutbox preserves queue and updates retry counter', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
-
     const pendingItem = {
       id: 99,
       userId: currentUser.userKey,
@@ -277,18 +248,14 @@ describe('Real Integration Tests for Sync Engine', () => {
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([pendingItem]);
     const updateSpy = vi.spyOn(idbService, 'updateSyncAction').mockResolvedValue();
     const removeSpy = vi.spyOn(idbService, 'removeSyncAction').mockResolvedValue();
-
-    // Síť selže
     vi.spyOn(supabaseService, 'supabaseRequest').mockRejectedValue(new Error('Network error (offline)'));
 
     const count = await drainOutboxQueue(currentUser);
-
     expect(count).toBe(0);
     expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 99, retries: 1 }));
     expect(removeSpy).not.toHaveBeenCalled();
   });
 
-  // Test 7: Dvě změny stejného dne v outboxu (coalesce zachová novější)
   it('Test 7 – coalesce multiple changes of the same day in outbox', () => {
     const rawActions = [
       {
@@ -312,7 +279,6 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(coalesced[0].obsoleteIds).toEqual([10]);
   });
 
-  // Test 8: UPDATE následovaný DELETE pro stejný den
   it('Test 8 – UPDATE followed by DELETE results in tombstone DELETE only', () => {
     const rawActions = [
       {
@@ -337,9 +303,7 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(coalesced[0].obsoleteIds).toEqual([20]);
   });
 
-  // Test 9: Concurrent first insert simulation (PostgreSQL ON CONFLICT LWW logic)
   it('Test 9 – simulates concurrent first insert where Device A inserts 10:00 and Device B inserts 11:00', () => {
-    // Model PostgreSQL atomické tabulky s ON CONFLICT (user_key, date) DO UPDATE WHERE excluded.updated_at >= attendance_days.updated_at
     const mockPostgresTable = new Map();
 
     function executeAtomicLwwUpsert(incomingRow) {
@@ -347,38 +311,33 @@ describe('Real Integration Tests for Sync Engine', () => {
       const existing = mockPostgresTable.get(key);
 
       if (!existing) {
-        // První INSERT (žádný konflikt)
         mockPostgresTable.set(key, { ...incomingRow });
         return {
           applied: true,
           action: incomingRow.deleted_at ? 'tombstone' : 'upsert',
           server_updated_at: incomingRow.updated_at
         };
-      } else {
-        // ON CONFLICT: porovnání WHERE excluded.updated_at >= d.updated_at
-        const existingTime = Date.parse(existing.updated_at);
-        const incomingTime = Date.parse(incomingRow.updated_at);
-
-        if (incomingTime >= existingTime) {
-          mockPostgresTable.set(key, { ...incomingRow });
-          return {
-            applied: true,
-            action: incomingRow.deleted_at ? 'tombstone' : 'upsert',
-            server_updated_at: incomingRow.updated_at
-          };
-        } else {
-          // WHERE podmínka nebyla splněna -> RETURNING vrátí 0 řádků
-          return {
-            applied: false,
-            reason: 'server_newer',
-            server_updated_at: existing.updated_at,
-            incoming_updated_at: incomingRow.updated_at
-          };
-        }
       }
+
+      const existingTime = Date.parse(existing.updated_at);
+      const incomingTime = Date.parse(incomingRow.updated_at);
+      if (incomingTime >= existingTime) {
+        mockPostgresTable.set(key, { ...incomingRow });
+        return {
+          applied: true,
+          action: incomingRow.deleted_at ? 'tombstone' : 'upsert',
+          server_updated_at: incomingRow.updated_at
+        };
+      }
+
+      return {
+        applied: false,
+        reason: 'server_newer',
+        server_updated_at: existing.updated_at,
+        incoming_updated_at: incomingRow.updated_at
+      };
     }
 
-    // Zařízení A vytvoří den v 10:00
     const deviceA = {
       user_key: 'user:martin',
       date: '2026-10-26',
@@ -388,7 +347,6 @@ describe('Real Integration Tests for Sync Engine', () => {
       updated_at: '2026-10-26T10:00:00.000Z'
     };
 
-    // Zařízení B vytvoří stejný den v 11:00
     const deviceB = {
       user_key: 'user:martin',
       date: '2026-10-26',
@@ -398,20 +356,15 @@ describe('Real Integration Tests for Sync Engine', () => {
       updated_at: '2026-10-26T11:00:00.000Z'
     };
 
-    // Zařízení A provede zápis
     const resA = executeAtomicLwwUpsert(deviceA);
     expect(resA.applied).toBe(true);
-
-    // Zařízení B provede souběžný zápis (přes ON CONFLICT)
     const resB = executeAtomicLwwUpsert(deviceB);
     expect(resB.applied).toBe(true);
 
-    // Výsledný stav: v tabulce je právě 1 záznam a obsahuje novější stav z 11:00
     const stored = mockPostgresTable.get('user:martin:2026-10-26');
     expect(stored.updated_at).toBe('2026-10-26T11:00:00.000Z');
     expect(stored.type).toBe('homeOffice');
 
-    // Nyní zpožděný request Zařízení A (např. retry staré verze 10:00)
     const resLateA = executeAtomicLwwUpsert(deviceA);
     expect(resLateA.applied).toBe(false);
     expect(resLateA.reason).toBe('server_newer');
@@ -419,7 +372,6 @@ describe('Real Integration Tests for Sync Engine', () => {
   });
 
   it('Test 12 – outbox queue sync for attendance_profiles calls RPC update_own_settings', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([
       {
         id: 101,
@@ -440,7 +392,6 @@ describe('Real Integration Tests for Sync Engine', () => {
     });
 
     const count = await drainOutboxQueue(currentUser);
-
     expect(count).toBe(1);
     expect(rpcEndpoint).toBe('/rest/v1/rpc/update_own_settings');
     expect(rpcBody).toEqual({ p_settings: { work_start: '07:00', work_end: '16:00' } });
@@ -455,17 +406,14 @@ describe('Real Integration Tests for Sync Engine', () => {
     const cursor = computeNextSyncCursor(rows, null, []);
     expect(cursor).toBe('2026-10-21T14:30:00.000Z');
 
-    // Prázdný incremental pull nesmí posunout kurzor na čas klienta
     const unchanged = computeNextSyncCursor([], cursor, []);
     expect(unchanged).toBe('2026-10-21T14:30:00.000Z');
   });
 
   it('Test 14 – clock-skew scenario: client clock is far ahead (+5 hours), remote change on another device is NOT missed by incremental sync', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
     const putDaySpy = vi.spyOn(idbService, 'putUserDay').mockResolvedValue();
 
-    // Simulace: lokální hodiny klienta ukazují 15:00 (o 5 hodin napřed oproti reálnému serverovému času 10:00)
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-29T15:00:00.000Z'));
 
@@ -477,7 +425,7 @@ describe('Real Integration Tests for Sync Engine', () => {
         start_time: '06:30',
         end_time: '15:00',
         deleted_at: null,
-        updated_at: '2026-10-29T10:00:00.000Z' // Skutečný čas serveru (10:00)
+        updated_at: '2026-10-29T10:00:00.000Z'
       }
     ];
 
@@ -489,11 +437,9 @@ describe('Real Integration Tests for Sync Engine', () => {
       else localStore.push(day);
     });
 
-    const requestedUrls = [];
     vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async (url) => {
       if (url.includes('attendance_profiles')) return [];
       if (url.includes('attendance_days')) {
-        requestedUrls.push(url);
         const match = url.match(/updated_at=gte\.([^&]+)/);
         if (match) {
           const thresholdMs = Date.parse(decodeURIComponent(match[1]));
@@ -505,17 +451,13 @@ describe('Real Integration Tests for Sync Engine', () => {
     });
 
     try {
-      // 1. První full sync (klient má hodiny 15:00, ale server vrací řádek s updated_at 10:00)
       await performFullSync(currentUser, DEFAULT_SETTINGS, {
         pushLocalDays: false,
         incremental: false,
         fetchProfile: false
       });
-
-      // Kurzor musí být 10:00 (ze serveru), NIKOLI 15:00 (z hodin klienta)!
       expect(getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-10-29T10:00:00.000Z');
 
-      // 2. Prázdný incremental sync v 15:00:10 klientského času -> kurzor musí zůstat 10:00:00
       vi.setSystemTime(new Date('2026-10-29T15:00:10.000Z'));
       await performFullSync(currentUser, DEFAULT_SETTINGS, {
         pushLocalDays: false,
@@ -524,8 +466,6 @@ describe('Real Integration Tests for Sync Engine', () => {
       });
       expect(getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-10-29T10:00:00.000Z');
 
-      // 3. Na jiném zařízení vznikne změna na serveru v reálném serverovém čase 10:02:00
-      // (což je stále o skoro 5 hodin "dříve" než špatně nastavené hodiny prvního klienta 15:00:20!)
       serverRows.push({
         user_key: currentUser.userKey,
         date: '2026-10-29',
@@ -536,7 +476,6 @@ describe('Real Integration Tests for Sync Engine', () => {
         updated_at: '2026-10-29T10:02:00.000Z'
       });
 
-      // 4. Následující incremental sync změnu z 10:02:00 spolehlivě najde a stáhne!
       vi.setSystemTime(new Date('2026-10-29T15:00:20.000Z'));
       const incRes = await performFullSync(currentUser, DEFAULT_SETTINGS, {
         pushLocalDays: false,
@@ -553,7 +492,6 @@ describe('Real Integration Tests for Sync Engine', () => {
   });
 
   it('Test 15 – when no safe server cursor exists (e.g. after resetUserSyncCursor), incremental option safely falls back to full pull', async () => {
-    vi.spyOn(supabaseService, 'isSupabaseConfigured').mockReturnValue(true);
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
     vi.spyOn(idbService, 'getUserDays').mockResolvedValue([]);
     vi.spyOn(idbService, 'putUserDay').mockResolvedValue();
