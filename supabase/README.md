@@ -12,7 +12,7 @@ V Supabase SQL Editoru spusť v tomto pořadí:
 4. `supabase/migrations/20261102_security_stepup_compat.sql`
 5. `supabase/migrations/20261102_admin_audit_read.sql`
 
-Migrace aplikuj vždy v pořadí podle názvu souboru. CI používá stejný postup.
+Migrace aplikuj **přesně v pořadí uvedeném výše**. Několik souborů sdílí stejné datum, proto se nespoléhej na lexikální řazení názvů. CI používá stejné pořadí.
 
 Po inicializaci není veřejný bootstrap prvního správce. Prvního administrátora je nutné založit mimo veřejnou aplikaci přímo v databázi nebo jiným důvěryhodným administrátorským postupem. Běžná registrace je vždy pouze přes jednorázovou pozvánku.
 
