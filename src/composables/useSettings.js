@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, normalizeSettings } from '../utils/attendance.js';
 import { cloneDeep } from '../utils/validation.js';
 import { getUserSettings, putUserSettings, enqueueSyncAction } from '../services/indexedDb.js';
 import { profileRowFromSettings } from '../services/sync.js';
-import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
+import { supabaseRequest } from '../services/supabase.js';
 
 const settings = ref(cloneDeep(DEFAULT_SETTINGS));
 
@@ -44,7 +44,7 @@ export function useSettings() {
     if (userId) {
       await putUserSettings(userId, normalized);
 
-      if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
+      if (!skipCloud && currentUser?.userKey) {
         const row = profileRowFromSettings(normalized, currentUser);
         try {
           await supabaseRequest('/rest/v1/rpc/update_own_settings', {
