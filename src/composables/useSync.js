@@ -1,7 +1,6 @@
 import { ref } from 'vue';
 import { performFullSync, resetUserSyncCursor } from '../services/sync.js';
 import { getPendingSyncActions, clearUserDays } from '../services/indexedDb.js';
-import { isSupabaseConfigured } from '../services/supabase.js';
 
 const rawEnvInterval = typeof import.meta !== 'undefined' && import.meta?.env?.VITE_SYNC_INTERVAL_MS
   ? Number(import.meta.env.VITE_SYNC_INTERVAL_MS)
@@ -118,7 +117,7 @@ export function useSync() {
       stopPollingTimer();
       return true;
     }
-    if (!activeUser?.userKey || !isSupabaseConfigured()) {
+    if (!activeUser?.userKey) {
       stopPollingTimer();
       return true;
     }
@@ -154,7 +153,7 @@ export function useSync() {
       stopPollingTimer();
       return;
     }
-    if (!activeUser?.userKey || !isSupabaseConfigured()) {
+    if (!activeUser?.userKey) {
       stopPollingTimer();
       return;
     }
@@ -213,7 +212,7 @@ export function useSync() {
 
   async function handleForegroundResume() {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-    if (!activeUser?.userKey || !isSupabaseConfigured()) return;
+    if (!activeUser?.userKey) return;
 
     const now = Date.now();
     // Pokud od posledního ověření session uplynulo >= 5 minut, provedeme verifySession() okamžitě
@@ -245,7 +244,7 @@ export function useSync() {
   function onWindowFocus() {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
-    if (!activeUser?.userKey || !isSupabaseConfigured()) return;
+    if (!activeUser?.userKey) return;
 
     const now = Date.now();
     if (lastSessionVerifyAt > 0 && now - lastSessionVerifyAt >= SESSION_VERIFY_INTERVAL_MS) {
@@ -315,7 +314,7 @@ export function useSync() {
       onInvalidSessionCallback = options.onInvalidSession;
     }
 
-    if (!isSupabaseConfigured() || !currentUser?.userKey) {
+    if (!currentUser?.userKey) {
       stopForegroundSync();
       return;
     }
@@ -368,8 +367,8 @@ export function useSync() {
    * Zajišťuje, že neběží dvě plné synchronizace paralelně (syncInProgress).
    */
   async function sync(currentUser, currentSettings, options = {}) {
-    if (!isSupabaseConfigured() || !currentUser?.userKey) {
-      syncState.value = isSupabaseConfigured() ? 'online' : 'local';
+    if (!currentUser?.userKey) {
+      syncState.value = 'local';
       return { status: 'local' };
     }
 
@@ -443,7 +442,7 @@ export function useSync() {
     triggerFullSyncFn,
     startServiceFn
   }) {
-    if (!isSupabaseConfigured() || !currentUser?.userKey) {
+    if (!currentUser?.userKey) {
       return { verified: false, mode: 'none' };
     }
 
@@ -522,7 +521,7 @@ export function useSync() {
       await loadRecordsFn(userKey);
     }
 
-    if (isSupabaseConfigured() && currentUser?.userKey && (typeof navigator === 'undefined' || navigator.onLine)) {
+    if (currentUser?.userKey && (typeof navigator === 'undefined' || navigator.onLine)) {
       const res = await sync(currentUser, settingsGetter, {
         pushLocalDays: false,
         incremental: false,
