@@ -8,6 +8,8 @@ function read(relPath) {
 }
 
 const supabaseClient = read('src/services/supabase.js');
+const syncSource = read('src/services/sync.js');
+const foregroundSyncSource = read('src/composables/useSync.js');
 const authSource = read('src/composables/useAuth.js');
 const appSource = read('src/App.vue');
 const settingsView = read('src/views/SettingsView.vue');
@@ -56,6 +58,8 @@ describe('browser Cloudflare boundary cleanup', () => {
     expect(supabaseClient).not.toContain('getSupabaseConfig');
     expect(supabaseClient).not.toContain('saveManualSupabaseConfig');
     expect(supabaseClient).not.toContain('isSupabaseConfigured');
+    expect(syncSource).not.toContain('isSupabaseConfigured');
+    expect(foregroundSyncSource).not.toContain('isSupabaseConfigured');
     expect(authSource).not.toContain('isSupabaseConfigured');
     expect(appSource).not.toContain('isSupabaseConfigured');
   });
