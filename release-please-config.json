@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "1cebb3d90c854632c5ccff6f009de202cc7d9e23",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "osobni-dochazka",
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false
+    }
+  }
+}
