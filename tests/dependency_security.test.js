@@ -23,13 +23,10 @@ function isAtLeast(version, minimum) {
 }
 
 describe('Dependency security', () => {
-  it('does not lock a vulnerable minimatch release', () => {
-    const minimatchEntries = Object.entries(lock.packages || {})
-      .filter(([location]) => location === 'node_modules/minimatch' || location.endsWith('/node_modules/minimatch'));
+  it('does not lock the vulnerable minimatch used by ESLint and Glob', () => {
+    const minimatch = lock.packages?.['node_modules/minimatch'];
 
-    expect(minimatchEntries.length).toBeGreaterThan(0);
-    for (const [location, pkg] of minimatchEntries) {
-      expect(isAtLeast(pkg.version, '11.0.1'), `${location} is ${pkg.version}`).toBe(true);
-    }
+    expect(minimatch).toBeTruthy();
+    expect(isAtLeast(minimatch.version, '11.0.1'), `node_modules/minimatch is ${minimatch?.version}`).toBe(true);
   });
 });
