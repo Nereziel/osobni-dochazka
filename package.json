@@ -9,6 +9,7 @@
     "url": "https://github.com/Nereziel/osobni-dochazka.git"
   },
   "type": "module",
+  "packageManager": "npm@11.19.1",
   "engines": {
     "node": ">=22.12.0"
   },

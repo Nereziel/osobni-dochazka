@@ -26,6 +26,11 @@ describe('Automated releases', () => {
     expect(config.packages?.['.']?.['package-name']).toBe('osobni-dochazka');
   });
 
+  it('pins the npm version used to generate the lockfile for CI and Cloudflare builds', () => {
+    const pkg = JSON.parse(read('package.json'));
+    expect(pkg.packageManager).toBe('npm@11.19.1');
+  });
+
   it('runs a pinned Release Please action only for the main release flow', () => {
     const workflowPath = '.github/workflows/release-please.yml';
     expect(fs.existsSync(file(workflowPath))).toBe(true);
