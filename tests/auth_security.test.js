@@ -16,6 +16,7 @@ const schemaBase = read('supabase/schema_base.sql');
 const hardening = read('supabase/migrations/20261102_security_hardening.sql');
 const followup = read('supabase/migrations/20261102_security_audit_followup.sql');
 const stepupCompat = read('supabase/migrations/20261102_security_stepup_compat.sql');
+const appSource = read('src/App.vue');
 const authSource = read('src/composables/useAuth.js');
 const supabaseClient = read('src/services/supabase.js');
 const teamView = read('src/views/TeamView.vue');
@@ -66,6 +67,21 @@ describe('Security architecture – sessions and login abuse', () => {
     expect(authSource).toContain('async function login(usernameInput, pinInput, rememberMe = false)');
     expect(authSource).toContain('clearUserLocalData');
     expect(authSource).toContain('await clearUserLocalData(priorUser.userKey)');
+  });
+
+  it('does not let an invite URL bypass boot session verification', () => {
+    const mountedStart = appSource.indexOf('onMounted(async () => {');
+    const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
+    const mountedSource = appSource.slice(mountedStart, mountedEnd);
+    const sessionBranch = mountedSource.indexOf('if (currentUser.value)');
+    const inviteBranch = mountedSource.indexOf('if (inviteParam)');
+    const bootSync = mountedSource.indexOf('runBootSyncFlow');
+
+    expect(sessionBranch).toBeGreaterThan(-1);
+    expect(inviteBranch).toBeGreaterThan(-1);
+    expect(bootSync).toBeGreaterThan(-1);
+    expect(sessionBranch).toBeLessThan(inviteBranch);
+    expect(bootSync).toBeLessThan(inviteBranch);
   });
 });
 
