@@ -26,7 +26,6 @@
     "@vitejs/plugin-vue": "^6.0.10",
     "eslint": "^10.13.0",
     "eslint-plugin-vue": "^10.12.0",
-    "magicast": "^0.5.5",
     "vite": "^8.3.5",
     "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.1.0"
@@ -38,8 +37,11 @@
     "glob": {
       "minimatch": "11.0.4"
     },
-    "vite-plugin-pwa": {
-      "workbox-build": "npm:@vite-pwa/workbox-build@8.0.13"
+    "workbox-build": {
+      "@trickfilm400/rollup-plugin-off-main-thread": "4.0.0",
+      "@rollup/plugin-node-resolve": {
+        "deepmerge": "4.1.1"
+      }
     }
   }
 }
