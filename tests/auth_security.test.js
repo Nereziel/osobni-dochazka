@@ -70,19 +70,19 @@ describe('Security architecture – sessions and login abuse', () => {
   });
 
   it('does not let an invite URL bypass boot session verification or choose registration', () => {
-  const mountedStart = appSource.indexOf('onMounted(async () => {');
-  const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
-  const mountedSource = appSource.slice(mountedStart, mountedEnd);
-  const sessionBranch = mountedSource.indexOf('if (currentUser.value)');
-  const bootSync = mountedSource.indexOf('runBootSyncFlow');
+    const mountedStart = appSource.indexOf('onMounted(async () => {');
+    const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
+    const mountedSource = appSource.slice(mountedStart, mountedEnd);
+    const sessionBranch = mountedSource.indexOf('if (currentUser.value)');
+    const bootSync = mountedSource.indexOf('runBootSyncFlow');
 
-  expect(sessionBranch).toBeGreaterThan(-1);
-  expect(bootSync).toBeGreaterThan(-1);
-  expect(mountedSource).not.toContain('if (inviteParam)');
-  expect(mountedSource).not.toContain('openRegisterModal(inviteParam');
-  expect(mountedSource).toContain('pendingInviteCode.value = readInviteCodeFromLocation()');
-  expect(mountedSource).toContain('await openLoginModal()');
-});
+    expect(sessionBranch).toBeGreaterThan(-1);
+    expect(bootSync).toBeGreaterThan(-1);
+    expect(mountedSource).not.toContain('if (inviteParam)');
+    expect(mountedSource).not.toContain('openRegisterModal(inviteParam');
+    expect(mountedSource).toContain('pendingInviteCode.value = readInviteCodeFromLocation()');
+    expect(mountedSource).toContain('await openLoginModal()');
+  });
 });
 
 describe('Security architecture – privileged admin actions', () => {
@@ -158,6 +158,7 @@ describe('Security architecture – API and browser boundary', () => {
 
   it('generates new invite links in a URL fragment', () => {
     expect(teamView).toContain('#invite=');
+    expect(appSource).toContain('#invite=${encodeURIComponent(res.code)}');
   });
 
   it('restricts browser network connections to same-origin', () => {
