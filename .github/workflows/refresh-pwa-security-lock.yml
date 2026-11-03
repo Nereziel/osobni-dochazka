@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Show security-sensitive dependency tree
-        run: npm ls workbox-build @vite-pwa/workbox-build minimatch deepmerge --all || true
+        run: npm ls workbox-build @trickfilm400/rollup-plugin-off-main-thread @rollup/plugin-node-resolve minimatch deepmerge --all || true
 
       - name: Lint
         run: npm run lint
@@ -45,6 +45,9 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev
+
+      - name: Report full development audit
+        run: npm audit || true
 
       - name: Commit verified lockfile and remove helper workflow
         run: |
