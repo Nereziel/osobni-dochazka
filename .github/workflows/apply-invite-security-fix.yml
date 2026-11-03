@@ -26,25 +26,75 @@ jobs:
           app_path = Path('src/App.vue')
           app = app_path.read_text()
 
-          old_state = """const currentView = ref('dashboard');
-          const monthPickerTarget = ref('calendar');"""
-          new_state = """const currentView = ref('dashboard');
-          const monthPickerTarget = ref('calendar');
-          const pendingInviteCode = ref('');"""
-          assert old_state in app
-          app = app.replace(old_state, new_state, 1)
+          replacements = [
+            (
+              "const currentView = ref('dashboard');\nconst monthPickerTarget = ref('calendar');",
+              "const currentView = ref('dashboard');\nconst monthPickerTarget = ref('calendar');\nconst pendingInviteCode = ref('');"
+            ),
+            (
+              "const RELOAD_KEY_COOLDOWN_MS = 4000;\nconst MANUAL_SYNC_COOLDOWN_MS = 5000;\nconst REG_STATUS_CACHE_TTL_MS = 30000;",
+              "const RELOAD_KEY_COOLDOWN_MS = 4000;\nconst MANUAL_SYNC_COOLDOWN_MS = 5000;\nconst REG_STATUS_CACHE_TTL_MS = 30000;\nconst INVITE_CODE_PATTERN = /^INV-[A-Z0-9]{6,64}$/;"
+            ),
+            (
+              """    } else {
+                // Pozvánka z URL pouze předvyplní invite-only registrační formulář.
+                const urlParams = new URLSearchParams(window.location.search);
+                const inviteParam = urlParams.get('invite');
+                if (inviteParam) {
+                  openRegisterModal(inviteParam.trim().toUpperCase());
+                  showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
+                } else {
+                  openLoginModal();
+                }
+              }""",
+              """    } else {
+                // URL data jsou pouze normalizovaný prefill; nikdy nerozhodují o auth/registration flow.
+                pendingInviteCode.value = readInviteCodeFromLocation();
+                await openLoginModal();
+              }"""
+            ),
+            (
+              """function clearInviteQueryParam() {
+            try {
+              const url = new URL(window.location.href);
+              if (url.searchParams.has('invite')) {
+                url.searchParams.delete('invite');
+                window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+              }
+            } catch {
+              // ignore history errors
+            }
+          }""",
+              """function clearInviteLocationParam() {
+            pendingInviteCode.value = '';
+            try {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('invite');
+              const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+              hashParams.delete('invite');
+              const nextHash = hashParams.toString();
+              url.hash = nextHash ? `#${nextHash}` : '';
+              window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
+            } catch {
+              // ignore history errors
+            }
+          }"""
+            ),
+            (
+              "  registerModalRef.value?.open(isFirst, prefilledInvite);",
+              "  const invitePrefill = normalizeInviteCode(prefilledInvite || pendingInviteCode.value);\n  registerModalRef.value?.open(isFirst, invitePrefill);"
+            ),
+            (
+              "const url = `${window.location.origin}${window.location.pathname}?invite=${res.code}`;",
+              "const url = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(res.code)}`;"
+            )
+          ]
 
-          old_constants = """const RELOAD_KEY_COOLDOWN_MS = 4000;
-          const MANUAL_SYNC_COOLDOWN_MS = 5000;
-          const REG_STATUS_CACHE_TTL_MS = 30000;"""
-          new_constants = """const RELOAD_KEY_COOLDOWN_MS = 4000;
-          const MANUAL_SYNC_COOLDOWN_MS = 5000;
-          const REG_STATUS_CACHE_TTL_MS = 30000;
-          const INVITE_CODE_PATTERN = /^INV-[A-Z0-9]{6,64}$/;"""
-          assert old_constants in app
-          app = app.replace(old_constants, new_constants, 1)
+          for old, new in replacements:
+            assert old in app, old
+            app = app.replace(old, new, 1)
 
-          marker = """function handleKeyDownReloadGuard(e) {"""
+          marker = 'function handleKeyDownReloadGuard(e) {'
           helpers = """function normalizeInviteCode(value) {
             const normalized = String(value || '').trim().toUpperCase();
             return INVITE_CODE_PATTERN.test(normalized) ? normalized : '';
@@ -65,86 +115,15 @@ jobs:
           """ + marker
           assert marker in app
           app = app.replace(marker, helpers, 1)
-
-          old_boot = """    } else {
-                // Pozvánka z URL pouze předvyplní invite-only registrační formulář.
-                const urlParams = new URLSearchParams(window.location.search);
-                const inviteParam = urlParams.get('invite');
-                if (inviteParam) {
-                  openRegisterModal(inviteParam.trim().toUpperCase());
-                  showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
-                } else {
-                  openLoginModal();
-                }
-              }"""
-          new_boot = """    } else {
-                // URL data jsou pouze normalizovaný prefill; nikdy nerozhodují o auth/registration flow.
-                pendingInviteCode.value = readInviteCodeFromLocation();
-                await openLoginModal();
-              }"""
-          assert old_boot in app
-          app = app.replace(old_boot, new_boot, 1)
-
-          old_clear = """function clearInviteQueryParam() {
-            try {
-              const url = new URL(window.location.href);
-              if (url.searchParams.has('invite')) {
-                url.searchParams.delete('invite');
-                window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
-              }
-            } catch {
-              // ignore history errors
-            }
-          }"""
-          new_clear = """function clearInviteLocationParam() {
-            pendingInviteCode.value = '';
-            try {
-              const url = new URL(window.location.href);
-              url.searchParams.delete('invite');
-              const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
-              hashParams.delete('invite');
-              const nextHash = hashParams.toString();
-              url.hash = nextHash ? `#${nextHash}` : '';
-              window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
-            } catch {
-              // ignore history errors
-            }
-          }"""
-          assert old_clear in app
-          app = app.replace(old_clear, new_clear, 1)
           app = app.replace('clearInviteQueryParam();', 'clearInviteLocationParam();')
-
-          old_register = """  registerModalRef.value?.open(isFirst, prefilledInvite);
-          }"""
-          new_register = """  const invitePrefill = normalizeInviteCode(prefilledInvite || pendingInviteCode.value);
-            registerModalRef.value?.open(isFirst, invitePrefill);
-          }"""
-          assert old_register in app
-          app = app.replace(old_register, new_register, 1)
-
-          old_link = """const url = `${window.location.origin}${window.location.pathname}?invite=${res.code}`;"""
-          new_link = """const url = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(res.code)}`;"""
-          assert old_link in app
-          app = app.replace(old_link, new_link, 1)
           app_path.write_text(app)
 
           test_path = Path('tests/auth_security.test.js')
           tests = test_path.read_text()
-          old_test = """  it('does not let an invite URL bypass boot session verification', () => {
-            const mountedStart = appSource.indexOf('onMounted(async () => {');
-            const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
-            const mountedSource = appSource.slice(mountedStart, mountedEnd);
-            const sessionBranch = mountedSource.indexOf('if (currentUser.value)');
-            const inviteBranch = mountedSource.indexOf('if (inviteParam)');
-            const bootSync = mountedSource.indexOf('runBootSyncFlow');
-
-            expect(sessionBranch).toBeGreaterThan(-1);
-            expect(inviteBranch).toBeGreaterThan(-1);
-            expect(bootSync).toBeGreaterThan(-1);
-            expect(sessionBranch).toBeLessThan(inviteBranch);
-            expect(bootSync).toBeLessThan(inviteBranch);
-          });"""
-          new_test = """  it('does not let an invite URL bypass boot session verification or choose registration', () => {
+          title = "  it('does not let an invite URL bypass boot session verification', () => {"
+          start = tests.index(title)
+          end = tests.index('\n  });', start) + len('\n  });')
+          replacement = """  it('does not let an invite URL bypass boot session verification or choose registration', () => {
             const mountedStart = appSource.indexOf('onMounted(async () => {');
             const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
             const mountedSource = appSource.slice(mountedStart, mountedEnd);
@@ -158,8 +137,7 @@ jobs:
             expect(mountedSource).toContain('pendingInviteCode.value = readInviteCodeFromLocation()');
             expect(mountedSource).toContain('await openLoginModal()');
           });"""
-          assert old_test in tests
-          tests = tests.replace(old_test, new_test, 1)
+          tests = tests[:start] + replacement + tests[end:]
           test_path.write_text(tests)
 
           Path('.github/workflows/apply-invite-security-fix.yml').unlink()
