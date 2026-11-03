@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue';
-import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
+import { supabaseRequest } from '../services/supabase.js';
 import { clearUserLocalData } from '../services/indexedDb.js';
 
 const LS_USER_KEY = 'dochazka_active_user_v2';
@@ -94,10 +94,6 @@ export function useAuth() {
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
 
-    if (!isSupabaseConfigured()) {
-      throw new Error('Cloud databáze není nakonfigurována.');
-    }
-
     const res = await supabaseRequest('/rest/v1/rpc/login_attendance_user', {
       method: 'POST',
       body: JSON.stringify({
@@ -132,10 +128,6 @@ export function useAuth() {
 
     const cleanInvite = (inviteCodeInput || '').trim().toUpperCase();
     if (!cleanInvite) throw new Error('Registrace vyžaduje platný kód pozvánky.');
-
-    if (!isSupabaseConfigured()) {
-      throw new Error('Cloud databáze není nakonfigurována.');
-    }
 
     const rpcRes = await supabaseRequest('/rest/v1/rpc/register_user_with_invite', {
       method: 'POST',
@@ -201,7 +193,7 @@ export function useAuth() {
     const cleanName = (newDisplayName || '').trim();
     if (!cleanName) throw new Error('Celé jméno nesmí být prázdné.');
 
-    if (isSupabaseConfigured() && currentUser.value?.userKey) {
+    if (currentUser.value?.userKey) {
       await supabaseRequest('/rest/v1/rpc/update_own_settings', {
         method: 'POST',
         body: JSON.stringify({
@@ -239,7 +231,7 @@ export function useAuth() {
   }
 
   async function verifySession() {
-    if (!isSupabaseConfigured() || !currentUser.value?.userKey) return true;
+    if (!currentUser.value?.userKey) return true;
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       return true;

@@ -6,7 +6,7 @@ import {
   enqueueSyncAction
 } from '../services/indexedDb.js';
 import { dayRowForSupabase } from '../services/sync.js';
-import { supabaseRequest, isSupabaseConfigured } from '../services/supabase.js';
+import { supabaseRequest } from '../services/supabase.js';
 import {
   localDateKey,
   startOfMonth,
@@ -55,7 +55,7 @@ export function useAttendance() {
     records.value.set(updated.date, updated);
     records.value = new Map(records.value);
 
-    if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
+    if (!skipCloud && currentUser?.userKey) {
       const row = dayRowForSupabase(updated, currentUser.userKey, settings);
       try {
         const upRes = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
@@ -83,7 +83,7 @@ export function useAttendance() {
     records.value.delete(dateKey);
     records.value = new Map(records.value);
 
-    if (!skipCloud && isSupabaseConfigured() && currentUser?.userKey) {
+    if (!skipCloud && currentUser?.userKey) {
       const nowIso = new Date().toISOString();
       const tombstonePayload = {
         user_key: currentUser.userKey,

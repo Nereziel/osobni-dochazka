@@ -8,7 +8,7 @@
  * 4. Sloučení více změn stejného dne v outboxu (coalesce)
  * 5. Žádné oživení smazaného záznamu starší lokální verzí
  */
-import { supabaseRequest, isSupabaseConfigured } from './supabase.js';
+import { supabaseRequest } from './supabase.js';
 import {
   getPendingSyncActions,
   removeSyncAction,
@@ -165,7 +165,7 @@ export function coalesceOutboxActions(actions) {
  * Používá atomickou server-side LWW RPC funkci a tombstones.
  */
 export async function drainOutboxQueue(currentUser) {
-  if (!isSupabaseConfigured() || !currentUser?.userKey) return 0;
+  if (!currentUser?.userKey) return 0;
   const rawActions = await getPendingSyncActions(currentUser.userKey);
   if (!rawActions || rawActions.length === 0) return 0;
 
@@ -203,8 +203,6 @@ export async function drainOutboxQueue(currentUser) {
           body: JSON.stringify({ p_day: rpcPayload })
         }, currentUser);
 
-        // Pokud server záznam odmítl jako server_newer, je to korektní vyřešení konfliktu!
-        // Položka z outboxu se odstraní, protože na serveru již existuje novější pravda.
         if (res?.applied === false && res?.reason === 'server_newer') {
           console.info(`Outbox pro den ${payload.date} byl bezpečně odmítnut (server má novější verzi ${res.server_updated_at}).`);
         }
@@ -217,7 +215,6 @@ export async function drainOutboxQueue(currentUser) {
         }
       }
 
-      // Odstranění hlavní položky i případných sloučených zastaralých položek
       await removeSyncAction(item.id);
       if (Array.isArray(item.obsoleteIds)) {
         for (const obsId of item.obsoleteIds) {
@@ -234,7 +231,6 @@ export async function drainOutboxQueue(currentUser) {
       console.warn(`Zpracování sync položky ${item.id} selhalo:`, err);
       item.retries = (item.retries || 0) + 1;
       await updateSyncAction(item);
-      // Pokud je síť nedostupná, přerušíme cyklus a zkusíme později
       break;
     }
   }
@@ -344,14 +340,12 @@ export async function performFullSync(
   currentSettings,
   options = { pushLocalDays: true, incremental: false, fetchProfile: true }
 ) {
-  if (!isSupabaseConfigured() || !currentUser?.userKey) {
+  if (!currentUser?.userKey) {
     return { status: 'local' };
   }
 
-  // 1. Nejprve atomicky zpracovat frontu outboxu (LWW na serveru)
   await drainOutboxQueue(currentUser);
 
-  // 2. Načíst profil ze serveru (pouze pokud je výslovně požadován nebo při full syncu)
   let serverProfile = null;
   const shouldFetchProfile = options.fetchProfile !== false && !options.incremental;
   if (shouldFetchProfile) {
@@ -367,8 +361,6 @@ export async function performFullSync(
     }
   }
 
-  // 3. Dotaz na dny: plný vs inkrementální s 15s bezpečnostním překrytím (overlap window)
-  // Pokud bezpečný serverový kurzor není k dispozici, vždy se provede plný pull.
   const lastPull = getLastSuccessfulPullAt(currentUser.userKey);
   const lastPullMs = lastPull ? Date.parse(lastPull) : NaN;
   const isIncremental = Boolean(options.incremental && Number.isFinite(lastPullMs));
@@ -381,8 +373,6 @@ export async function performFullSync(
 
   const remoteRows = await supabaseRequest(daysUrl, {}, currentUser);
 
-  // Rychlá optimalizace: pokud při periodickém pollingu nepřibyla žádná změna na serveru,
-  // ponecháme dosavadní serverový kurzor beze změny (nikdy jej nepřepisujeme časem klienta!).
   if (isIncremental && (!remoteRows || remoteRows.length === 0) && !options.pushLocalDays) {
     const localList = await getUserDays(currentUser.userKey);
     return {
@@ -397,11 +387,9 @@ export async function performFullSync(
     remoteMap.set(r.date, localDayFromSupabaseRow(r, currentSettings?.breakMinutes ?? 30));
   }
 
-  // 4. Načíst lokální dny z IndexedDB
   const localList = await getUserDays(currentUser.userKey);
   const localMap = new Map(localList.map(d => [d.date, d]));
 
-  // Zjistit, které dny ještě čekají v outboxu (např. pokud se nepodařilo odeslat vše)
   const pendingActions = await getPendingSyncActions(currentUser.userKey);
   const pendingDates = new Set(
     pendingActions
@@ -412,17 +400,14 @@ export async function performFullSync(
   const toUpload = [];
   const mergedMap = new Map();
 
-  // Zpracovat lokální záznamy
   for (const [date, localDay] of localMap.entries()) {
     if (pendingDates.has(date)) {
-      // Položka má čekající offline změnu v outboxu, nepřepisujeme ji
       mergedMap.set(date, localDay);
       continue;
     }
 
     const rem = remoteMap.get(date);
     if (!rem) {
-      // Záznam na serveru zatím vůbec není (nebo při incremental pullu nebyl v diffu)
       if (!isIncremental && options.pushLocalDays) {
         toUpload.push(dayRowForSupabase(localDay, currentUser.userKey, currentSettings));
       }
@@ -431,22 +416,17 @@ export async function performFullSync(
       const locTime = Date.parse(localDay.updatedAt || '') || 0;
       const remTime = Date.parse(rem.updatedAt || '') || 0;
 
-      // Pokud má server novější tombstone (deleted_at), lokální záznam se smaže
       if (rem.deletedAt) {
         if (remTime >= locTime) {
-          // Serverový delete je novější nebo stejně nový -> odstranit lokálně
           await deleteUserDay(currentUser.userKey, date);
-          // Nezařazujeme do mergedMap (den je smazán)
           continue;
         } else {
-          // Lokální změna je novější než serverový delete -> oživit a nahrát na server
           if (options.pushLocalDays) {
             toUpload.push(dayRowForSupabase(localDay, currentUser.userKey, currentSettings));
           }
           mergedMap.set(date, localDay);
         }
       } else {
-        // Běžné porovnání LWW
         if (locTime > remTime && options.pushLocalDays) {
           toUpload.push(dayRowForSupabase(localDay, currentUser.userKey, currentSettings));
           mergedMap.set(date, localDay);
@@ -458,14 +438,10 @@ export async function performFullSync(
     }
   }
 
-  // Zpracovat vzdálené záznamy, které lokálně chybí (nebo které ještě nebyly sloučeny)
   for (const [date, remDay] of remoteMap.entries()) {
     if (pendingDates.has(date)) continue;
-
-    // Pokud už byl den zpracován v předchozím kroku (např. lokální záznam byl novější a oživil jej), přeskočíme
     if (mergedMap.has(date)) continue;
 
-    // Pokud je vzdálený záznam smazaný (tombstone), ignorujeme jej pro lokální zobrazení
     if (remDay.deletedAt) {
       if (localMap.has(date)) {
         await deleteUserDay(currentUser.userKey, date);
@@ -479,7 +455,6 @@ export async function performFullSync(
 
   const serverReturnedTimestamps = [];
 
-  // Odeslat případné novější lokální záznamy přes bezpečnou atomickou LWW RPC
   if (toUpload.length > 0) {
     for (const row of toUpload) {
       try {
@@ -490,7 +465,6 @@ export async function performFullSync(
 
         if (upRes?.server_updated_at) {
           serverReturnedTimestamps.push(upRes.server_updated_at);
-          // Pokud server ořízl příliš budoucí čas klienta na serverové now(), srovnáme lokální záznam
           if (upRes.applied && mergedMap.has(row.date)) {
             const mergedDay = mergedMap.get(row.date);
             if (mergedDay && mergedDay.updatedAt !== upRes.server_updated_at) {
@@ -507,7 +481,6 @@ export async function performFullSync(
     }
   }
 
-  // Aktualizace kurzoru výhradně na základě serverových dat (nikoli hodin klienta)
   const nextCursor = computeNextSyncCursor(remoteRows, lastPull, serverReturnedTimestamps);
   if (nextCursor) {
     setLastSuccessfulPullAt(currentUser.userKey, nextCursor);
