@@ -36,6 +36,12 @@
     },
     "glob": {
       "minimatch": "11.0.4"
+    },
+    "workbox-build": {
+      "@trickfilm400/rollup-plugin-off-main-thread": "4.0.0",
+      "@rollup/plugin-node-resolve": {
+        "deepmerge": "4.1.1"
+      }
     }
   }
 }

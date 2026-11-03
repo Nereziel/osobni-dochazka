@@ -23,17 +23,26 @@ function isAtLeast(version, minimum) {
 }
 
 describe('Dependency security', () => {
-  it('does not lock vulnerable minimatch versions on the ESLint and Glob toolchain paths', () => {
-    const affectedPaths = [
-      'node_modules/eslint/node_modules/minimatch',
-      'node_modules/@eslint/config-array/node_modules/minimatch',
-      'node_modules/glob/node_modules/minimatch',
-    ];
+  it('does not lock minimatch versions affected below 11.0.1', () => {
+    const minimatchEntries = Object.entries(lock.packages || {})
+      .filter(([location]) => location === 'node_modules/minimatch' || location.endsWith('/node_modules/minimatch'));
 
-    for (const location of affectedPaths) {
-      const minimatch = lock.packages?.[location];
-      expect(minimatch, `${location} should be present in package-lock.json`).toBeTruthy();
+    expect(minimatchEntries.length).toBeGreaterThan(0);
+
+    for (const [location, minimatch] of minimatchEntries) {
       expect(isAtLeast(minimatch.version, '11.0.1'), `${location} is ${minimatch?.version}`).toBe(true);
     }
+  });
+
+  it('does not lock deepmerge versions affected by prototype poisoning', () => {
+    const vulnerableDeepmerge = Object.entries(lock.packages || {})
+      .filter(([location, pkg]) =>
+        (location === 'node_modules/deepmerge' || location.endsWith('/node_modules/deepmerge'))
+        && pkg?.version
+        && isAtLeast(pkg.version, '4.2.0')
+        && !isAtLeast(pkg.version, '4.3.2')
+      );
+
+    expect(vulnerableDeepmerge, JSON.stringify(vulnerableDeepmerge)).toEqual([]);
   });
 });
