@@ -246,6 +246,7 @@ const {
 // State
 const currentView = ref('dashboard');
 const monthPickerTarget = ref('calendar');
+const pendingInviteCode = ref('');
 
 // Modal refs
 const toastRef = ref(null);
@@ -298,8 +299,26 @@ const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value
 const RELOAD_KEY_COOLDOWN_MS = 4000;
 const MANUAL_SYNC_COOLDOWN_MS = 5000;
 const REG_STATUS_CACHE_TTL_MS = 30000;
+const INVITE_CODE_PATTERN = /^INV-[A-Z0-9]{6,64}$/;
 
 let lastManualSyncAt = 0;
+
+function normalizeInviteCode(value) {
+  const normalized = String(value || '').trim().toUpperCase();
+  return INVITE_CODE_PATTERN.test(normalized) ? normalized : '';
+}
+
+function readInviteCodeFromLocation() {
+  try {
+    const url = new URL(window.location.href);
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+    return normalizeInviteCode(
+      hashParams.get('invite') || url.searchParams.get('invite') || ''
+    );
+  } catch {
+    return '';
+  }
+}
 
 function handleKeyDownReloadGuard(e) {
   const key = (e.key || '').toLowerCase();
@@ -352,15 +371,9 @@ onMounted(async () => {
         startServiceFn: startSyncService
       });
     } else {
-      // Pozvánka z URL pouze předvyplní invite-only registrační formulář.
-      const urlParams = new URLSearchParams(window.location.search);
-      const inviteParam = urlParams.get('invite');
-      if (inviteParam) {
-        openRegisterModal(inviteParam.trim().toUpperCase());
-        showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
-      } else {
-        openLoginModal();
-      }
+      // URL data jsou pouze normalizovaný prefill; nikdy nerozhodují o auth/registration flow.
+      pendingInviteCode.value = readInviteCodeFromLocation();
+      await openLoginModal();
     }
   } catch (err) {
     console.error('Inicializace aplikace selhala:', err);
@@ -615,13 +628,16 @@ async function openLoginModal() {
   loginModalRef.value?.open();
 }
 
-function clearInviteQueryParam() {
+function clearInviteLocationParam() {
+  pendingInviteCode.value = '';
   try {
     const url = new URL(window.location.href);
-    if (url.searchParams.has('invite')) {
-      url.searchParams.delete('invite');
-      window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
-    }
+    url.searchParams.delete('invite');
+    const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+    hashParams.delete('invite');
+    const nextHash = hashParams.toString();
+    url.hash = nextHash ? `#${nextHash}` : '';
+    window.history.replaceState({}, document.title, url.pathname + url.search + url.hash);
   } catch {
     // ignore history errors
   }
@@ -631,7 +647,7 @@ async function handleLoginSubmit({ username, pin, rememberMe }) {
   loginModalRef.value?.setLoading(true);
   try {
     const { message } = await login(username, pin, rememberMe);
-    clearInviteQueryParam();
+    clearInviteLocationParam();
     loginModalRef.value?.close();
     showToast(message, '✓');
     const userKey = currentUser.value?.userKey;
@@ -655,14 +671,15 @@ async function openRegisterModal(prefilledInvite = '') {
   } catch {
     // Při nedostupném backendu ponecháme standardní invite-only formulář.
   }
-  registerModalRef.value?.open(isFirst, prefilledInvite);
+  const invitePrefill = normalizeInviteCode(prefilledInvite || pendingInviteCode.value);
+  registerModalRef.value?.open(isFirst, invitePrefill);
 }
 
 async function handleRegisterSubmit({ username, displayName, pin, pinConfirm, inviteCode, mergeLocal }) {
   registerModalRef.value?.setLoading(true);
   try {
     const { message } = await register(username, displayName, pin, pinConfirm, inviteCode);
-    clearInviteQueryParam();
+    clearInviteLocationParam();
     try {
       sessionStorage.removeItem('dochazka_reg_status_cache_v1');
     } catch {
@@ -812,7 +829,7 @@ async function handleGenerateInvite() {
     }, currentUser.value);
 
     if (res?.code) {
-      const url = `${window.location.origin}${window.location.pathname}?invite=${res.code}`;
+      const url = `${window.location.origin}${window.location.pathname}#invite=${encodeURIComponent(res.code)}`;
       createInviteModalRef.value?.setGenerated(res.code, url);
       showToast('Pozvánka vytvořena', '✓');
       teamViewRef.value?.refreshData();

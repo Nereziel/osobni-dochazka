@@ -69,20 +69,20 @@ describe('Security architecture – sessions and login abuse', () => {
     expect(authSource).toContain('await clearUserLocalData(priorUser.userKey)');
   });
 
-  it('does not let an invite URL bypass boot session verification', () => {
-    const mountedStart = appSource.indexOf('onMounted(async () => {');
-    const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
-    const mountedSource = appSource.slice(mountedStart, mountedEnd);
-    const sessionBranch = mountedSource.indexOf('if (currentUser.value)');
-    const inviteBranch = mountedSource.indexOf('if (inviteParam)');
-    const bootSync = mountedSource.indexOf('runBootSyncFlow');
+  it('does not let an invite URL bypass boot session verification or choose registration', () => {
+  const mountedStart = appSource.indexOf('onMounted(async () => {');
+  const mountedEnd = appSource.indexOf('onUnmounted(', mountedStart);
+  const mountedSource = appSource.slice(mountedStart, mountedEnd);
+  const sessionBranch = mountedSource.indexOf('if (currentUser.value)');
+  const bootSync = mountedSource.indexOf('runBootSyncFlow');
 
-    expect(sessionBranch).toBeGreaterThan(-1);
-    expect(inviteBranch).toBeGreaterThan(-1);
-    expect(bootSync).toBeGreaterThan(-1);
-    expect(sessionBranch).toBeLessThan(inviteBranch);
-    expect(bootSync).toBeLessThan(inviteBranch);
-  });
+  expect(sessionBranch).toBeGreaterThan(-1);
+  expect(bootSync).toBeGreaterThan(-1);
+  expect(mountedSource).not.toContain('if (inviteParam)');
+  expect(mountedSource).not.toContain('openRegisterModal(inviteParam');
+  expect(mountedSource).toContain('pendingInviteCode.value = readInviteCodeFromLocation()');
+  expect(mountedSource).toContain('await openLoginModal()');
+});
 });
 
 describe('Security architecture – privileged admin actions', () => {
