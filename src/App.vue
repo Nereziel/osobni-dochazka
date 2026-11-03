@@ -340,13 +340,8 @@ onMounted(async () => {
     applyTheme();
     await refreshPendingCount(userKey);
 
-    // Kontrola pozvánky z URL adresy (?invite=INV-...)
-    const urlParams = new URLSearchParams(window.location.search);
-    const inviteParam = urlParams.get('invite');
-    if (inviteParam) {
-      openRegisterModal(inviteParam.trim().toUpperCase());
-      showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
-    } else if (currentUser.value) {
+    // Existující session musí být ověřena dřív, než zpracujeme uživatelsky řízený invite parametr.
+    if (currentUser.value) {
       await runBootSyncFlow({
         currentUser: currentUser.value,
         settingsGetter: () => settings.value,
@@ -357,7 +352,15 @@ onMounted(async () => {
         startServiceFn: startSyncService
       });
     } else {
-      openLoginModal();
+      // Pozvánka z URL pouze předvyplní invite-only registrační formulář.
+      const urlParams = new URLSearchParams(window.location.search);
+      const inviteParam = urlParams.get('invite');
+      if (inviteParam) {
+        openRegisterModal(inviteParam.trim().toUpperCase());
+        showToast(`Pozvánka ${inviteParam} byla načtena`, '✓');
+      } else {
+        openLoginModal();
+      }
     }
   } catch (err) {
     console.error('Inicializace aplikace selhala:', err);
@@ -397,7 +400,6 @@ function performLocalLogout() {
   loadSettings(userKey);
   loadRecords(userKey);
 }
-
 function handleInvalidSession() {
   performLocalLogout();
   showToast('Relace vypršela nebo byla odvolána. Přihlaste se prosím znovu.', '⚠️');
