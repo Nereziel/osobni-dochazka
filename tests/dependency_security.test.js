@@ -23,16 +23,16 @@ function isAtLeast(version, minimum) {
 }
 
 describe('Dependency security', () => {
-  it('does not lock the vulnerable minimatch used by ESLint and Glob', () => {
-    const affectedToolchainPaths = [
+  it('does not lock vulnerable minimatch versions on the ESLint and Glob toolchain paths', () => {
+    const affectedPaths = [
       'node_modules/eslint/node_modules/minimatch',
       'node_modules/@eslint/config-array/node_modules/minimatch',
-      'node_modules/glob/node_modules/minimatch'
+      'node_modules/glob/node_modules/minimatch',
     ];
 
-    for (const location of affectedToolchainPaths) {
+    for (const location of affectedPaths) {
       const minimatch = lock.packages?.[location];
-      expect(minimatch, `${location} must be present`).toBeTruthy();
+      expect(minimatch, `${location} should be present in package-lock.json`).toBeTruthy();
       expect(isAtLeast(minimatch.version, '11.0.1'), `${location} is ${minimatch?.version}`).toBe(true);
     }
   });
