@@ -34,7 +34,7 @@ describe('Dependency security', () => {
     }
   });
 
-  it('does not lock vulnerable deepmerge 4.2.0 through 4.3.1', () => {
+  it('does not lock deepmerge versions affected by prototype poisoning', () => {
     const vulnerableDeepmerge = Object.entries(lock.packages || {})
       .filter(([location, pkg]) =>
         (location === 'node_modules/deepmerge' || location.endsWith('/node_modules/deepmerge'))
