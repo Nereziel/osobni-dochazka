@@ -24,6 +24,8 @@ jobs:
           cache: npm
       - name: Regenerate package lock
         run: npm install --package-lock-only --ignore-scripts
+      - name: Install regenerated dependency tree
+        run: npm ci
       - name: Show resolved minimatch tree
         run: npm ls minimatch --all
       - name: Commit regenerated lock and remove one-off workflow
