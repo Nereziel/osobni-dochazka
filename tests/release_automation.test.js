@@ -7,7 +7,7 @@ const file = (relativePath) => path.resolve(root, relativePath);
 const read = (relativePath) => fs.readFileSync(file(relativePath), 'utf8');
 
 describe('Automated releases', () => {
-  it('bootstraps Release Please from the current 3.1.3 baseline', () => {
+  it('keeps the release manifest aligned after the 3.1.3 bootstrap', () => {
     expect(fs.existsSync(file('release-please-config.json'))).toBe(true);
     expect(fs.existsSync(file('.release-please-manifest.json'))).toBe(true);
 
@@ -19,8 +19,8 @@ describe('Automated releases', () => {
     const manifest = JSON.parse(read('.release-please-manifest.json'));
     const pkg = JSON.parse(read('package.json'));
 
-    expect(pkg.version).toBe('3.1.3');
-    expect(manifest['.']).toBe('3.1.3');
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(manifest['.']).toBe(pkg.version);
     expect(config['bootstrap-sha']).toBe('1cebb3d90c854632c5ccff6f009de202cc7d9e23');
     expect(config.packages?.['.']?.['release-type']).toBe('node');
     expect(config.packages?.['.']?.['package-name']).toBe('osobni-dochazka');
