@@ -1,0 +1,58 @@
+name: Verify CodeQL invite fix
+
+on:
+  push:
+    branches:
+      - fix/codeql-user-controlled-invite
+    paths:
+      - .github/workflows/verify-codeql-invite.yml
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+
+      - name: Analyze without upload
+        uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          category: /language:javascript-typescript
+          upload: false
+          output: sarif-results
+
+      - name: Verify App.vue has no user-controlled bypass result
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          query_ids = {'js/user-controlled-bypass', 'js/user-controlled-bypass-more-sources'}
+          findings = []
+          for sarif_path in Path('sarif-results').rglob('*.sarif'):
+            data = json.loads(sarif_path.read_text())
+            for run in data.get('runs', []):
+              for result in run.get('results', []):
+                if result.get('ruleId') not in query_ids:
+                  continue
+                locations = result.get('locations', [])
+                uris = [
+                  loc.get('physicalLocation', {}).get('artifactLocation', {}).get('uri', '')
+                  for loc in locations
+                ]
+                if any(uri.endswith('src/App.vue') for uri in uris):
+                  findings.append({'ruleId': result.get('ruleId'), 'locations': uris})
+
+          if findings:
+            print(json.dumps(findings, indent=2))
+            raise SystemExit('CodeQL still reports user-controlled bypass in src/App.vue')
+          print('No js/user-controlled-bypass result in src/App.vue')
