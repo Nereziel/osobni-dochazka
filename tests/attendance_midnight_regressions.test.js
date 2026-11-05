@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../src/services/indexedDb.js', () => ({
+  getUserDays: vi.fn(async () => []),
+  putUserDay: vi.fn(async () => {}),
+  deleteUserDay: vi.fn(async () => {}),
+  enqueueSyncAction: vi.fn(async () => {})
+}));
 import {
   DEFAULT_SETTINGS,
   calculateWorkEndTimeForRecord,
@@ -48,6 +55,25 @@ describe('Attendance time and midnight regression coverage', () => {
       ['2026-11-05', { date: '2026-11-05', type: 'work', start: '22:30', end: '' }]
     ]);
     expect(findActiveShiftRecord(records, now)?.date).toBe('2026-11-05');
+  });
+
+  it('quick departure after midnight completes the previous date, not today', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(2026, 10, 6, 1, 0, 0));
+      const { useAttendance } = await import('../src/composables/useAttendance.js');
+      const attendance = useAttendance();
+      await attendance.loadRecords(null);
+      await attendance.saveDay({
+        date: '2026-11-05', type: 'work', start: '22:30', end: ''
+      }, null, DEFAULT_SETTINGS, true);
+      expect(attendance.activeShift.value.date).toBe('2026-11-05');
+      await attendance.quickToday((day) => { day.end = '01:00'; }, null, DEFAULT_SETTINGS, { preferOpenShift: true });
+      expect(attendance.records.value.get('2026-11-05').end).toBe('01:00');
+      expect(attendance.records.value.has('2026-11-06')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not mistake stale past shifts or future starts for a current shift', () => {
