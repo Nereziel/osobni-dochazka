@@ -62,7 +62,7 @@ export function formatClock(date = new Date()) {
 /** Number of seconds elapsed since a local calendar date and wall-clock start (also across midnight). */
 export function shiftElapsedSeconds(dateKey, startTime, now = new Date()) {
   const start = timeToMinutes(startTime);
-  if (start === null || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateKey || '')) return 0;
+  if (start === null || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey || '')) return 0;
   const [year, month, day] = dateKey.split('-').map(Number);
   const startedAt = new Date(year, month - 1, day, Math.floor(start / 60), start % 60);
   if (startedAt.getFullYear() !== year || startedAt.getMonth() !== month - 1 || startedAt.getDate() !== day) return 0;
