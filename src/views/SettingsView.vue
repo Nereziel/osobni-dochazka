@@ -773,6 +773,7 @@ const syncBadgeClass = computed(() => {
 });
 
 const syncBadgeText = computed(() => {
+  if (props.syncState === 'conflict') return 'Konflikt synchronizace – lokální změna zachována';
   if (props.currentUser && props.syncState === 'online') return 'Cloud synchronizováno';
   return 'Pouze lokální úložiště';
 });
