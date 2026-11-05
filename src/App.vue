@@ -33,6 +33,7 @@
         <ActiveShiftBanner
           v-if="activeShift.isActive"
           :active-shift="activeShift"
+          :day-record="activeShiftRecord"
           :daily-target="activeShiftMetrics.target"
           :settings="settings"
           :credited-minutes="activeShiftMetrics.credited"
@@ -43,6 +44,7 @@
         <!-- 1. DASHBOARD -->
         <DashboardView
           v-if="currentView === 'dashboard'"
+          :key="currentTodayKey"
           :today-record="todayRecord"
           :records="records"
           :settings="settings"
@@ -60,6 +62,7 @@
         <!-- 2. KALENDÁŘ -->
         <CalendarView
           v-else-if="currentView === 'calendar'"
+          :key="currentTodayKey"
           :current-month="calendarMonth"
           :records="records"
           :settings="settings"
@@ -73,6 +76,7 @@
         <!-- 3. MĚSÍČNÍ VÝKAZ (TIMESHEET) -->
         <TimesheetView
           v-else-if="currentView === 'timesheet'"
+          :key="currentTodayKey"
           :current-month="timesheetMonth"
           :records="records"
           :settings="settings"
@@ -239,6 +243,8 @@ const {
   fillMissingDaysInMonth,
   exportCsv,
   todayRecord,
+  currentTodayKey,
+  activeShiftRecord,
   activeShift,
   calcMonthStats,
   calcYearVacation,
@@ -302,8 +308,8 @@ function handleUserTileClick() {
 
 // Statistiky pro pohledy
 const dashboardMonthStats = computed(() => calcMonthStats(new Date(), settings.value));
-const activeShiftMetrics = computed(() => todayRecord.value
-  ? dayMetrics(todayRecord.value, settings.value)
+const activeShiftMetrics = computed(() => activeShiftRecord.value
+  ? dayMetrics(activeShiftRecord.value, settings.value)
   : { target: 0, credited: 0 });
 const calendarStats = computed(() => calcMonthStats(calendarMonth.value, settings.value));
 const timesheetStats = computed(() => calcMonthStats(timesheetMonth.value, settings.value));
@@ -517,7 +523,7 @@ async function handleQuickArrival() {
 async function handleQuickDeparture() {
   await quickToday((d, hours) => {
     applyQuickDeparture(d, formatClock(), hours.start);
-  }, currentUser.value, settings.value);
+  }, currentUser.value, settings.value, { preferOpenShift: true });
   showToast('Odchod zaznamenán', '✓');
 }
 

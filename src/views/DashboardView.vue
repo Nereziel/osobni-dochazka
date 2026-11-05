@@ -356,6 +356,7 @@ import {
   dayMetrics,
   defaultHoursForDate,
   calculateWorkEndTime,
+  calculateWorkEndTimeForRecord,
   isScheduledWorkday,
   statusClassForDay,
   TYPE_LABELS,
@@ -500,6 +501,17 @@ const progressPercent = computed(() => {
   return Math.min(100, Math.round((counted / target) * 100));
 });
 
+function projectEndTime(start, target, credited, customBreak) {
+  if (props.todayRecord?.type === 'doctor' && props.todayRecord.start) {
+    return calculateWorkEndTimeForRecord(
+      { ...props.todayRecord, start },
+      props.settings,
+      target
+    );
+  }
+  return calculateWorkEndTime(start, props.settings, credited, customBreak, target);
+}
+
 const progressSubText = computed(() => {
   const target = todayMetrics.value.target;
   const counted = todayMetrics.value.counted;
@@ -509,12 +521,11 @@ const progressSubText = computed(() => {
     if (counted >= target) {
       return `Fond splněn (${formatDuration(counted)} z ${formatDuration(target)}) · směna probíhá`;
     }
-    const endTime = calculateWorkEndTime(
+    const endTime = projectEndTime(
       props.activeShift.startTime,
-      props.settings,
+      todayMetrics.value.target,
       todayMetrics.value.credited,
-      props.activeShift.manualBreak ? props.activeShift.breakMinutes : null,
-      todayMetrics.value.target
+      props.activeShift.manualBreak ? props.activeShift.breakMinutes : null
     );
     return `Odpracováno ${formatDuration(counted)} · zbývá ${formatDuration(target - counted)} (odchod v ${endTime})`;
   }
@@ -539,13 +550,7 @@ const earlyDepartureHint = computed(() => {
     : null;
 
   const reducedTarget = Math.max(0, target - prior);
-  const earlyTime = calculateWorkEndTime(
-    startTime,
-    props.settings,
-    todayMetrics.value.credited,
-    customBreak,
-    reducedTarget
-  );
+  const earlyTime = projectEndTime(startTime, reducedTarget, todayMetrics.value.credited, customBreak);
 
   if (props.activeShift?.isActive) {
     return `💡 S nadpracovaným saldem (+${formatDuration(prior)}) máš fond splněn už v ${earlyTime} (dnes stačí odpracovat ${formatDuration(reducedTarget)}).`;
