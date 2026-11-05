@@ -166,3 +166,20 @@ Pokud došlo k úniku databázového hesla nebo privilegovaného Supabase klíč
 - pravidelně: kontrola, že platformní zálohy vznikají podle používaného plánu,
 - alespoň občas: test obnovy do samostatného projektu nebo lokálního PostgreSQL/Supabase prostředí,
 - po změnách backup/recovery procesu: aktualizovat tento runbook.
+
+
+## Import lokální JSON zálohy v aplikaci
+
+Volba **Import zálohy** v nastavení používá bezpečné **sloučení** (merge), nikoli
+destruktivní nahrazení všech dat. Před otevřením zapisovací transakce ověří
+strukturu souboru, data, časy a nastavení. Záznamy se shodným datem se nahradí
+obsahem zálohy; dny, které v záloze nejsou, zůstanou zachované.
+
+Importovaná docházka, volitelná nastavení a neodeslané požadavky pro cloud
+se zapisují do jedné IndexedDB transakce. Pokud transakce selže, nemá se
+provést částečný import. U přihlášeného účtu pokračuje synchronizace a při
+konfliktu se serverem zůstane lokální změna v outboxu pro ruční vyřešení.
+
+**Pozor:** Import nepředstavuje bodovou obnovu celé cloudové databáze ani
+neodstraňuje cloudové dny, které v JSON souboru nejsou. Pro úplnou obnovu
+serveru použij databázovou zálohu a postup výše.
