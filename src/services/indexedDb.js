@@ -231,6 +231,45 @@ export async function clearUserDays(userId) {
   });
 }
 
+/**
+ * Restore a validated backup as an atomic MERGE. Existing dates not present in
+ * the backup are left untouched; every imported cloud change gets an outbox item
+ * in the same transaction, so an interrupted restore can be retried safely.
+ */
+export async function importUserBackupAtomic(userId, days, settings = null, queueActions = []) {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_days', 'user_settings', 'sync_queue'], 'readwrite');
+    tx.oncomplete = () => resolve(days.length);
+    tx.onerror = () => reject(tx.error || new Error('Import zálohy selhal.'));
+    tx.onabort = () => reject(tx.error || new Error('Import zálohy byl vrácen zpět.'));
+
+    try {
+      const daysStore = tx.objectStore('user_days');
+      for (const day of days) {
+        daysStore.put({ ...day, userId });
+      }
+      if (settings) {
+        tx.objectStore('user_settings').put({ ...settings, userId });
+      }
+      const queueStore = tx.objectStore('sync_queue');
+      for (const action of queueActions) {
+        queueStore.add({
+          userId,
+          entity: action.entity,
+          action: action.action,
+          payload: action.payload,
+          createdAt: new Date().toISOString(),
+          retries: 0
+        });
+      }
+    } catch (err) {
+      tx.abort();
+      reject(err);
+    }
+  });
+}
+
 // ----------------------------------------------------------------------------
 // NASTAVENÍ (user_settings)
 // ----------------------------------------------------------------------------
