@@ -58,3 +58,23 @@ export function formatClock(date = new Date()) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+
+/** Number of seconds elapsed since a local calendar date and wall-clock start (also across midnight). */
+export function shiftElapsedSeconds(dateKey, startTime, now = new Date()) {
+  const start = timeToMinutes(startTime);
+  if (start === null || !/^\\d{4}-\\d{2}-\\d{2}$/.test(dateKey || '')) return 0;
+  const [year, month, day] = dateKey.split('-').map(Number);
+  const startedAt = new Date(year, month - 1, day, Math.floor(start / 60), start % 60);
+  if (startedAt.getFullYear() !== year || startedAt.getMonth() !== month - 1 || startedAt.getDate() !== day) return 0;
+  return Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000));
+}
+
+/** Estimate a shift's net target consistently with the automatic break rule. */
+export function calculateNetScheduleMinutes(start, end, breakMinutes, breakAfterMinutes = 360) {
+  const presence = durationMinutes(start, end);
+  if (presence <= 0) return 0;
+  const automaticBreak = presence >= breakAfterMinutes
+    ? Math.min(presence, Math.max(0, Number(breakMinutes) || 0))
+    : 0;
+  return Math.max(0, presence - automaticBreak);
+}
