@@ -3,7 +3,7 @@
  */
 import { localDateKey, parseDateKey, isWeekendDate } from './dates.js';
 import { isPublicHoliday } from './holidays.js';
-import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime } from './time.js';
+import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime, shiftElapsedSeconds } from './time.js';
 import { clampNumber, cloneDeep } from './validation.js';
 
 export const DEFAULT_SETTINGS = {
@@ -155,6 +155,42 @@ export function applyQuickDeparture(day, time, defaultStart) {
   if (day.type === 'doctor') day.doctorFullDay = false;
   if (!day.start) day.start = defaultStart;
   day.end = time;
+}
+
+/** Open shift on today, or yesterday for a genuine overnight shift under 24 hours. */
+export function findActiveShiftRecord(recordsMap, now = new Date()) {
+  const today = localDateKey(now);
+  const yesterday = localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12));
+  for (const date of [today, yesterday]) {
+    const day = recordsMap instanceof Map ? recordsMap.get(date) : recordsMap?.[date];
+    if (!day || !allowsWork(day.type) || !day.start || day.end || (day.type === 'doctor' && day.doctorFullDay)) continue;
+    const startMin = timeToMinutes(day.start);
+    if (startMin === null) continue;
+    if (date === today && startMin > now.getHours() * 60 + now.getMinutes()) continue;
+    const elapsed = shiftElapsedSeconds(date, day.start, now);
+    if (elapsed < 24 * 3600) return day;
+  }
+  return null;
+}
+
+/**
+ * Find earliest departure that satisfies the actual attendance formula.
+ * A doctor interval inside presence is deducted from worked minutes, so its
+ * credited minutes must not also reduce required presence.
+ */
+export function calculateWorkEndTimeForRecord(day, settings = DEFAULT_SETTINGS, requiredTarget = null) {
+  const startMin = timeToMinutes(day?.start);
+  if (startMin === null) return settings?.workEnd || '15:00';
+  const target = Number.isFinite(requiredTarget)
+    ? Math.max(0, requiredTarget)
+    : targetForDay(day, settings);
+  const credit = creditedMinutes(day, settings);
+  if (credit >= target) return day.start;
+  for (let duration = 1; duration < 1440; duration++) {
+    const end = minutesToTime(startMin + duration);
+    if (workedMinutes({ ...day, end }, settings) + credit >= target) return end;
+  }
+  return minutesToTime(startMin + 1439);
 }
 
 export function calculatedBreak(day, settings = DEFAULT_SETTINGS) {
