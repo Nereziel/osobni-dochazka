@@ -57,7 +57,7 @@ const props = defineProps({
   },
   syncState: {
     type: String,
-    default: 'local' // 'local' | 'online' | 'syncing' | 'error'
+    default: 'local' // 'local' | 'online' | 'syncing' | 'error' | 'conflict'
   },
   pendingCount: {
     type: Number,
@@ -98,7 +98,7 @@ const userInitials = computed(() => {
 const statusClass = computed(() => {
   if (!props.isOnline) return 'error';
   if (props.syncState === 'syncing') return 'syncing';
-  if (props.syncState === 'error') return 'error';
+  if (props.syncState === 'error' || props.syncState === 'conflict') return 'error';
   if (props.syncState === 'online') return 'online';
   return 'local';
 });
@@ -107,6 +107,7 @@ const statusLabel = computed(() => {
   if (!props.isOnline) {
     return props.pendingCount > 0 ? `Offline (${props.pendingCount})` : 'Offline';
   }
+  if (props.syncState === 'conflict') return 'Konflikt';
   if (props.syncState === 'error') return 'Chyba';
   if (props.pendingCount > 0) return `Čeká (${props.pendingCount})`;
   if (props.syncState === 'online' || props.syncState === 'syncing') return 'Cloud';
@@ -116,6 +117,7 @@ const statusLabel = computed(() => {
 const statusTooltip = computed(() => {
   if (!props.isOnline) return 'Připojení k internetu je nedostupné. Změny se ukládají lokálně.';
   if (props.syncState === 'syncing') return 'Probíhá synchronizace...';
+  if (props.syncState === 'conflict') return 'Některé lokální změny kolidují s novější verzí na serveru. Nebyly smazány.';
   if (props.syncState === 'error') return 'Poslední synchronizace selhala. Kliknutím spustíte synchronizaci znovu.';
   if (props.pendingCount > 0) return `${props.pendingCount} položek čeká ve frontě na odeslání do cloudu.`;
   if (props.syncState === 'online') return 'Cloud synchronizován (aktuální stav)';

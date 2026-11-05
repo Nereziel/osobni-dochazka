@@ -3,7 +3,9 @@ import {
   getUserDays,
   putUserDay,
   deleteUserDay,
-  enqueueSyncAction
+  putUserDayWithOutbox,
+  deleteUserDayWithOutbox,
+  removeSyncAction
 } from '../services/indexedDb.js';
 import { dayRowForSupabase } from '../services/sync.js';
 import { supabaseRequest } from '../services/supabase.js';
@@ -72,57 +74,85 @@ export function useAttendance() {
       ...day,
       updatedAt: new Date().toISOString()
     };
+    const shouldSync = !skipCloud && Boolean(currentUser?.userKey);
+    const row = shouldSync ? dayRowForSupabase(updated, userId, settings) : null;
 
-    await putUserDay(userId, updated);
+    // Both the local row and the pending cloud mutation commit atomically.
+    const queueId = shouldSync
+      ? await putUserDayWithOutbox(userId, updated, row)
+      : null;
+    if (!shouldSync) await putUserDay(userId, updated);
+
     records.value.set(updated.date, updated);
     records.value = new Map(records.value);
 
-    if (!skipCloud && currentUser?.userKey) {
-      const row = dayRowForSupabase(updated, currentUser.userKey, settings);
-      try {
-        const upRes = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
-          method: 'POST',
-          body: JSON.stringify({ p_day: row })
-        }, currentUser);
-        if (upRes?.applied && upRes?.server_updated_at && upRes.server_updated_at !== updated.updatedAt) {
-          updated.updatedAt = upRes.server_updated_at;
-          await putUserDay(userId, updated);
-          records.value.set(updated.date, updated);
+    if (!shouldSync) return { ...updated, syncStatus: 'local' };
+
+    try {
+      const upRes = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
+        method: 'POST',
+        body: JSON.stringify({ p_day: row })
+      }, currentUser);
+
+      if (upRes?.applied !== true) {
+        // Never remove the outbox item or claim cloud success after server_newer.
+        console.warn('Cloud má novější zápis tohoto dne; lokální změna zůstává uložená.', updated.date);
+        return { ...updated, syncStatus: 'conflict' };
+      }
+
+      // Do not normalize an older response over a newer local edit of the same day.
+      if (upRes.server_updated_at && upRes.server_updated_at !== updated.updatedAt &&
+          records.value.get(updated.date)?.updatedAt === updated.updatedAt) {
+        const normalized = { ...updated, updatedAt: upRes.server_updated_at };
+        await putUserDay(userId, normalized);
+        if (records.value.get(updated.date)?.updatedAt === updated.updatedAt) {
+          records.value.set(updated.date, normalized);
           records.value = new Map(records.value);
         }
-      } catch (err) {
-        console.warn('Uložení dne do cloudu selhalo, zařazeno do outboxu:', err);
-        await enqueueSyncAction(userId, 'attendance_days', 'UPSERT', row);
       }
+      await removeSyncAction(queueId);
+      return { ...updated, syncStatus: 'synced' };
+    } catch (err) {
+      // Outbox was already committed. Leave it for retry, do not enqueue a duplicate.
+      console.warn('Cloudové uložení dne se odkládá; lokální záznam je zachovaný:', err);
+      return { ...updated, syncStatus: 'queued' };
     }
-
-    return updated;
   }
 
   async function deleteDay(dateKey, currentUser, skipCloud = false) {
     const userId = currentUser?.userKey || 'user:local';
-    await deleteUserDay(userId, dateKey);
+    const shouldSync = !skipCloud && Boolean(currentUser?.userKey);
+    const nowIso = new Date().toISOString();
+    const tombstone = shouldSync ? {
+      user_key: userId,
+      date: dateKey,
+      deleted_at: nowIso,
+      updated_at: nowIso
+    } : null;
+
+    const queueId = shouldSync
+      ? await deleteUserDayWithOutbox(userId, dateKey, tombstone)
+      : null;
+    if (!shouldSync) await deleteUserDay(userId, dateKey);
+
     records.value.delete(dateKey);
     records.value = new Map(records.value);
+    if (!shouldSync) return { syncStatus: 'local' };
 
-    if (!skipCloud && currentUser?.userKey) {
-      const nowIso = new Date().toISOString();
-      const tombstonePayload = {
-        user_key: currentUser.userKey,
-        date: dateKey,
-        deleted_at: nowIso,
-        updated_at: nowIso
-      };
-
-      try {
-        await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
-          method: 'POST',
-          body: JSON.stringify({ p_day: tombstonePayload })
-        }, currentUser);
-      } catch (err) {
-        console.warn('Smazání dne v cloudu selhalo, zařazeno do outboxu jako tombstone:', err);
-        await enqueueSyncAction(userId, 'attendance_days', 'DELETE', tombstonePayload);
+    try {
+      const res = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
+        method: 'POST',
+        body: JSON.stringify({ p_day: tombstone })
+      }, currentUser);
+      if (res?.applied !== true) {
+        console.warn('Cloud má novější verzi smazaného dne; lokální tombstone zůstává v outboxu.', dateKey);
+        return { syncStatus: 'conflict' };
       }
+      await removeSyncAction(queueId);
+      return { syncStatus: 'synced' };
+    } catch (err) {
+      console.warn('Cloudové smazání dne se odkládá; tombstone je v outboxu:', err);
+      return { syncStatus: 'queued' };
     }
   }
 

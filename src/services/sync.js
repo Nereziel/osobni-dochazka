@@ -173,6 +173,8 @@ export async function drainOutboxQueue(currentUser) {
   let successCount = 0;
 
   for (const item of actions) {
+    // An explicitly conflicted offline edit remains available for manual resolution.
+    if (item.conflict) continue;
     try {
       if (item.entity === 'attendance_days') {
         const payload = item.payload;
@@ -204,7 +206,14 @@ export async function drainOutboxQueue(currentUser) {
         }, currentUser);
 
         if (res?.applied === false && res?.reason === 'server_newer') {
-          console.info(`Outbox pro den ${payload.date} byl bezpečně odmítnut (server má novější verzi ${res.server_updated_at}).`);
+          console.warn(`Konflikt dne ${payload.date}: server má novější verzi ${res.server_updated_at}; lokální změna zůstává v outboxu.`);
+          item.conflict = true;
+          item.serverUpdatedAt = res.server_updated_at || null;
+          await updateSyncAction(item);
+          continue;
+        }
+        if (res?.applied !== true) {
+          throw new Error('Cloud nepotvrdil zápis docházky; outbox zůstává zachovaný.');
         }
       } else if (item.entity === 'attendance_profiles') {
         if (item.action === 'UPDATE') {
@@ -375,8 +384,9 @@ export async function performFullSync(
 
   if (isIncremental && (!remoteRows || remoteRows.length === 0) && !options.pushLocalDays) {
     const localList = await getUserDays(currentUser.userKey);
+    const remaining = await getPendingSyncActions(currentUser.userKey);
     return {
-      status: 'online',
+      status: remaining.some(item => item.conflict) ? 'conflict' : 'online',
       recordsMap: new Map(localList.map(d => [d.date, d])),
       serverProfile
     };
@@ -486,8 +496,9 @@ export async function performFullSync(
     setLastSuccessfulPullAt(currentUser.userKey, nextCursor);
   }
 
+  const remaining = await getPendingSyncActions(currentUser.userKey);
   return {
-    status: 'online',
+    status: remaining.some(item => item.conflict) ? 'conflict' : 'online',
     recordsMap: mergedMap,
     serverProfile
   };

@@ -212,7 +212,7 @@ import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
-import { openDatabase, clearUserDays, putUserSettings } from './services/indexedDb.js';
+import { openDatabase, clearUserDays, putUserSettings, getPendingSyncActions } from './services/indexedDb.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock } from './utils/time.js';
@@ -492,10 +492,22 @@ function openDayEditor(dateKey) {
   dayEditModalRef.value?.open(key, existing);
 }
 
+function showAttendanceSaveStatus(result, successMessage) {
+  if (result?.syncStatus === 'conflict') {
+    showToast('Změna je zachovaná lokálně, ale server má novější verzi. Synchronizace vyžaduje vyřešení konfliktu.', '⚠️');
+  } else if (result?.syncStatus === 'queued') {
+    showToast(`${successMessage} (zatím lokálně; čeká na přenos do cloudu)`, '⚠️');
+  } else if (result?.syncStatus === 'local') {
+    showToast(`${successMessage} (lokální režim)`, '✓');
+  } else {
+    showToast(successMessage, '✓');
+  }
+}
+
 async function handleDaySave(day) {
   try {
-    await saveDay(day, currentUser.value, settings.value);
-    showToast('Den byl úspěšně uložen', '✓');
+    const result = await saveDay(day, currentUser.value, settings.value);
+    showAttendanceSaveStatus(result, 'Den byl uložen');
     await refreshPendingCount(currentUser.value?.userKey || 'user:local');
   } catch {
     showToast('Uložení selhalo', '⚠️');
@@ -504,47 +516,53 @@ async function handleDaySave(day) {
 
 async function handleDayDelete(dateKey) {
   try {
-    await deleteDay(dateKey, currentUser.value);
-    showToast('Záznam byl smazán', '🗑️');
+    const result = await deleteDay(dateKey, currentUser.value);
+    showAttendanceSaveStatus(result, 'Záznam byl smazán');
     await refreshPendingCount(currentUser.value?.userKey || 'user:local');
   } catch {
     showToast('Smazání selhalo', '⚠️');
   }
 }
 
+async function executeQuickChange(mutator, message, options = {}) {
+  try {
+    const result = await quickToday(mutator, currentUser.value, settings.value, options);
+    showAttendanceSaveStatus(result, message);
+    await refreshPendingCount(currentUser.value?.userKey || 'user:local');
+  } catch {
+    showToast('Rychlý zápis se nezdařil', '⚠️');
+  }
+}
+
 // Quick Actions
 async function handleQuickArrival() {
-  await quickToday((d) => {
+  return executeQuickChange((d) => {
     applyQuickArrival(d, formatClock());
-  }, currentUser.value, settings.value);
-  showToast('Příchod zaznamenán', '✓');
+  }, 'Příchod zaznamenán');
 }
 
 async function handleQuickDeparture() {
-  await quickToday((d, hours) => {
+  return executeQuickChange((d, hours) => {
     applyQuickDeparture(d, formatClock(), hours.start);
-  }, currentUser.value, settings.value, { preferOpenShift: true });
-  showToast('Odchod zaznamenán', '✓');
+  }, 'Odchod zaznamenán', { preferOpenShift: true });
 }
 
 async function handleQuickNormalHours() {
-  await quickToday((d, hours) => {
+  return executeQuickChange((d, hours) => {
     d.type = 'work';
     d.start = hours.start;
     d.end = hours.end;
     d.manualBreak = false;
     d.breakMinutes = settings.value.breakMinutes;
-  }, currentUser.value, settings.value);
-  showToast('Běžná pracovní doba zapsána', '✓');
+  }, 'Běžná pracovní doba zapsána');
 }
 
 async function handleQuickVacation() {
-  await quickToday((d) => {
+  return executeQuickChange((d) => {
     d.type = 'vacation';
     d.start = '';
     d.end = '';
-  }, currentUser.value, settings.value);
-  showToast('Zapsána celodenní dovolená', '✓');
+  }, 'Zapsána celodenní dovolená');
 }
 
 async function handleQuickPreset(type) {
@@ -555,7 +573,7 @@ async function handleQuickPreset(type) {
     compTime: 'Zapsáno náhradní volno'
   };
 
-  await quickToday((d, hours) => {
+  return executeQuickChange((d, hours) => {
     d.type = type;
     if (type === 'doctor') {
       d.doctorFullDay = true;
@@ -570,8 +588,7 @@ async function handleQuickPreset(type) {
       d.manualBreak = false;
       d.breakMinutes = settings.value.breakMinutes;
     }
-  }, currentUser.value, settings.value);
-  showToast(labels[type] || 'Uloženo', '✓');
+  }, labels[type] || 'Uloženo');
 }
 
 // Month Actions
@@ -731,10 +748,20 @@ async function handleChangePinSubmit({ oldPin, newPin, newPinConfirm }) {
   }
 }
 
-function handleLogout() {
-  if (!confirm('Opravdu se odhlásit z tohoto zařízení?')) return;
-  performLocalLogout();
-  showToast('Uživatel odhlášen', 'ℹ️');
+async function handleLogout() {
+  try {
+    const pending = currentUser.value?.userKey
+      ? await getPendingSyncActions(currentUser.value.userKey)
+      : [];
+    const warning = pending.length > 0
+      ? `Pozor: ${pending.length} neodeslaných nebo konfliktních změn by se při odhlášení odstranilo z tohoto zařízení. Nejdřív je synchronizuj nebo exportuj zálohu. Opravdu přesto smazat a odhlásit?`
+      : 'Opravdu se odhlásit z tohoto zařízení?';
+    if (!confirm(warning)) return;
+    performLocalLogout();
+    showToast('Uživatel odhlášen', 'ℹ️');
+  } catch {
+    showToast('Nepodařilo se ověřit neodeslané změny; odhlášení nebylo provedeno.', '⚠️');
+  }
 }
 
 // Settings Handlers
