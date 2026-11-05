@@ -81,6 +81,7 @@ describe('Real Integration Tests for Sync Engine', () => {
 
     vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([outboxAction]);
     const removeSpy = vi.spyOn(idbService, 'removeSyncAction').mockResolvedValue();
+    const updateSpy = vi.spyOn(idbService, 'updateSyncAction').mockResolvedValue();
     const supabaseSpy = vi.spyOn(supabaseService, 'supabaseRequest').mockResolvedValue({
       applied: false,
       reason: 'server_newer',
@@ -90,13 +91,14 @@ describe('Real Integration Tests for Sync Engine', () => {
 
     const count = await drainOutboxQueue(currentUser);
 
-    expect(count).toBe(1);
+    expect(count).toBe(0);
     expect(supabaseSpy).toHaveBeenCalledWith(
       '/rest/v1/rpc/upsert_attendance_day_lww',
       expect.objectContaining({ method: 'POST' }),
       currentUser
     );
-    expect(removeSpy).toHaveBeenCalledWith(1);
+    expect(removeSpy).not.toHaveBeenCalled();
+    expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ id: 1, conflict: true }));
   });
 
   it('Test 2 – offline UPSERT is newer than server (applied: true)', async () => {
