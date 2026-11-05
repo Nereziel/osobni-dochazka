@@ -175,6 +175,55 @@ export async function deleteUserDay(userId, date) {
   return idbAction('user_days', 'readwrite', (store) => store.delete([userId, date]));
 }
 
+/**
+ * Crash-safe attendance mutation: the local record and its pending remote action
+ * share one IndexedDB readwrite transaction. A tab crash or quota error cannot
+ * commit one without the other.
+ */
+async function commitAttendanceAndOutbox(userId, action, date, day, payload) {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_days', 'sync_queue'], 'readwrite');
+    let outboxId = null;
+    tx.oncomplete = () => resolve(outboxId);
+    tx.onerror = () => reject(tx.error || new Error('Uložení docházky a outboxu selhalo.'));
+    tx.onabort = () => reject(tx.error || new Error('Transakce docházky byla zrušena.'));
+
+    try {
+      const dayStore = tx.objectStore('user_days');
+      if (action === 'DELETE') {
+        dayStore.delete([userId, date]);
+      } else {
+        dayStore.put({
+          ...day,
+          userId,
+          updatedAt: day.updatedAt || new Date().toISOString()
+        });
+      }
+      const queueRequest = tx.objectStore('sync_queue').add({
+        userId,
+        entity: 'attendance_days',
+        action,
+        payload,
+        createdAt: new Date().toISOString(),
+        retries: 0
+      });
+      queueRequest.onsuccess = () => { outboxId = queueRequest.result; };
+    } catch (err) {
+      tx.abort();
+      reject(err);
+    }
+  });
+}
+
+export function putUserDayWithOutbox(userId, day, payload) {
+  return commitAttendanceAndOutbox(userId, 'UPSERT', day.date, day, payload);
+}
+
+export function deleteUserDayWithOutbox(userId, date, payload) {
+  return commitAttendanceAndOutbox(userId, 'DELETE', date, null, payload);
+}
+
 export async function clearUserDays(userId) {
   const days = await getUserDays(userId);
   return idbAction('user_days', 'readwrite', (store) => {
