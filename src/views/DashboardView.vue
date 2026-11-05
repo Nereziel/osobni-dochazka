@@ -1,15 +1,5 @@
 <template>
   <section class="win11-view active">
-    <!-- Stopwatch Banner probíhající směny -->
-    <ActiveShiftBanner
-      :active-shift="activeShift"
-      :daily-target="todayMetrics.target"
-      :settings="settings"
-      :credited-minutes="todayMetrics.credited"
-      :prior-balance="monthKpi.completedBalance"
-      @end-shift="$emit('end-shift')"
-    />
-
     <div class="dashboard-grid-layout">
       <!-- LEVÝ VELKÝ PANEL: Dnešní stav a rychlé akce -->
       <div class="dash-col-primary">
@@ -359,7 +349,6 @@
 
 <script setup>
 import { computed, ref, onMounted, onUnmounted } from 'vue';
-import ActiveShiftBanner from '../components/Attendance/ActiveShiftBanner.vue';
 import { fmtDayFull, todayKey, localDateKey, isWeekendDate, fmtMonthTitle } from '../utils/dates.js';
 import { holidayName } from '../utils/holidays.js';
 import { formatDuration, formatClock, timeToMinutes } from '../utils/time.js';
@@ -398,7 +387,6 @@ const props = defineProps({
 
 defineEmits([
   'edit-day',
-  'end-shift',
   'quick-arrival',
   'quick-departure',
   'quick-normal',

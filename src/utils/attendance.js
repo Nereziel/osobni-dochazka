@@ -141,6 +141,22 @@ export function allowsWork(type) {
   return ['work', 'homeOffice', 'businessTrip', 'halfVacation', 'doctor', 'other'].includes(type);
 }
 
+// Rychlý příchod/odchod upravuje jen čas, ne režim již zadaného pracovního dne.
+// Pro lékaře zachovává interval propustky; po zahájení práce už nejde o celodenní absenci.
+export function applyQuickArrival(day, time) {
+  if (!allowsWork(day.type)) day.type = 'work';
+  if (day.type === 'doctor') day.doctorFullDay = false;
+  day.start = time;
+  day.end = '';
+}
+
+export function applyQuickDeparture(day, time, defaultStart) {
+  if (!allowsWork(day.type)) day.type = 'work';
+  if (day.type === 'doctor') day.doctorFullDay = false;
+  if (!day.start) day.start = defaultStart;
+  day.end = time;
+}
+
 export function calculatedBreak(day, settings = DEFAULT_SETTINGS) {
   if (!day || !allowsWork(day.type)) return 0;
   const presence = durationMinutes(day.start, day.end);
