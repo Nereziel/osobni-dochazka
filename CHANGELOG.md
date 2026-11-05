@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.1.7](https://github.com/Nereziel/osobni-dochazka/compare/v3.1.6...v3.1.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* doctor end-time and overnight attendance ([#22](https://github.com/Nereziel/osobni-dochazka/issues/22)) ([1e70a9e](https://github.com/Nereziel/osobni-dochazka/commit/1e70a9e898d1dcb17527e6005c33eaa645b4becd))
+* persist attendance and sync queue atomically ([#23](https://github.com/Nereziel/osobni-dochazka/issues/23)) ([a691442](https://github.com/Nereziel/osobni-dochazka/commit/a69144214a260ac99bc971c522def7d614c9dfdc))
+* preserve doctor appointments and show ongoing manual shifts ([#20](https://github.com/Nereziel/osobni-dochazka/issues/20)) ([a466114](https://github.com/Nereziel/osobni-dochazka/commit/a466114d70a732c3443e0a9200dc553b8a07d930))
+* validate and atomically merge attendance backup ([#24](https://github.com/Nereziel/osobni-dochazka/issues/24)) ([7ebf2f1](https://github.com/Nereziel/osobni-dochazka/commit/7ebf2f114271202bb40b3dc4199217375550be79))
+
 ## [3.1.6](https://github.com/Nereziel/osobni-dochazka/compare/v3.1.5...v3.1.6) (2026-11-03)
 
 
