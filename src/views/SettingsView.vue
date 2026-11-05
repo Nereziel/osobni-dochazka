@@ -604,7 +604,7 @@
 
 <script setup>
 import { ref, computed, watch, toRaw, nextTick } from 'vue';
-import { minutesToTime, timeToMinutes, durationMinutes } from '../utils/time.js';
+import { minutesToTime, timeToMinutes, calculateNetScheduleMinutes } from '../utils/time.js';
 import { clampNumber, cloneDeep } from '../utils/validation.js';
 import { APP_VERSION, APP_BUILD_DATE } from '../utils/version.js';
 
@@ -702,9 +702,13 @@ function toggleWorkDay(dayVal, isChecked) {
 }
 
 function calcTargetAuto() {
-  const dur = durationMinutes(formSettings.value.workStart, formSettings.value.workEnd);
   const brk = clampNumber(formSettings.value.breakMinutes, 0, 240, 30);
-  const net = Math.max(0, dur - brk);
+  const net = calculateNetScheduleMinutes(
+    formSettings.value.workStart,
+    formSettings.value.workEnd,
+    brk,
+    formSettings.value.breakAfterMinutes
+  );
   formSettings.value.dailyTargetMinutes = net;
   emit('toast', `Denní fond nastaven na ${minutesToTime(net)}`, '✓');
 }
