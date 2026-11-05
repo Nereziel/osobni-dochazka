@@ -212,7 +212,8 @@ import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
-import { openDatabase, clearUserDays, putUserSettings, getPendingSyncActions } from './services/indexedDb.js';
+import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncActions } from './services/indexedDb.js';
+import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock } from './utils/time.js';
@@ -811,22 +812,28 @@ function handleExportBackup() {
 
 async function handleImportBackup(file) {
   try {
-    const text = await file.text();
-    const payload = JSON.parse(text);
-    if (!Array.isArray(payload.days)) {
-      throw new Error('Soubor není platná záloha docházky.');
+    if (!file || file.size > 15 * 1024 * 1024) {
+      throw new Error('Záloha je příliš velká (max. 15 MB).');
     }
+    // Validate every record and every setting BEFORE any local mutation.
+    const payload = JSON.parse(await file.text());
+    const parsed = validateBackupPayload(payload);
     const userKey = currentUser.value?.userKey || 'user:local';
-    await clearUserDays(userKey);
-    for (const d of payload.days) {
-      await saveDay(d, currentUser.value, settings.value, true);
-    }
-    if (payload.settings) {
-      await saveSettings(userKey, payload.settings, currentUser.value, true);
-    }
-    await loadRecords(userKey);
-    showToast('Záloha úspěšně importována', '✓');
-    if (currentUser.value) {
+
+    if (!confirm(`Importovat ${parsed.days.length} dnů? Shodná data se přepíšou obsahem zálohy. Ostatní existující dny zůstanou zachované.`)) return;
+
+    const queueActions = buildBackupSyncActions(
+      parsed.days,
+      parsed.settings,
+      currentUser.value,
+      settings.value
+    );
+    await importUserBackupAtomic(userKey, parsed.days, parsed.settings, queueActions);
+
+    await Promise.all([loadRecords(userKey), loadSettings(userKey)]);
+    await refreshPendingCount(userKey);
+    showToast(`Záloha sloučena: ${parsed.days.length} dnů. Ostatní záznamy zůstaly zachované.`, '✓');
+    if (currentUser.value && queueActions.length > 0) {
       triggerSync(true);
     }
   } catch (err) {

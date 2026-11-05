@@ -157,7 +157,8 @@ export function coalesceOutboxActions(actions) {
     }
   }
 
-  return [...dayActionsByDate.values(), ...profileActions, ...otherActions];
+  // Profile/schedule updates must land before attendance day metrics are computed server-side.
+  return [...profileActions, ...dayActionsByDate.values(), ...otherActions];
 }
 
 /**
