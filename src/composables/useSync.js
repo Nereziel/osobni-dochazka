@@ -396,7 +396,8 @@ export function useSync() {
 
     try {
       const result = await performFullSync(currentUser, resolvedSettings, syncOptions);
-      syncState.value = 'online';
+      syncState.value = result?.status === 'conflict' ? 'conflict' : 'online';
+      if (result?.status === 'conflict') syncError.value = 'Lokální změna koliduje s novější verzí v cloudu.';
       await refreshPendingCount(currentUser.userKey);
       return result;
     } catch (err) {
