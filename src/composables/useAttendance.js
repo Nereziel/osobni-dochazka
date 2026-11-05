@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue';
+import { ref, computed, getCurrentInstance, onMounted, onUnmounted } from 'vue';
 import {
   getUserDays,
   putUserDay,
@@ -20,7 +20,7 @@ import {
   monthStats as calcMonthStats,
   yearVacationUsed as calcYearVacation,
   monthVacationDays as calcMonthVacation,
-  allowsWork,
+  findActiveShiftRecord,
   baseTargetForDate,
   defaultHoursForDate,
   TYPE_LABELS
@@ -33,8 +33,30 @@ import { sanitizeSpreadsheetCell } from '../utils/security.js';
 const records = ref(new Map());
 const calendarMonth = ref(startOfMonth(new Date()));
 const timesheetMonth = ref(startOfMonth(new Date()));
+const currentTodayKey = ref(todayKey());
+const clockTick = ref(new Date());
 
 export function useAttendance() {
+  // Date changes during a long-running PWA session (including midnight rollover).
+  // Composable is also exercised in unit tests without a mounted Vue component.
+  if (getCurrentInstance()) {
+    let timer = null;
+    const refreshClock = () => {
+      const now = new Date();
+      clockTick.value = now;
+      currentTodayKey.value = localDateKey(now);
+    };
+    onMounted(() => {
+      refreshClock();
+      timer = setInterval(refreshClock, 15000);
+      if (typeof window !== 'undefined') window.addEventListener('focus', refreshClock);
+    });
+    onUnmounted(() => {
+      if (timer) clearInterval(timer);
+      if (typeof window !== 'undefined') window.removeEventListener('focus', refreshClock);
+    });
+  }
+
   async function loadRecords(userId) {
     if (!userId) {
       records.value = new Map();
@@ -104,8 +126,10 @@ export function useAttendance() {
     }
   }
 
-  async function quickToday(mutator, currentUser, settings) {
-    const key = todayKey();
+  async function quickToday(mutator, currentUser, settings, options = {}) {
+    const key = options.preferOpenShift && activeShiftRecord.value
+      ? activeShiftRecord.value.date
+      : todayKey();
     const existing = records.value.get(key);
     const hours = defaultHoursForDate(key, settings);
 
@@ -206,14 +230,15 @@ export function useAttendance() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  const currentTodayKey = computed(() => todayKey());
   const todayRecord = computed(() => records.value.get(currentTodayKey.value) || null);
+  const activeShiftRecord = computed(() => findActiveShiftRecord(records.value, clockTick.value));
 
   const activeShift = computed(() => {
-    const rec = todayRecord.value;
-    if (rec && allowsWork(rec.type) && rec.start && !rec.end) {
+    const rec = activeShiftRecord.value;
+    if (rec) {
       return {
         isActive: true,
+        date: rec.date,
         startTime: rec.start,
         type: rec.type,
         typeLabel: TYPE_LABELS[rec.type] || 'Práce',
@@ -221,7 +246,7 @@ export function useAttendance() {
         breakMinutes: rec.breakMinutes
       };
     }
-    return { isActive: false, startTime: '', type: '', typeLabel: '', manualBreak: false, breakMinutes: null };
+    return { isActive: false, date: '', startTime: '', type: '', typeLabel: '', manualBreak: false, breakMinutes: null };
   });
 
   return {
@@ -236,8 +261,9 @@ export function useAttendance() {
     exportCsv,
     currentTodayKey,
     todayRecord,
+    activeShiftRecord,
     activeShift,
-    calcMonthStats: (date, settings) => calcMonthStats(date, records.value, settings),
+    calcMonthStats: (date, settings) => calcMonthStats(date, records.value, settings, currentTodayKey.value),
     calcYearVacation: (year) => calcYearVacation(year, records.value),
     calcMonthVacation: (date) => calcMonthVacation(date, records.value)
   };
