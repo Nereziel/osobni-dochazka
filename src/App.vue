@@ -212,7 +212,7 @@ import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
-import { openDatabase, clearUserDays, putUserSettings } from './services/indexedDb.js';
+import { openDatabase, clearUserDays, putUserSettings, getPendingSyncActions } from './services/indexedDb.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock } from './utils/time.js';
@@ -748,10 +748,20 @@ async function handleChangePinSubmit({ oldPin, newPin, newPinConfirm }) {
   }
 }
 
-function handleLogout() {
-  if (!confirm('Opravdu se odhlásit z tohoto zařízení?')) return;
-  performLocalLogout();
-  showToast('Uživatel odhlášen', 'ℹ️');
+async function handleLogout() {
+  try {
+    const pending = currentUser.value?.userKey
+      ? await getPendingSyncActions(currentUser.value.userKey)
+      : [];
+    const warning = pending.length > 0
+      ? `Pozor: ${pending.length} neodeslaných nebo konfliktních změn by se při odhlášení odstranilo z tohoto zařízení. Nejdřív je synchronizuj nebo exportuj zálohu. Opravdu přesto smazat a odhlásit?`
+      : 'Opravdu se odhlásit z tohoto zařízení?';
+    if (!confirm(warning)) return;
+    performLocalLogout();
+    showToast('Uživatel odhlášen', 'ℹ️');
+  } catch {
+    showToast('Nepodařilo se ověřit neodeslané změny; odhlášení nebylo provedeno.', '⚠️');
+  }
 }
 
 // Settings Handlers
