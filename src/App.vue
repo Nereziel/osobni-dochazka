@@ -29,6 +29,17 @@
 
       <!-- Hlavní plátno pohledů -->
       <main class="win11-content-area">
+        <!-- Probíhající směna je vidět i při ručním zápisu z kalendáře nebo výkazu. -->
+        <ActiveShiftBanner
+          v-if="activeShift.isActive"
+          :active-shift="activeShift"
+          :daily-target="activeShiftMetrics.target"
+          :settings="settings"
+          :credited-minutes="activeShiftMetrics.credited"
+          :prior-balance="dashboardMonthStats.completedBalance"
+          @end-shift="handleQuickDeparture"
+        />
+
         <!-- 1. DASHBOARD -->
         <DashboardView
           v-if="currentView === 'dashboard'"
@@ -38,7 +49,6 @@
           :active-shift="activeShift"
           :month-stats="dashboardMonthStats"
           @edit-day="openDayEditor"
-          @end-shift="handleQuickDeparture"
           @quick-arrival="handleQuickArrival"
           @quick-departure="handleQuickDeparture"
           @quick-normal="handleQuickNormalHours"
@@ -183,6 +193,7 @@ import TimesheetView from './views/TimesheetView.vue';
 import SettingsView from './views/SettingsView.vue';
 import TeamView from './views/TeamView.vue';
 
+import ActiveShiftBanner from './components/Attendance/ActiveShiftBanner.vue';
 import DayEditModal from './components/Attendance/DayEditModal.vue';
 import LoginModal from './components/Auth/LoginModal.vue';
 import RegisterModal from './components/Auth/RegisterModal.vue';
@@ -201,6 +212,7 @@ import { openDatabase, clearUserDays, putUserSettings } from './services/indexed
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock } from './utils/time.js';
+import { dayMetrics, applyQuickArrival, applyQuickDeparture } from './utils/attendance.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
 
 // Composables
@@ -290,6 +302,9 @@ function handleUserTileClick() {
 
 // Statistiky pro pohledy
 const dashboardMonthStats = computed(() => calcMonthStats(new Date(), settings.value));
+const activeShiftMetrics = computed(() => todayRecord.value
+  ? dayMetrics(todayRecord.value, settings.value)
+  : { target: 0, credited: 0 });
 const calendarStats = computed(() => calcMonthStats(calendarMonth.value, settings.value));
 const timesheetStats = computed(() => calcMonthStats(timesheetMonth.value, settings.value));
 const yearVacationCount = computed(() => calcYearVacation(timesheetMonth.value.getFullYear()));
@@ -494,20 +509,14 @@ async function handleDayDelete(dateKey) {
 // Quick Actions
 async function handleQuickArrival() {
   await quickToday((d) => {
-    d.type = 'work';
-    d.start = formatClock();
-    d.end = '';
-    d.manualBreak = false;
+    applyQuickArrival(d, formatClock());
   }, currentUser.value, settings.value);
   showToast('Příchod zaznamenán', '✓');
 }
 
 async function handleQuickDeparture() {
   await quickToday((d, hours) => {
-    d.type = 'work';
-    if (!d.start) d.start = hours.start;
-    d.end = formatClock();
-    d.manualBreak = false;
+    applyQuickDeparture(d, formatClock(), hours.start);
   }, currentUser.value, settings.value);
   showToast('Odchod zaznamenán', '✓');
 }
