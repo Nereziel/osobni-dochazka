@@ -66,6 +66,12 @@ describe('Quick clock actions retain existing day meaning', () => {
   });
 });
 
+it('wires quick-action buttons through the preserving mutators', () => {
+  const app = fs.readFileSync(path.resolve('src/App.vue'), 'utf8');
+  expect(app).toContain('applyQuickArrival(d, formatClock())');
+  expect(app).toContain('applyQuickDeparture(d, formatClock(), hours.start)');
+});
+
 describe('Manual open shift and stopwatch', () => {
   it('treats a manually saved arrival with no departure as the active shift', async () => {
     const { useAttendance } = await import('../src/composables/useAttendance.js');
