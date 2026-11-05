@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import { validateBackupPayload, buildBackupSyncActions } from '../src/utils/backup.js';
 import { DEFAULT_SETTINGS } from '../src/utils/attendance.js';
+import { coalesceOutboxActions } from '../src/services/sync.js';
 
 const valid = {
   app: 'osobni-dochazka-win11',
@@ -47,6 +48,16 @@ describe('Non-destructive, validated backup restore', () => {
       entity: 'attendance_days', action: 'UPSERT',
       payload: { user_key: 'user:a', date: '2026-11-02', type: 'doctor' }
     });
+  });
+
+  it('syncs imported profile settings before day metrics are computed by the server', () => {
+    const parsed = validateBackupPayload(valid);
+    const actions = buildBackupSyncActions(parsed.days, parsed.settings, { userKey: 'user:a', username: 'a' });
+    const coalesced = coalesceOutboxActions(actions.map((action, index) => ({
+      ...action, id: index + 1,
+      payload: { ...action.payload, updated_at: '2026-11-05T10:00:00Z' }
+    })));
+    expect(coalesced.map(action => action.entity)).toEqual(['attendance_profiles', 'attendance_days']);
   });
 
   it('uses one IndexedDB transaction and never clears all existing days before import', () => {
