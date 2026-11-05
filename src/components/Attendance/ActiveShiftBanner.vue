@@ -48,10 +48,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { timeToMinutes, pad, formatDuration } from '../../utils/time.js';
-import { calculateWorkEndTime } from '../../utils/attendance.js';
+import { shiftElapsedSeconds, pad, formatDuration } from '../../utils/time.js';
+import { calculateWorkEndTime, calculateWorkEndTimeForRecord } from '../../utils/attendance.js';
 
 const props = defineProps({
+  dayRecord: {
+    type: Object,
+    default: null
+  },
   activeShift: {
     type: Object,
     required: true
@@ -79,28 +83,26 @@ defineEmits(['endShift']);
 const elapsedTime = ref('00:00:00');
 let timerInterval = null;
 
-const workEndTime = computed(() => {
+function projectedEndTime(target) {
+  if (props.dayRecord?.type === 'doctor' && !props.dayRecord.doctorFullDay) {
+    return calculateWorkEndTimeForRecord(props.dayRecord, props.settings, target);
+  }
   const customBreak = props.activeShift?.manualBreak ? props.activeShift.breakMinutes : null;
   return calculateWorkEndTime(
     props.activeShift?.startTime,
     props.settings,
     props.creditedMinutes,
     customBreak,
-    props.dailyTarget
+    target
   );
-});
+}
+
+const workEndTime = computed(() => projectedEndTime(props.dailyTarget));
 
 const earlyLeaveText = computed(() => {
   if (!props.priorBalance || props.priorBalance <= 0) return '';
-  const customBreak = props.activeShift?.manualBreak ? props.activeShift.breakMinutes : null;
   const reducedTarget = Math.max(0, props.dailyTarget - props.priorBalance);
-  const earlyTime = calculateWorkEndTime(
-    props.activeShift?.startTime,
-    props.settings,
-    props.creditedMinutes,
-    customBreak,
-    reducedTarget
-  );
+  const earlyTime = projectedEndTime(reducedTarget);
   return `S nadpracovaným (+${formatDuration(props.priorBalance)}) už v ${earlyTime}`;
 });
 
@@ -110,13 +112,7 @@ function updateTimer() {
     return;
   }
 
-  const sMin = timeToMinutes(props.activeShift.startTime);
-  if (sMin === null) return;
-
-  const now = new Date();
-  const curMin = now.getHours() * 60 + now.getMinutes();
-  const curSec = now.getSeconds();
-  const diffSec = (curMin >= sMin ? (curMin - sMin) * 60 : (1440 - sMin + curMin) * 60) + curSec;
+  const diffSec = shiftElapsedSeconds(props.activeShift.date, props.activeShift.startTime, new Date());
 
   const hh = Math.floor(diffSec / 3600);
   const mm = Math.floor((diffSec % 3600) / 60);
