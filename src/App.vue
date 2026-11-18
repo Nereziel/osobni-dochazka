@@ -54,7 +54,6 @@
           @quick-arrival="handleQuickArrival"
           @quick-arrival-at="handleQuickArrivalAt"
           @quick-departure="handleQuickDeparture"
-          @quick-normal="handleQuickNormalHours"
           @quick-vacation="handleQuickVacation"
           @quick-preset="handleQuickPreset"
           @go-to-timesheet="navigateView('timesheet')"
