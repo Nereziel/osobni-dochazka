@@ -54,6 +54,7 @@
           @quick-arrival="handleQuickArrival"
           @quick-arrival-at="handleQuickArrivalAt"
           @quick-departure="handleQuickDeparture"
+          @quick-departure-at="handleQuickDepartureAt"
           @quick-vacation="handleQuickVacation"
           @quick-preset="handleQuickPreset"
           @go-to-timesheet="navigateView('timesheet')"
@@ -556,6 +557,16 @@ async function handleQuickDeparture() {
   return executeQuickChange((d, hours) => {
     applyQuickDeparture(d, formatClock(), hours.start);
   }, 'Odchod zaznamenán', { preferOpenShift: true });
+}
+
+async function handleQuickDepartureAt(time) {
+  if (timeToMinutes(time) === null) {
+    showToast('Neplatný čas odchodu', '⚠️');
+    return;
+  }
+  return executeQuickChange((d, hours) => {
+    applyQuickDeparture(d, time, hours.start);
+  }, `Odchod v ${time} zaznamenán`, { preferOpenShift: true });
 }
 
 async function handleQuickVacation() {
