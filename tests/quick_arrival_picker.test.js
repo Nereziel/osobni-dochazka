@@ -61,7 +61,7 @@ describe('Quick arrival at a selected time', () => {
     expect(pkg.version).toBe(manifest['.']);
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[''].version).toBe(pkg.version);
-    expect(versionSource).toContain("'3.1.6'");
+    expect(versionSource).toContain(`'${pkg.version}'`);
     expect(versionSource).toContain("'2026-11-18'");
   });
 });
