@@ -99,7 +99,7 @@
         <section class="win-card quick-command-card">
           <div class="card-section-title">
             <h2>Rychlý zápis příchodu a odchodu</h2>
-            <p>Jedním kliknutím zaeviduj reálný čas nebo doplň standardní rozvrh.</p>
+            <p>Zaznamenej příchod a odchod aktuálním časem, nebo vyber vlastní čas příchodu.</p>
           </div>
 
           <div class="quick-primary-grid">
@@ -157,7 +157,9 @@
             <button
               class="win-btn-standard quick-tile-btn"
               type="button"
-              @click="$emit('quick-normal')"
+              :aria-expanded="showArrivalTimePicker"
+              aria-controls="quick-arrival-picker"
+              @click="openArrivalTimePicker"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -176,8 +178,8 @@
                 /><polyline points="9 11 12 14 22 4" />
               </svg>
               <div>
-                <strong>Běžná pracovní doba</strong>
-                <small>{{ defaultShiftHours }}</small>
+                <strong>Příchod v</strong>
+                <small>Vybrat čas příchodu</small>
               </div>
             </button>
 
@@ -206,6 +208,39 @@
               </div>
             </button>
           </div>
+
+          <form
+            v-if="showArrivalTimePicker"
+            id="quick-arrival-picker"
+            class="quick-arrival-picker"
+            @submit.prevent="confirmArrivalTime"
+          >
+            <label class="win-field">
+              <span>Čas příchodu</span>
+              <input
+                v-model="selectedArrivalTime"
+                type="time"
+                step="60"
+                required
+              >
+            </label>
+            <div class="quick-arrival-actions">
+              <button
+                class="win-btn-accent"
+                type="submit"
+                :disabled="timeToMinutes(selectedArrivalTime) === null"
+              >
+                Uložit příchod
+              </button>
+              <button
+                class="win-btn-subtle"
+                type="button"
+                @click="showArrivalTimePicker = false"
+              >
+                Zrušit
+              </button>
+            </div>
+          </form>
 
           <!-- Rychlé předvolby režimu -->
           <div class="quick-presets-strip">
@@ -386,9 +421,10 @@ const props = defineProps({
   }
 });
 
-defineEmits([
+const emit = defineEmits([
   'edit-day',
   'quick-arrival',
+  'quick-arrival-at',
   'quick-departure',
   'quick-normal',
   'quick-vacation',
@@ -397,6 +433,19 @@ defineEmits([
 ]);
 
 const currentKey = todayKey();
+const showArrivalTimePicker = ref(false);
+const selectedArrivalTime = ref('');
+
+function openArrivalTimePicker() {
+  selectedArrivalTime.value = props.todayRecord?.start || defaultHoursForDate(currentKey, props.settings).start;
+  showArrivalTimePicker.value = true;
+}
+
+function confirmArrivalTime() {
+  if (timeToMinutes(selectedArrivalTime.value) === null) return;
+  emit('quick-arrival-at', selectedArrivalTime.value);
+  showArrivalTimePicker.value = false;
+}
 const todayFormattedDate = computed(() => fmtDayFull(new Date()));
 
 const todayHoliday = computed(() => holidayName(currentKey));
@@ -559,10 +608,6 @@ const earlyDepartureHint = computed(() => {
     return `💡 Máš nadpracováno +${formatDuration(prior)} — dnes můžeš jít domů o ${formatDuration(Math.min(target, prior))} dříve (při příchodu v ${startTime} už v ${earlyTime}).`;
   }
   return '';
-});
-
-const defaultShiftHours = computed(() => {
-  return `${props.settings.workStart || '06:30'} – ${props.settings.workEnd || '15:00'}`;
 });
 
 // 7-denní pás Po-Ne pro tento týden

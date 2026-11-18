@@ -52,8 +52,8 @@
           :month-stats="dashboardMonthStats"
           @edit-day="openDayEditor"
           @quick-arrival="handleQuickArrival"
+          @quick-arrival-at="handleQuickArrivalAt"
           @quick-departure="handleQuickDeparture"
-          @quick-normal="handleQuickNormalHours"
           @quick-vacation="handleQuickVacation"
           @quick-preset="handleQuickPreset"
           @go-to-timesheet="navigateView('timesheet')"
@@ -216,7 +216,7 @@ import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncAc
 import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
-import { formatClock } from './utils/time.js';
+import { formatClock, timeToMinutes } from './utils/time.js';
 import { dayMetrics, applyQuickArrival, applyQuickDeparture } from './utils/attendance.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
 
@@ -542,20 +542,20 @@ async function handleQuickArrival() {
   }, 'Příchod zaznamenán');
 }
 
+async function handleQuickArrivalAt(time) {
+  if (timeToMinutes(time) === null) {
+    showToast('Neplatný čas příchodu', '⚠️');
+    return;
+  }
+  return executeQuickChange((d) => {
+    applyQuickArrival(d, time);
+  }, `Příchod v ${time} zaznamenán`);
+}
+
 async function handleQuickDeparture() {
   return executeQuickChange((d, hours) => {
     applyQuickDeparture(d, formatClock(), hours.start);
   }, 'Odchod zaznamenán', { preferOpenShift: true });
-}
-
-async function handleQuickNormalHours() {
-  return executeQuickChange((d, hours) => {
-    d.type = 'work';
-    d.start = hours.start;
-    d.end = hours.end;
-    d.manualBreak = false;
-    d.breakMinutes = settings.value.breakMinutes;
-  }, 'Běžná pracovní doba zapsána');
 }
 
 async function handleQuickVacation() {
