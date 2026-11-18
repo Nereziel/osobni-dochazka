@@ -849,6 +849,29 @@ html[data-theme="dark"] .win-btn-subtle:hover {
   opacity: 0.85;
 }
 
+.quick-arrival-picker {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-card-subtle);
+}
+
+.quick-arrival-picker .win-field {
+  flex: 1 1 160px;
+  max-width: 240px;
+}
+
+.quick-arrival-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .quick-presets-strip {
   display: flex;
   align-items: center;
