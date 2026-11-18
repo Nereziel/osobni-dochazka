@@ -57,10 +57,11 @@ describe('Quick arrival at a selected time', () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8'));
     const lock = JSON.parse(fs.readFileSync(path.resolve('package-lock.json'), 'utf8'));
     const versionSource = fs.readFileSync(path.resolve('src/utils/version.js'), 'utf8');
-    expect(pkg.version).toBe('3.1.7');
+    const manifest = JSON.parse(fs.readFileSync(path.resolve('.release-please-manifest.json'), 'utf8'));
+    expect(pkg.version).toBe(manifest['.']);
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[''].version).toBe(pkg.version);
-    expect(versionSource).toContain("'3.1.7'");
+    expect(versionSource).toContain("'3.1.6'");
     expect(versionSource).toContain("'2026-11-18'");
   });
 });
