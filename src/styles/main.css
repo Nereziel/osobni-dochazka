@@ -849,7 +849,7 @@ html[data-theme="dark"] .win-btn-subtle:hover {
   opacity: 0.85;
 }
 
-.quick-arrival-picker {
+.quick-time-picker {
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
@@ -861,12 +861,12 @@ html[data-theme="dark"] .win-btn-subtle:hover {
   background: var(--surface-card-subtle);
 }
 
-.quick-arrival-picker .win-field {
+.quick-time-picker .win-field {
   flex: 1 1 160px;
   max-width: 240px;
 }
 
-.quick-arrival-actions {
+.quick-time-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
