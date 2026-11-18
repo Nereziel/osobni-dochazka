@@ -78,13 +78,15 @@ describe('Manual open shift and stopwatch', () => {
     const model = useAttendance();
     await model.loadRecords(null);
     const date = todayKey();
+    // Midnight is always at or before the current local time; a fixed 06:30
+    // becomes a future arrival when CI executes overnight.
     await model.saveDay({
-      date, type: 'work', start: '06:30', end: '',
+      date, type: 'work', start: '00:00', end: '',
       manualBreak: false, breakMinutes: 30
     }, null, attendance.DEFAULT_SETTINGS, true);
     expect(model.todayRecord.value?.date).toBe(date);
     expect(model.activeShift.value).toMatchObject({
-      isActive: true, startTime: '06:30', type: 'work'
+      isActive: true, startTime: '00:00', type: 'work'
     });
   });
 
