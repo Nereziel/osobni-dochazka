@@ -99,7 +99,7 @@
         <section class="win-card quick-command-card">
           <div class="card-section-title">
             <h2>Rychlý zápis příchodu a odchodu</h2>
-            <p>Zaznamenej příchod a odchod aktuálním časem, nebo vyber vlastní čas příchodu.</p>
+            <p>Zaznamenej příchod a odchod aktuálním časem, nebo vyber vlastní čas.</p>
           </div>
 
           <div class="quick-primary-grid">
@@ -186,6 +186,30 @@
             <button
               class="win-btn-standard quick-tile-btn"
               type="button"
+              :aria-expanded="showDepartureTimePicker"
+              aria-controls="quick-departure-picker"
+              @click="openDepartureTimePicker"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                width="22"
+                height="22"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <path d="M12 6v6l4 2" />
+              </svg>
+              <div>
+                <strong>Odchod v</strong>
+                <small>Vybrat čas odchodu</small>
+              </div>
+            </button>
+
+            <button
+              class="win-btn-standard quick-tile-btn"
+              type="button"
               @click="$emit('quick-vacation')"
             >
               <svg
@@ -212,7 +236,7 @@
           <form
             v-if="showArrivalTimePicker"
             id="quick-arrival-picker"
-            class="quick-arrival-picker"
+            class="quick-time-picker"
             @submit.prevent="confirmArrivalTime"
           >
             <label class="win-field">
@@ -224,7 +248,7 @@
                 required
               >
             </label>
-            <div class="quick-arrival-actions">
+            <div class="quick-time-actions">
               <button
                 class="win-btn-accent"
                 type="submit"
@@ -236,6 +260,39 @@
                 class="win-btn-subtle"
                 type="button"
                 @click="showArrivalTimePicker = false"
+              >
+                Zrušit
+              </button>
+            </div>
+          </form>
+
+          <form
+            v-if="showDepartureTimePicker"
+            id="quick-departure-picker"
+            class="quick-time-picker"
+            @submit.prevent="confirmDepartureTime"
+          >
+            <label class="win-field">
+              <span>Čas odchodu</span>
+              <input
+                v-model="selectedDepartureTime"
+                type="time"
+                step="60"
+                required
+              >
+            </label>
+            <div class="quick-time-actions">
+              <button
+                class="win-btn-accent"
+                type="submit"
+                :disabled="timeToMinutes(selectedDepartureTime) === null"
+              >
+                Uložit odchod
+              </button>
+              <button
+                class="win-btn-subtle"
+                type="button"
+                @click="showDepartureTimePicker = false"
               >
                 Zrušit
               </button>
@@ -426,7 +483,7 @@ const emit = defineEmits([
   'quick-arrival',
   'quick-arrival-at',
   'quick-departure',
-  'quick-normal',
+  'quick-departure-at',
   'quick-vacation',
   'quick-preset',
   'go-to-timesheet'
@@ -435,9 +492,12 @@ const emit = defineEmits([
 const currentKey = todayKey();
 const showArrivalTimePicker = ref(false);
 const selectedArrivalTime = ref('');
+const showDepartureTimePicker = ref(false);
+const selectedDepartureTime = ref('');
 
 function openArrivalTimePicker() {
   selectedArrivalTime.value = props.todayRecord?.start || defaultHoursForDate(currentKey, props.settings).start;
+  showDepartureTimePicker.value = false;
   showArrivalTimePicker.value = true;
 }
 
@@ -445,6 +505,20 @@ function confirmArrivalTime() {
   if (timeToMinutes(selectedArrivalTime.value) === null) return;
   emit('quick-arrival-at', selectedArrivalTime.value);
   showArrivalTimePicker.value = false;
+}
+
+function openDepartureTimePicker() {
+  selectedDepartureTime.value = props.activeShift?.isActive
+    ? nowClock.value
+    : (props.todayRecord?.end || nowClock.value);
+  showArrivalTimePicker.value = false;
+  showDepartureTimePicker.value = true;
+}
+
+function confirmDepartureTime() {
+  if (timeToMinutes(selectedDepartureTime.value) === null) return;
+  emit('quick-departure-at', selectedDepartureTime.value);
+  showDepartureTimePicker.value = false;
 }
 const todayFormattedDate = computed(() => fmtDayFull(new Date()));
 
