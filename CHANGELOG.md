@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.3.0](https://github.com/Nereziel/osobni-dochazka/compare/v3.2.0...v3.3.0) (2026-11-18)
+
+
+### Features
+
+* add custom-time departure quick action ([#31](https://github.com/Nereziel/osobni-dochazka/issues/31)) ([b98136a](https://github.com/Nereziel/osobni-dochazka/commit/b98136a084272db690d5f2247bd018b99bbf2b7a))
+
 ## [3.2.0](https://github.com/Nereziel/osobni-dochazka/compare/v3.1.6...v3.2.0) (2026-11-18)
 
 
