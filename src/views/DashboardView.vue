@@ -99,7 +99,7 @@
         <section class="win-card quick-command-card">
           <div class="card-section-title">
             <h2>Rychlý zápis příchodu a odchodu</h2>
-            <p>Jedním kliknutím zaeviduj reálný čas nebo doplň standardní rozvrh.</p>
+            <p>Zaznamenej příchod a odchod aktuálním časem, nebo vyber vlastní čas příchodu.</p>
           </div>
 
           <div class="quick-primary-grid">
