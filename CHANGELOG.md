@@ -1,5 +1,27 @@
 # Changelog
 
+## [3.4.0](https://github.com/Nereziel/osobni-dochazka/compare/v3.3.0...v3.4.0) (2026-11-27)
+
+
+### Features
+
+* doporučený odchod podle měsíčního salda ([#36](https://github.com/Nereziel/osobni-dochazka/issues/36)) ([b6d14b9](https://github.com/Nereziel/osobni-dochazka/commit/b6d14b940f58d70ed85ca6139b97eaac58d65d85))
+* přehled a bezpečné řešení synchronizačních konfliktů ([#42](https://github.com/Nereziel/osobni-dochazka/issues/42)) ([cae1878](https://github.com/Nereziel/osobni-dochazka/commit/cae187838ee2365cd80d9ae8a02279386bced6cf))
+
+
+### Bug Fixes
+
+* atomické ukládání nastavení a kontrola účtu ([#45](https://github.com/Nereziel/osobni-dochazka/issues/45)) ([06725a7](https://github.com/Nereziel/osobni-dochazka/commit/06725a7723fe3939606642d369fd03500ed3d740))
+* jednotný zdroj verze aplikace pro automatická vydání ([#48](https://github.com/Nereziel/osobni-dochazka/issues/48)) ([74f974c](https://github.com/Nereziel/osobni-dochazka/commit/74f974c508dfb83052c02ae66310480ab399473e))
+* minimální oprávnění databázového API ([#39](https://github.com/Nereziel/osobni-dochazka/issues/39)) ([e0a466b](https://github.com/Nereziel/osobni-dochazka/commit/e0a466ba272a5bdfc0d876f87f12003b5e729d38))
+* náhled zálohy a obnova pouze chybějících dnů ([#43](https://github.com/Nereziel/osobni-dochazka/issues/43)) ([7876cbc](https://github.com/Nereziel/osobni-dochazka/commit/7876cbc082d0e4345f285627cdd729278b9a6b72))
+* ochrana neodeslané docházky při vypršení relace ([#38](https://github.com/Nereziel/osobni-dochazka/issues/38)) ([4857956](https://github.com/Nereziel/osobni-dochazka/commit/4857956666f3e7726dbfebdfd1fc61e5a9194283))
+* ochrana souběžné synchronizace ve více záložkách ([#46](https://github.com/Nereziel/osobni-dochazka/issues/46)) ([02af821](https://github.com/Nereziel/osobni-dochazka/commit/02af8216bb032075e7c982bb3e0a42f8734951d9))
+* sjednocení týmového přehledu a výpočtů docházky ([#47](https://github.com/Nereziel/osobni-dochazka/issues/47)) ([f77ba3c](https://github.com/Nereziel/osobni-dochazka/commit/f77ba3c23ed7fad2eacab3f1b80b2423f6588566))
+* uzavřené saldo, plánované dny a dovolená ([#41](https://github.com/Nereziel/osobni-dochazka/issues/41)) ([85571ae](https://github.com/Nereziel/osobni-dochazka/commit/85571ae3b7931c77d1bc07e3febaef67c8fd1b9a))
+* validace a limity Cloudflare API ([#40](https://github.com/Nereziel/osobni-dochazka/issues/40)) ([ac8a190](https://github.com/Nereziel/osobni-dochazka/commit/ac8a1902b46a881082fee5f2f178ca761cbe00ee))
+* zachování odmítnutých změn a pravdivý stav synchronizace ([#44](https://github.com/Nereziel/osobni-dochazka/issues/44)) ([aaa31b3](https://github.com/Nereziel/osobni-dochazka/commit/aaa31b3069173a32da8bcc49d609bb36b2428135))
+
 ## [3.3.0](https://github.com/Nereziel/osobni-dochazka/compare/v3.2.0...v3.3.0) (2026-11-18)
 
 
