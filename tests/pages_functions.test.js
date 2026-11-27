@@ -161,6 +161,30 @@ describe('Cloudflare Pages session gateway', () => {
     expect(res.headers.get('Set-Cookie')).toBeNull();
   });
 
+  it('does not send settings for a different account using a shared cookie', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, user_key: 'user:other' })));
+    const res = await onRequest(makeContext(['rest', 'v1', 'rpc', 'update_own_settings'], {
+      cookie: '__Host-dochazka_session=token',
+      body: { p_settings: { user_key: 'user:jana', work_start: '07:00' } }
+    }));
+    expect(res.status).toBe(409);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch.mock.calls[0][0]).toContain('verify_attendance_session');
+    expect(res.headers.get('Set-Cookie')).toBeNull();
+  });
+
+  it('forwards settings only after verifying the same captured credential', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ success: true, user_key: 'user:jana' })));
+    const res = await onRequest(makeContext(['rest', 'v1', 'rpc', 'update_own_settings'], {
+      cookie: '__Host-dochazka_session=token',
+      body: { p_settings: { user_key: 'user:jana', work_start: '07:00' } }
+    }));
+    expect(res.status).toBe(200);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(globalThis.fetch.mock.calls[1][0]).toContain('update_own_settings');
+    expect(globalThis.fetch.mock.calls.map(([, init]) => init.headers.get('X-Attendance-Session'))).toEqual(['token', 'token']);
+  });
+
   it('clears the browser cookie even when upstream logout is unavailable', async () => {
     globalThis.fetch = vi.fn(async () => {
       throw new TypeError('network unavailable');

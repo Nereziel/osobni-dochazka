@@ -1,9 +1,8 @@
 import { ref } from 'vue';
 import { DEFAULT_SETTINGS, normalizeSettings } from '../utils/attendance.js';
 import { cloneDeep } from '../utils/validation.js';
-import { getUserSettings, putUserSettings, enqueueSyncAction } from '../services/indexedDb.js';
+import { getUserSettings, putUserSettings, putUserSettingsWithOutbox } from '../services/indexedDb.js';
 import { profileRowFromSettings } from '../services/sync.js';
-import { supabaseRequest } from '../services/supabase.js';
 
 const settings = ref(cloneDeep(DEFAULT_SETTINGS));
 
@@ -38,25 +37,20 @@ export function useSettings() {
 
   async function saveSettings(userId, newSettings, currentUser = null, skipCloud = false) {
     const normalized = normalizeSettings(newSettings);
-    settings.value = normalized;
-    applyTheme();
-
     if (userId) {
-      await putUserSettings(userId, normalized);
-
       if (!skipCloud && currentUser?.userKey) {
+        if (currentUser.userKey !== userId) throw new Error('Účet se změnil.');
         const row = profileRowFromSettings(normalized, currentUser);
-        try {
-          await supabaseRequest('/rest/v1/rpc/update_own_settings', {
-            method: 'POST',
-            body: JSON.stringify({ p_settings: row })
-          }, currentUser);
-        } catch (err) {
-          console.warn('Uložení nastavení na server selhalo, zařazeno do outboxu:', err);
-          await enqueueSyncAction(userId, 'attendance_profiles', 'UPDATE', row);
-        }
+        // The schedule editor must not overwrite a separately edited name.
+        delete row.display_name;
+        delete row.username;
+        await putUserSettingsWithOutbox(userId, normalized, row);
+      } else {
+        await putUserSettings(userId, normalized);
       }
     }
+    settings.value = normalized;
+    applyTheme();
 
     return settings.value;
   }

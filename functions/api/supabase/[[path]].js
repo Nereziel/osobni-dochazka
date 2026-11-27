@@ -250,6 +250,25 @@ export async function onRequest(context) {
 
   let upstreamResponse;
   try {
+    // Settings RPC historically uses only the session identity. Verify a
+    // supplied account against the same captured credential before forwarding.
+    // The same token is used for both calls, even if another tab logs in.
+    if (route.name === 'update_own_settings' && bodyText) {
+      const expected = JSON.parse(bodyText)?.p_settings?.user_key;
+      if (expected !== undefined) {
+        if (typeof expected !== 'string' || !/^user:[a-z0-9._-]+$/i.test(expected)) {
+          return jsonResponse(400, { error: 'invalid_account', message: 'Neplatný účet.' });
+        }
+        const verification = await fetch(`${supabaseUrl}/rest/v1/rpc/verify_attendance_session`, {
+          method: 'POST', headers: upstreamHeaders, body: '{}', redirect: 'manual'
+        });
+        if (!verification.ok) return jsonResponse(502, { error: 'verification_unavailable', message: 'Ověření účtu není dostupné.' });
+        const verified = await verification.json();
+        if (verified?.success !== true || verified.user_key !== expected) {
+          return jsonResponse(409, { error: 'account_changed', message: 'Přihlášený účet se změnil. Změna nebyla odeslána.' });
+        }
+      }
+    }
     upstreamResponse = await fetch(upstreamUrl, {
       method: request.method,
       headers: upstreamHeaders,

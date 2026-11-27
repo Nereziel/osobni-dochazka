@@ -196,14 +196,17 @@ export function useAuth() {
     const cleanName = (newDisplayName || '').trim();
     if (!cleanName) throw new Error('Celé jméno nesmí být prázdné.');
 
-    if (currentUser.value?.userKey) {
-      await supabaseRequest('/rest/v1/rpc/update_own_settings', {
+    const user = currentUser.value;
+    if (user?.userKey) {
+      const result = await supabaseRequest('/rest/v1/rpc/update_own_settings', {
         method: 'POST',
         body: JSON.stringify({
-          p_settings: { display_name: cleanName }
+          p_settings: { user_key: user.userKey, display_name: cleanName }
         })
       });
+      if (result?.success !== true || result.user_key !== user.userKey) throw new Error('Cloud nepotvrdil změnu jména.');
     }
+    if (currentUser.value !== user) throw new Error('Účet se změnil.');
 
     currentUser.value = {
       ...currentUser.value,
