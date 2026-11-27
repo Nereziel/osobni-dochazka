@@ -416,7 +416,10 @@ onUnmounted(() => {
 });
 
 async function applyServerProfile(serverProfile) {
-  if (!serverProfile || !currentUser.value) return;
+  const user = currentUser.value;
+  if (!serverProfile || !user || serverProfile.user_key !== user.userKey) return;
+  const pending = await getPendingSyncActions(user.userKey);
+  if (currentUser.value !== user || pending.some(item => item.entity === 'attendance_profiles')) return;
   if (serverProfile.display_name && serverProfile.display_name !== currentUser.value.displayName) {
     currentUser.value.displayName = serverProfile.display_name;
   }
@@ -497,7 +500,8 @@ async function triggerSync(pushLocalDays = true, options = {}) {
       await applyServerProfile(res.serverProfile);
     }
     if (res?.status === 'conflict') showToast('Některé změny mají konflikt. Zkontroluj Nastavení → Cloud Databáze.', '⚠️');
-    else if (res?.status !== 'syncing') showToast('Data byla synchronizována', '✓');
+    else if (res?.status === 'pending' || pendingCount.value > 0) showToast('Některé změny stále čekají na odeslání.', '⚠️');
+    else if (res?.status === 'online') showToast('Data byla synchronizována', '✓');
   } catch (err) {
     showToast(err.message || 'Synchronizace selhala', '⚠️');
   }

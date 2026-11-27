@@ -313,14 +313,15 @@ export async function deleteUserSettings(userId) {
 // SYNC OUTBOX QUEUE (sync_queue)
 // ----------------------------------------------------------------------------
 
-export async function enqueueSyncAction(userId, entity, action, payload) {
+export async function enqueueSyncAction(userId, entity, action, payload, { conflict = false, serverUpdatedAt = null } = {}) {
   const item = {
     userId,
     entity,
     action,
     payload,
     createdAt: new Date().toISOString(),
-    retries: 0
+    retries: 0,
+    ...(conflict ? { conflict: true, serverUpdatedAt } : {})
   };
   return idbAction('sync_queue', 'readwrite', (store) => store.add(item));
 }
@@ -337,7 +338,14 @@ export async function removeSyncAction(id) {
 }
 
 export async function updateSyncAction(item) {
-  return idbAction('sync_queue', 'readwrite', (store) => store.put(item));
+  // An in-flight retry must not resurrect a queue item already acknowledged
+  // or explicitly discarded by another operation.
+  return idbAction('sync_queue', 'readwrite', (store) => {
+    const request = store.get(item.id);
+    request.onsuccess = () => {
+      if (request.result && request.result.userId === item.userId) store.put(item);
+    };
+  });
 }
 
 export async function clearUserSyncQueue(userId) {

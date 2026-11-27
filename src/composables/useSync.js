@@ -55,7 +55,7 @@ export function setBootSyncTimestamp(userKey, ts = Date.now()) {
   }
 }
 
-const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error'
+const syncState = ref('local'); // 'local' | 'online' | 'syncing' | 'error' | 'conflict' | 'pending'
 const syncError = ref(null);
 const pendingCount = ref(0);
 
@@ -417,9 +417,10 @@ export function useSync() {
       ) || getActiveSettings();
       const result = await performFullSync(currentUser, resolvedSettings, { ...syncOptions, signal: controller.signal });
       if (generation !== syncGeneration) return { status: 'cancelled' };
-      syncState.value = result?.status === 'conflict' ? 'conflict' : 'online';
-      if (result?.status === 'conflict') syncError.value = 'Lokální změna koliduje s novější verzí v cloudu.';
       await refreshPendingCount(currentUser.userKey);
+      if (generation !== syncGeneration) return { status: 'cancelled' };
+      syncState.value = result?.status === 'conflict' ? 'conflict' : result?.status === 'pending' || pendingCount.value > 0 ? 'pending' : 'online';
+      if (result?.status === 'conflict') syncError.value = 'Lokální změna koliduje s novější verzí v cloudu.';
       return generation === syncGeneration ? result : { status: 'cancelled' };
     } catch (err) {
       if (generation !== syncGeneration) return { status: 'cancelled' };

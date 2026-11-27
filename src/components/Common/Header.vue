@@ -99,7 +99,7 @@ const statusClass = computed(() => {
   if (!props.isOnline) return 'error';
   if (props.syncState === 'syncing') return 'syncing';
   if (props.syncState === 'error' || props.syncState === 'conflict') return 'error';
-  if (props.syncState === 'online') return 'online';
+  if (props.syncState === 'online' && props.pendingCount === 0) return 'online';
   return 'local';
 });
 
@@ -109,7 +109,7 @@ const statusLabel = computed(() => {
   }
   if (props.syncState === 'conflict') return 'Konflikt';
   if (props.syncState === 'error') return 'Chyba';
-  if (props.pendingCount > 0) return `Čeká (${props.pendingCount})`;
+  if (props.pendingCount > 0 || props.syncState === 'pending') return `Čeká (${props.pendingCount})`;
   if (props.syncState === 'online' || props.syncState === 'syncing') return 'Cloud';
   return 'Lokální';
 });
