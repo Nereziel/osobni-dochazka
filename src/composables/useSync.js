@@ -62,6 +62,8 @@ const pendingCount = ref(0);
 // Řízení synchronizace a 10s foreground pollingu + 5min ověření session
 let syncInProgress = false;
 let syncGeneration = 0;
+let syncController = null;
+let syncIdle = Promise.resolve();
 let pendingFollowupOptions = null;
 let pollingTimer = null;
 let sessionVerifyTimer = null;
@@ -101,7 +103,9 @@ export function useSync() {
       pendingCount.value = 0;
       return 0;
     }
+    const generation = syncGeneration;
     const actions = await getPendingSyncActions(userId);
+    if (generation !== syncGeneration) return 0;
     pendingCount.value = actions?.length || 0;
     return pendingCount.value;
   }
@@ -350,6 +354,7 @@ export function useSync() {
    */
   function stopForegroundSync() {
     syncGeneration++;
+    syncController?.abort();
     stopPollingTimer();
     syncState.value = 'local';
     syncError.value = null;
@@ -370,6 +375,7 @@ export function useSync() {
       window.removeEventListener('offline', onOffline);
       listenersAttached = false;
     }
+    return syncIdle;
   }
 
   /**
@@ -395,23 +401,26 @@ export function useSync() {
     }
 
     const generation = syncGeneration;
+    const controller = new AbortController();
+    syncController = controller;
+    let resolveIdle;
+    syncIdle = new Promise(resolve => { resolveIdle = resolve; });
     syncInProgress = true;
     syncState.value = 'syncing';
     syncError.value = null;
 
-    const resolvedSettings = (
+    try {
+      const resolvedSettings = (
       typeof currentSettings === 'function'
         ? currentSettings()
         : (currentSettings && typeof currentSettings === 'object' && 'value' in currentSettings ? currentSettings.value : currentSettings)
-    ) || getActiveSettings();
-
-    try {
-      const result = await performFullSync(currentUser, resolvedSettings, syncOptions);
+      ) || getActiveSettings();
+      const result = await performFullSync(currentUser, resolvedSettings, { ...syncOptions, signal: controller.signal });
       if (generation !== syncGeneration) return { status: 'cancelled' };
       syncState.value = result?.status === 'conflict' ? 'conflict' : 'online';
       if (result?.status === 'conflict') syncError.value = 'Lokální změna koliduje s novější verzí v cloudu.';
       await refreshPendingCount(currentUser.userKey);
-      return result;
+      return generation === syncGeneration ? result : { status: 'cancelled' };
     } catch (err) {
       if (generation !== syncGeneration) return { status: 'cancelled' };
       console.error('Chyba synchronizace:', err);
@@ -421,6 +430,8 @@ export function useSync() {
       throw err;
     } finally {
       syncInProgress = false;
+      syncController = null;
+      resolveIdle();
 
       if (generation === syncGeneration && pendingFollowupOptions) {
         const nextOptions = pendingFollowupOptions;

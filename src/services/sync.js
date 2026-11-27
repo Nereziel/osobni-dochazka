@@ -165,7 +165,8 @@ export function coalesceOutboxActions(actions) {
  * Zpracování fronty neodeslaných offline změn (Outbox queue)
  * Používá atomickou server-side LWW RPC funkci a tombstones.
  */
-export async function drainOutboxQueue(currentUser) {
+export async function drainOutboxQueue(currentUser, signal) {
+  signal?.throwIfAborted();
   if (!currentUser?.userKey) return 0;
   const rawActions = await getPendingSyncActions(currentUser.userKey);
   if (!rawActions || rawActions.length === 0) return 0;
@@ -174,6 +175,7 @@ export async function drainOutboxQueue(currentUser) {
   let successCount = 0;
 
   for (const item of actions) {
+    signal?.throwIfAborted();
     // An explicitly conflicted offline edit remains available for manual resolution.
     if (item.conflict) continue;
     try {
@@ -203,7 +205,8 @@ export async function drainOutboxQueue(currentUser) {
 
         const res = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
           method: 'POST',
-          body: JSON.stringify({ p_day: rpcPayload })
+          body: JSON.stringify({ p_day: rpcPayload }),
+          ...(signal ? { signal } : {})
         }, currentUser);
 
         if (res?.applied === false && res?.reason === 'server_newer') {
@@ -220,11 +223,13 @@ export async function drainOutboxQueue(currentUser) {
         if (item.action === 'UPDATE') {
           await supabaseRequest('/rest/v1/rpc/update_own_settings', {
             method: 'POST',
-            body: JSON.stringify({ p_settings: item.payload })
+            body: JSON.stringify({ p_settings: item.payload }),
+            ...(signal ? { signal } : {})
           }, currentUser);
         }
       }
 
+      signal?.throwIfAborted();
       await removeSyncAction(item.id);
       if (Array.isArray(item.obsoleteIds)) {
         for (const obsId of item.obsoleteIds) {
@@ -238,6 +243,7 @@ export async function drainOutboxQueue(currentUser) {
 
       successCount++;
     } catch (err) {
+      signal?.throwIfAborted();
       console.warn(`Zpracování sync položky ${item.id} selhalo:`, err);
       item.retries = (item.retries || 0) + 1;
       await updateSyncAction(item);
@@ -354,7 +360,10 @@ export async function performFullSync(
     return { status: 'local' };
   }
 
-  await drainOutboxQueue(currentUser);
+  const signal = options.signal;
+  signal?.throwIfAborted();
+  await drainOutboxQueue(currentUser, signal);
+  signal?.throwIfAborted();
 
   let serverProfile = null;
   const shouldFetchProfile = options.fetchProfile !== false && !options.incremental;
@@ -362,11 +371,13 @@ export async function performFullSync(
     try {
       const profRows = await supabaseRequest(
         `/rest/v1/attendance_profiles?user_key=eq.${encodeURIComponent(currentUser.userKey)}&select=*`,
-        {},
+        signal ? { signal } : {},
         currentUser
       );
+      signal?.throwIfAborted();
       if (profRows?.[0]) serverProfile = profRows[0];
     } catch (err) {
+      signal?.throwIfAborted();
       console.warn('Nelze načíst profil ze serveru:', err);
     }
   }
@@ -381,7 +392,9 @@ export async function performFullSync(
     daysUrl += `&updated_at=gte.${encodeURIComponent(overlapIso)}`;
   }
 
-  const remoteRows = await supabaseRequest(daysUrl, {}, currentUser);
+  signal?.throwIfAborted();
+  const remoteRows = await supabaseRequest(daysUrl, signal ? { signal } : {}, currentUser);
+  signal?.throwIfAborted();
 
   if (isIncremental && (!remoteRows || remoteRows.length === 0) && !options.pushLocalDays) {
     const localList = await getUserDays(currentUser.userKey);
@@ -412,6 +425,7 @@ export async function performFullSync(
   const mergedMap = new Map();
 
   for (const [date, localDay] of localMap.entries()) {
+    signal?.throwIfAborted();
     if (pendingDates.has(date)) {
       mergedMap.set(date, localDay);
       continue;
@@ -450,6 +464,7 @@ export async function performFullSync(
   }
 
   for (const [date, remDay] of remoteMap.entries()) {
+    signal?.throwIfAborted();
     if (pendingDates.has(date)) continue;
     if (mergedMap.has(date)) continue;
 
@@ -468,12 +483,15 @@ export async function performFullSync(
 
   if (toUpload.length > 0) {
     for (const row of toUpload) {
+      signal?.throwIfAborted();
       try {
         const upRes = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
           method: 'POST',
-          body: JSON.stringify({ p_day: row })
+          body: JSON.stringify({ p_day: row }),
+          ...(signal ? { signal } : {})
         }, currentUser);
 
+        signal?.throwIfAborted();
         if (upRes?.server_updated_at) {
           serverReturnedTimestamps.push(upRes.server_updated_at);
           if (upRes.applied && mergedMap.has(row.date)) {
@@ -486,12 +504,14 @@ export async function performFullSync(
           }
         }
       } catch (err) {
+        signal?.throwIfAborted();
         console.warn(`LWW upload pro den ${row.date} selhal, řadím do outboxu:`, err);
         await enqueueSyncAction(currentUser.userKey, 'attendance_days', 'UPSERT', row);
       }
     }
   }
 
+  signal?.throwIfAborted();
   const nextCursor = computeNextSyncCursor(remoteRows, lastPull, serverReturnedTimestamps);
   if (nextCursor) {
     setLastSuccessfulPullAt(currentUser.userKey, nextCursor);

@@ -435,13 +435,14 @@ async function performLocalLogout(options = {}) {
     setBootSyncTimestamp(priorKey, 0);
     resetUserSyncCursor(priorKey);
   }
-  stopForegroundSync();
+  const syncStopped = stopForegroundSync();
+  const logoutPromise = logout({ ...options, beforeCleanup: syncStopped });
   records.value = new Map();
   currentView.value = 'dashboard';
   // Clear the visible account immediately; restore anonymous data only after cleanup.
-  await loadSettings(null);
   try {
-    await logout(options);
+    await loadSettings(null);
+    await logoutPromise;
   } finally {
     await Promise.all([loadSettings('user:local'), loadRecords('user:local')]);
     await refreshPendingCount('user:local');

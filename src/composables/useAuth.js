@@ -213,13 +213,14 @@ export function useAuth() {
     return cleanName;
   }
 
-  async function logout({ preservePending = false, revoke = true } = {}) {
+  async function logout({ preservePending = false, revoke = true, beforeCleanup = null } = {}) {
     if (logoutTask) return logoutTask;
     const priorUser = currentUser.value;
     saveUserSession(null);
 
     if (!priorUser?.userKey) return;
     logoutTask = (async () => {
+      if (beforeCleanup) await beforeCleanup;
       // Finish revocation before allowing a new login to replace the browser cookie.
       if (revoke) {
         try {

@@ -75,6 +75,24 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     globalThis.window = origWin;
   });
 
+  it('cancels a running sync and suppresses old account results after stop', async () => {
+    let resolve;
+    const syncSpy = vi.spyOn(syncService, 'performFullSync').mockImplementationOnce(
+      () => new Promise(r => { resolve = r; })
+    );
+    const onUpdated = vi.fn();
+    const model = useSync();
+    model.startForegroundSync(currentUser, currentSettings, onUpdated);
+    const inFlight = model.triggerPeriodicSync();
+    const signal = syncSpy.mock.calls[0][2].signal;
+    const stopped = model.stopForegroundSync();
+    expect(signal.aborted).toBe(true);
+    resolve({ status: 'online', recordsMap: new Map([['private', {}]]) });
+    await Promise.all([inFlight, stopped]);
+    expect(onUpdated).not.toHaveBeenCalled();
+    expect(model.syncState.value).toBe('local');
+  });
+
   it('runs periodic sync every 10 seconds when visible and online', async () => {
     const syncSpy = vi.spyOn(syncService, 'performFullSync').mockResolvedValue({
       status: 'online',
@@ -92,7 +110,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
       pushLocalDays: false,
       incremental: true,
-      fetchProfile: false
+      fetchProfile: false,
+      signal: expect.any(AbortSignal)
     });
 
     // Po dalších 10 sekundách proběhne 2. periodický sync
@@ -159,7 +178,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
       pushLocalDays: false,
       incremental: true,
-      fetchProfile: false
+      fetchProfile: false,
+      signal: expect.any(AbortSignal)
     });
 
     stopForegroundSync();
@@ -183,7 +203,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
       pushLocalDays: false,
       incremental: true,
-      fetchProfile: false
+      fetchProfile: false,
+      signal: expect.any(AbortSignal)
     });
 
     await triggerPeriodicSync();
@@ -197,7 +218,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
       pushLocalDays: false,
       incremental: true,
-      fetchProfile: false
+      fetchProfile: false,
+      signal: expect.any(AbortSignal)
     });
 
     let resolveSecondSync;
@@ -221,7 +243,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenLastCalledWith(currentUser, currentSettings, {
       pushLocalDays: true,
       incremental: false,
-      fetchProfile: true
+      fetchProfile: true,
+      signal: expect.any(AbortSignal)
     });
 
     stopForegroundSync();
@@ -240,7 +263,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
       pushLocalDays: true,
       incremental: false,
-      fetchProfile: true
+      fetchProfile: true,
+      signal: expect.any(AbortSignal)
     });
 
     stopForegroundSync();
@@ -399,7 +423,8 @@ describe('Foreground 10s periodic sync, visibility and serialization', () => {
     expect(syncSpy).toHaveBeenCalledWith(currentUser, currentSettings, {
       pushLocalDays: false,
       incremental: false,
-      fetchProfile: true
+      fetchProfile: true,
+      signal: expect.any(AbortSignal)
     });
     expect(onSyncCompletedFn).toHaveBeenCalledWith(pulledMap, expect.any(Object));
     expect(res.status).toBe('pulled');
