@@ -15,8 +15,10 @@ describe('Quick departure at a selected time', () => {
     expect(dashboard).toContain('v-if="showDepartureTimePicker"');
     expect(dashboard).toContain('id="quick-departure-picker"');
     expect(dashboard).toContain('v-model="selectedDepartureTime"');
+    expect(dashboard).toContain('<AttendanceTimePicker');
+    expect(dashboard).toContain('label="Čas odchodu"');
     expect(dashboard).toContain('@submit.prevent="confirmDepartureTime"');
-    expect(dashboard).toContain("if (timeToMinutes(selectedDepartureTime.value) === null) return;");
+    expect(dashboard).toContain("if (!isAttendanceTimeSlot(selectedDepartureTime.value)) return;");
     expect(dashboard).toContain("emit('quick-departure-at', selectedDepartureTime.value)");
     expect(dashboard).toContain('showDepartureTimePicker.value = false;');
     expect(dashboard).toContain('showArrivalTimePicker.value = false;');

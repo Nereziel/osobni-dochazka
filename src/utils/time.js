@@ -60,6 +60,14 @@ export function roundAttendanceTimes(day, previous = {}) {
   return { ...day, start, end };
 }
 
+export const ATTENDANCE_HOURS = Object.freeze(Array.from({ length: 24 }, (_, i) => pad(i)));
+export const ATTENDANCE_MINUTES = Object.freeze(Array.from({ length: 12 }, (_, i) => pad(i * 5)));
+
+export function isAttendanceTimeSlot(time) {
+  const minutes = timeToMinutes(time);
+  return minutes !== null && minutes % 5 === 0;
+}
+
 export function durationMinutes(start, end) {
   const s = timeToMinutes(start);
   const e = timeToMinutes(end);
