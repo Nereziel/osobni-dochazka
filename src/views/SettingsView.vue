@@ -474,7 +474,7 @@
             :key="currentUser.userKey"
             :user-id="currentUser.userKey"
             :pending-count="pendingCount"
-            @resolved="$emit('conflict-resolved')"
+            :resolve-conflict="resolveConflict"
             @toast="(...args) => $emit('toast', ...args)"
           />
 
@@ -638,6 +638,10 @@ const props = defineProps({
   pendingCount: {
     type: Number,
     default: 0
+  },
+  resolveConflict: {
+    type: Function,
+    required: true
   }
 });
 
@@ -654,7 +658,6 @@ const emit = defineEmits([
   'export-backup',
   'import-backup',
   'reset-local-data',
-  'conflict-resolved',
   'open-pwa-help',
   'toast'
 ]);

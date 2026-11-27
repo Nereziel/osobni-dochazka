@@ -138,7 +138,7 @@
         <small class="muted">dovolené, lékař, nemoc</small>
       </div>
       <div class="win-card ts-kpi-tile">
-        <span class="ts-kpi-label">Dovolená</span>
+        <span class="ts-kpi-label">Dovolená (vč. plánované)</span>
         <strong class="ts-kpi-val">{{ formatVacationDays(yearVacation) }}</strong>
         <small class="muted">{{ vacationSubText }}</small>
       </div>
@@ -223,7 +223,7 @@ import { holidayName } from '../utils/holidays.js';
 import { formatDuration } from '../utils/time.js';
 import {
   dayMetrics,
-  allowsWork,
+  isIncompleteWorkday,
   TYPE_LABELS,
   formatVacationDays
 } from '../utils/attendance.js';
@@ -279,16 +279,9 @@ const employeeDisplayName = computed(() => {
   return props.currentUser?.displayName || props.currentUser?.username || 'Lokální uživatel';
 });
 
-const hasOngoingShiftInMonth = computed(() => {
-  return typeof props.stats.completedBalance === 'number' && props.stats.completedBalance !== props.stats.balance;
-});
+const hasOngoingShiftInMonth = computed(() => Boolean(props.stats.incomplete || props.stats.planned));
 
-const effectiveBalance = computed(() => {
-  if (hasOngoingShiftInMonth.value) {
-    return props.stats.completedBalance;
-  }
-  return props.stats.balance;
-});
+const effectiveBalance = computed(() => props.stats.completedBalance ?? props.stats.balance);
 
 const balanceClass = computed(() => {
   if (effectiveBalance.value > 0) return 'positive';
@@ -298,11 +291,11 @@ const balanceClass = computed(() => {
 
 const balanceStatusText = computed(() => {
   if (hasOngoingShiftInMonth.value) {
-    if (effectiveBalance.value > 0) return `nadpracováno (můžeš jít o ${formatDuration(effectiveBalance.value)} dříve)`;
+    if (effectiveBalance.value > 0) return 'nadpracováno (uzavřené dny)';
     if (effectiveBalance.value < 0) return 'nedoplatek (uzavřené dny)';
-    return 'vyrovnáno (bez probíhající směny)';
+    return 'vyrovnáno (uzavřené dny)';
   }
-  if (effectiveBalance.value > 0) return `nadpracováno (lze odejít o ${formatDuration(effectiveBalance.value)} dříve)`;
+  if (effectiveBalance.value > 0) return 'nadpracováno';
   if (effectiveBalance.value < 0) return 'nedoplatek';
   return 'vyrovnáno';
 });
@@ -330,11 +323,14 @@ const tableRows = computed(() => {
   for (let d = 1; d <= daysInMonth; d++) {
     const curDate = new Date(year, month, d, 12, 0, 0, 0);
     const dateKey = localDateKey(curDate);
-    const rec = props.records.get(dateKey);
+    const candidate = props.records.get(dateKey);
+    const rec = candidate?.deletedAt ? null : candidate;
     const m = rec ? dayMetrics(rec, props.settings) : null;
     const h = holidayName(dateKey);
     const isWeekend = isWeekendDate(curDate);
-    const isOngoingToday = dateKey === today && Boolean(rec?.start && !rec?.end) && allowsWork(rec?.type);
+    const isPlanned = Boolean(rec && dateKey > today);
+    const isIncomplete = Boolean(rec && !isPlanned && isIncompleteWorkday(rec));
+    const isActual = Boolean(rec && !isPlanned && !isIncomplete);
 
     let typeLabel = '—';
     if (rec) {
@@ -345,11 +341,11 @@ const tableRows = computed(() => {
       typeLabel = 'Víkend';
     }
 
-    const workedText = rec ? (isOngoingToday ? 'Probíhá…' : formatDuration(m.worked)) : '—';
-    const creditedText = rec && m.credited > 0 ? formatDuration(m.credited) : '—';
-    const balanceText = rec ? (isOngoingToday ? 'Probíhá' : formatDuration(m.balance, true)) : '—';
-    const balanceClassVal = rec && !isOngoingToday ? (m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : '') : 'muted';
-    const breakLabel = rec && m.breakMinutes > 0 ? `${m.breakMinutes}m` : '—';
+    const workedText = isActual ? formatDuration(m.worked) : '—';
+    const creditedText = isActual && m.credited > 0 ? formatDuration(m.credited) : '—';
+    const balanceText = isPlanned ? 'Plán' : isIncomplete ? 'Neuzavřeno' : isActual ? formatDuration(m.balance, true) : '—';
+    const balanceClassVal = isActual ? (m.balance > 0 ? 'positive' : m.balance < 0 ? 'negative' : '') : 'muted';
+    const breakLabel = isActual && m.breakMinutes > 0 ? `${m.breakMinutes}m` : '—';
 
     rows.push({
       date: dateKey,
@@ -359,7 +355,7 @@ const tableRows = computed(() => {
       isWeekend,
       typeLabel,
       start: rec?.start || '—',
-      end: isOngoingToday ? 'probíhá' : (rec?.end || '—'),
+      end: rec?.end || '—',
       breakLabel,
       workedText,
       creditedText,

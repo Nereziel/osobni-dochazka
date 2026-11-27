@@ -735,12 +735,7 @@ const weekDays = computed(() => {
 const currentMonthTitle = computed(() => fmtMonthTitle(new Date()));
 const monthKpi = computed(() => props.monthStats);
 
-const displayedMonthBalance = computed(() => {
-  if (isShiftRunningToday.value) {
-    return priorMonthBalance.value;
-  }
-  return monthKpi.value.balance;
-});
+const displayedMonthBalance = computed(() => monthKpi.value.completedBalance ?? monthKpi.value.balance);
 
 const monthBalanceClass = computed(() => {
   if (displayedMonthBalance.value > 0) return 'positive';
@@ -750,10 +745,10 @@ const monthBalanceClass = computed(() => {
 
 const monthBalanceSub = computed(() => {
   const b = displayedMonthBalance.value;
-  if (isShiftRunningToday.value) {
+  if (monthKpi.value.incomplete || monthKpi.value.planned) {
     if (b > 0) return 'nadpracováno v uzavřených dnech';
     if (b < 0) return 'nedoplatek z uzavřených dnů';
-    return 'vyrovnané (bez dnešní probíhající směny)';
+    return 'vyrovnané (jen uzavřené dny)';
   }
   if (b > 0) return 'kladné saldo (nadpracováno)';
   if (b < 0) return 'nedoplatek fondu';

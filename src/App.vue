@@ -112,7 +112,7 @@
           @export-backup="handleExportBackup"
           @import-backup="handleImportBackup"
           @reset-local-data="handleResetLocalData"
-          @conflict-resolved="handleConflictResolved"
+          :resolve-conflict="handleResolveConflict"
           @open-pwa-help="openPwaHelp"
           @toast="showToast"
         />
@@ -219,6 +219,7 @@ import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncAc
 import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow, resetUserSyncCursor } from './services/sync.js';
+import { adoptReviewedCloudVersion } from './services/conflictReview.js';
 import { formatClock, timeToMinutes } from './utils/time.js';
 import { dayMetrics, applyQuickArrival, applyQuickDeparture, closedBalanceBeforeDate } from './utils/attendance.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
@@ -269,6 +270,7 @@ const {
 const currentView = ref('dashboard');
 const monthPickerTarget = ref('calendar');
 const pendingInviteCode = ref('');
+let resolvingConflict = false;
 
 // Modal refs
 const toastRef = ref(null);
@@ -320,8 +322,8 @@ const activeShiftMetrics = computed(() => activeShiftRecord.value
   : { target: 0, credited: 0 });
 const calendarStats = computed(() => calcMonthStats(calendarMonth.value, settings.value));
 const timesheetStats = computed(() => calcMonthStats(timesheetMonth.value, settings.value));
-const yearVacationCount = computed(() => calcYearVacation(timesheetMonth.value.getFullYear()));
-const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value));
+const yearVacationCount = computed(() => calcYearVacation(timesheetMonth.value.getFullYear(), settings.value));
+const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value, settings.value));
 
 // Ochrana proti držení F5 / spamování reloadu a nadměrnému čerpání limitu Supabase
 const RELOAD_KEY_COOLDOWN_MS = 4000;
@@ -469,6 +471,7 @@ function startSyncService() {
 }
 
 async function triggerSync(pushLocalDays = true, options = {}) {
+  if (resolvingConflict) return;
   if (!currentUser.value) {
     openLoginModal();
     return;
@@ -873,13 +876,26 @@ async function handleImportBackup(file) {
   }
 }
 
-async function handleConflictResolved() {
-  const key = currentUser.value?.userKey;
-  if (!key) return;
-  resetUserSyncCursor(key);
-  await loadRecords(key);
-  await refreshPendingCount(key);
-  if (currentUser.value?.userKey === key) await triggerSync(false, { isBoot: true });
+async function handleResolveConflict(review) {
+  const user = currentUser.value;
+  const key = user?.userKey;
+  if (!key || key !== review?.userId || resolvingConflict) throw new Error('Účet se změnil nebo již probíhá řešení konfliktu.');
+  const isCurrent = () => currentUser.value === user;
+  resolvingConflict = true;
+  try {
+    await stopForegroundSync();
+    if (!isCurrent()) throw new Error('Účet se změnil.');
+    await adoptReviewedCloudVersion(review, key, isCurrent);
+    if (isCurrent()) {
+      resetUserSyncCursor(key);
+      await loadRecords(key);
+      await refreshPendingCount(key);
+    }
+  } finally {
+    resolvingConflict = false;
+    if (isCurrent()) startSyncService();
+  }
+  if (isCurrent()) await triggerSync(false, { isBoot: true });
 }
 
 async function handleResetLocalData() {

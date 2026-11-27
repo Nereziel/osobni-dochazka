@@ -36,13 +36,14 @@ export async function reviewConflict(userId, date) {
   return { userId, date, queue, local, localSnapshot: JSON.stringify(local), server: localDayFromSupabaseRow(rows[0]) };
 }
 
-export async function adoptReviewedCloudVersion(review, userId) {
+export async function adoptReviewedCloudVersion(review, userId, isCurrent = () => true) {
   if (!review || review.userId !== userId) throw new Error('Účet se změnil.');
   const fresh = await reviewConflict(userId, review.date);
   if (fresh.queue !== review.queue || fresh.localSnapshot !== review.localSnapshot ||
       JSON.stringify(fresh.server) !== JSON.stringify(review.server)) {
     throw new Error('Konflikt se mezitím změnil. Načti nový náhled.');
   }
+  if (!isCurrent()) throw new Error('Účet se změnil.');
   const accepted = await acceptConflictServerVersion(userId, review.date,
     review.queue, review.localSnapshot, fresh.server);
   if (!accepted) throw new Error('Lokální data se mezitím změnila. Načti nový náhled.');

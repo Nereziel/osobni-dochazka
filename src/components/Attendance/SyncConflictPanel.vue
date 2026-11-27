@@ -40,14 +40,15 @@
 
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue';
-import { listConflictDates, reviewConflict, adoptReviewedCloudVersion } from '../../services/conflictReview.js';
+import { listConflictDates, reviewConflict } from '../../services/conflictReview.js';
 import { TYPE_LABELS } from '../../utils/attendance.js';
 
 const props = defineProps({
   userId: { type: String, required: true },
-  pendingCount: { type: Number, default: 0 }
+  pendingCount: { type: Number, default: 0 },
+  resolveConflict: { type: Function, required: true }
 });
-const emit = defineEmits(['resolved', 'toast']);
+const emit = defineEmits(['toast']);
 const busy = ref(false);
 const loaded = ref(false);
 const dates = ref([]);
@@ -100,12 +101,11 @@ function acceptCloud() {
   return run(async () => {
     const snapshot = review.value;
     if (!snapshot || !confirm(`Převzít cloudovou verzi dne ${snapshot.date} a zahodit jeho neodeslané lokální změny? Doporučujeme nejdříve export.`)) return;
-    await adoptReviewedCloudVersion(snapshot, props.userId);
+    await props.resolveConflict(snapshot);
     if (disposed) return;
     review.value = null;
     dates.value = await listConflictDates(props.userId);
     selectedDate.value = dates.value[0] || '';
-    emit('resolved');
     emit('toast', 'Cloudová verze převzata.', '✓');
   });
 }
