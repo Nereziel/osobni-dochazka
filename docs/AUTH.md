@@ -9,8 +9,8 @@ Aplikace nepoužívá Supabase Auth. Uživatel se přihlašuje kombinací `uživ
 - PIN/heslo je uloženo pouze jako bcrypt hash v `attendance_credentials`.
 - Úspěšný login vytvoří 256bitový náhodný session token.
 - V databázi se ukládá pouze SHA-256 hash tokenu.
-- Browser posílá raw token v hlavičce `X-Attendance-Session`.
-- Bez „Pamatovat si mě“ se token ukládá do `sessionStorage`; dlouhodobé uložení v `localStorage` je opt-in.
+- Prohlížeč používá same-origin API a HttpOnly Secure SameSite=Strict cookie. Raw token překládá do hlavičky `X-Attendance-Session` pouze Cloudflare Pages Function.
+- Bez „Pamatovat si mě“ je cookie relační; trvalá cookie je opt-in. Vue ukládá pouze metadata profilu.
 - Změna vlastního PINu revokuje všechny staré sessions a vydá nový token.
 
 Citlivé tabulky `attendance_credentials`, `attendance_sessions`, `attendance_login_rate_limits` a `attendance_audit_log` nejsou přímo dostupné REST rolím `anon` ani `authenticated`.
@@ -107,7 +107,7 @@ Cloudflare Pages posílá mimo jiné:
 - `Referrer-Policy: no-referrer`,
 - omezené `Permissions-Policy`.
 
-`connect-src` je omezený na konkrétní produkční Supabase projekt. Frontend neobsahuje `service_role` klíč; publishable/anon klíč je z principu veřejná hodnota a bezpečnost dat stojí na serverových grants, RLS a RPC autorizaci.
+`connect-src` je omezený na vlastní origin. Pages Function povoluje jen konkrétní API operace a jejich parametry, JSON tělo do 64 KiB a nepropouští interní chybové odpovědi databáze. Nezaznamenávat PIN, cookie, tělo požadavku, query string ani osobní údaje v aplikačních logách. Preview prostředí má mít samostatný Supabase projekt; nepoužívat produkční databázi pro experimenty. Frontend neobsahuje `service_role` klíč; publishable/anon klíč je z principu veřejná hodnota a bezpečnost dat stojí na serverových grants, RLS a RPC autorizaci.
 
 ## 10. Testování
 

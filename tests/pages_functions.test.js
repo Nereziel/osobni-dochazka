@@ -14,6 +14,7 @@ function makeContext(pathParts, {
     Origin: origin,
     'Sec-Fetch-Site': 'same-origin',
     'CF-Connecting-IP': '203.0.113.7',
+    'Content-Type': 'application/json',
     ...extraHeaders
   });
   if (cookie) headers.set('Cookie', cookie);
@@ -104,6 +105,60 @@ describe('Cloudflare Pages session gateway', () => {
 
     expect(response.status).toBe(403);
     expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed cookie without throwing or contacting upstream', async () => {
+    globalThis.fetch = vi.fn();
+    const res = await onRequest(makeContext(['rest', 'v1', 'rpc', 'verify_attendance_session'], {
+      cookie: '__Host-dochazka_session=%ZZ'
+    }));
+    expect(res.status).toBe(401);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ p_username: 'a', p_pin: 'x'.repeat(65536) }, {}, 413],
+    [{ p_username: 'a' }, { 'Content-Length': '70000' }, 413],
+    [{ p_username: 'a' }, { 'Content-Type': 'text/plain' }, 415],
+    [[1, 2], {}, 400],
+    [{ p_username: 'a', unexpected: true }, {}, 400]
+  ])('rejects invalid request bodies before forwarding', async (body, extraHeaders, status) => {
+    globalThis.fetch = vi.fn();
+    const res = await onRequest(makeContext(['rest', 'v1', 'rpc', 'login_attendance_user'], { body, extraHeaders }));
+    expect(res.status).toBe(status);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('restricts read queries to the supported filters and ignores Prefer', async () => {
+    globalThis.fetch = vi.fn(async () => new Response('[]'));
+    const context = makeContext(['rest', 'v1', 'attendance_days'], { method: 'GET', cookie: '__Host-dochazka_session=token' });
+    const url = context.request.url + '?user_key=eq.user:jana&select=*&order=date.asc&updated_at=gte.2026-11-27T07:00:00.000Z';
+    const request = new Request(url, { headers: { Cookie: '__Host-dochazka_session=token', Prefer: 'count=exact' } });
+    expect((await onRequest({ ...context, request })).status).toBe(200);
+    expect(globalThis.fetch.mock.calls[0][1].headers.has('Prefer')).toBe(false);
+    const rejected = new Request(url + '&select=*', { headers: request.headers });
+    expect((await onRequest({ ...context, request: rejected })).status).toBe(400);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([401, 500, 503])('does not leak upstream error detail or invalidate a session on upstream HTTP %i', async (status) => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ message: 'internal database detail' }), { status }));
+    const res = await onRequest(makeContext(['rest', 'v1', 'rpc', 'verify_attendance_session'], {
+      cookie: '__Host-dochazka_session=token'
+    }));
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toContain('internal database detail');
+    expect(res.headers.get('Set-Cookie')).toBeNull();
+  });
+
+  it('fails closed when the login response has an unexpected shape', async () => {
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify([{ session_token: 'raw-secret-token' }])));
+    const res = await onRequest(makeContext(['rest', 'v1', 'rpc', 'login_attendance_user'], {
+      body: { p_username: 'jana', p_pin: '123456' }
+    }));
+    expect(res.status).toBe(502);
+    expect(await res.text()).not.toContain('raw-secret-token');
+    expect(res.headers.get('Set-Cookie')).toBeNull();
   });
 
   it('clears the browser cookie even when upstream logout is unavailable', async () => {

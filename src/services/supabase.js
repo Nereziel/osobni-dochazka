@@ -39,11 +39,12 @@ export async function supabaseRequest(path, options = {}) {
 
   if (!response.ok) {
     let detail = '';
+    const raw = await response.text();
     try {
-      const errJson = await response.json();
-      detail = errJson.message || errJson.error_description || errJson.hint || JSON.stringify(errJson);
+      const errJson = JSON.parse(raw);
+      detail = errJson?.message || errJson?.error_description || '';
     } catch {
-      detail = await response.text();
+      // A proxy or network failure may return HTML; never expose it as an error.
     }
     const error = new Error(detail || `Chyba API (${response.status})`);
     error.status = response.status;
