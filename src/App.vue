@@ -37,7 +37,7 @@
           :daily-target="activeShiftMetrics.target"
           :settings="settings"
           :credited-minutes="activeShiftMetrics.credited"
-          :prior-balance="dashboardMonthStats.completedBalance"
+          :prior-balance="activeShiftPriorBalance"
           @end-shift="handleQuickDeparture"
         />
 
@@ -218,7 +218,7 @@ import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow } from './services/sync.js';
 import { formatClock, timeToMinutes } from './utils/time.js';
-import { dayMetrics, applyQuickArrival, applyQuickDeparture } from './utils/attendance.js';
+import { dayMetrics, applyQuickArrival, applyQuickDeparture, closedBalanceBeforeDate } from './utils/attendance.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
 
 // Composables
@@ -310,6 +310,9 @@ function handleUserTileClick() {
 
 // Statistiky pro pohledy
 const dashboardMonthStats = computed(() => calcMonthStats(new Date(), settings.value));
+const activeShiftPriorBalance = computed(() => closedBalanceBeforeDate(
+  activeShiftRecord.value?.date, records.value, settings.value
+));
 const activeShiftMetrics = computed(() => activeShiftRecord.value
   ? dayMetrics(activeShiftRecord.value, settings.value)
   : { target: 0, credited: 0 });
