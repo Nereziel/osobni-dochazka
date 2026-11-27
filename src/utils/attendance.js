@@ -360,7 +360,7 @@ export function calculateBalanceDeparture(day, settings = DEFAULT_SETTINGS, prio
   const target = Math.max(0, targetForDay(day, settings) - priorBalance);
   const end = calculateWorkEndTimeForRecord(day, settings, target);
   const metrics = dayMetrics({ ...day, end }, settings);
-  return { end: metrics.counted >= target ? end : null, target };
+  return { end: metrics.counted >= target ? end : null, target, projectedBalance: metrics.balance + priorBalance };
 }
 
 export function balanceDepartureHint(day, settings, priorBalance) {
@@ -369,6 +369,9 @@ export function balanceDepartureHint(day, settings, priorBalance) {
   const balance = formatDuration(priorBalance, true);
   if (!recommendation.end) {
     return `Měsíční saldo ${balance} · Nelze vyrovnat během jedné směny`;
+  }
+  if (recommendation.projectedBalance > 0) {
+    return `Měsíční saldo ${balance} · Nejbližší odchod: ${recommendation.end} (zbývá ${formatDuration(recommendation.projectedBalance, true)})`;
   }
   return `Měsíční saldo ${balance} · Odchod pro vyrovnání: ${recommendation.end}`;
 }

@@ -33,6 +33,12 @@ describe('Monthly balance departure recommendations', () => {
     expect(calculateBalanceDeparture(half, DEFAULT_SETTINGS, -2000)?.end).toBeNull();
     expect(balanceDepartureHint(half, DEFAULT_SETTINGS, -2000)).toContain('Nelze vyrovnat');
   });
+  it('does not promise zero balance if credit alone exceeds the reduced target', () => {
+    const result = calculateBalanceDeparture(half, DEFAULT_SETTINGS, 300);
+    expect(result?.end).toBe('07:45');
+    expect(result?.projectedBalance).toBe(60);
+    expect(balanceDepartureHint(half, DEFAULT_SETTINGS, 300)).toContain('zbývá +1:00');
+  });
   it('does not advise departure on full-day absences', () => {
     expect(calculateBalanceDeparture({ ...half, type: 'vacation' }, DEFAULT_SETTINGS, -15)).toBeNull();
     expect(calculateBalanceDeparture({ ...half, type: 'doctor', doctorFullDay: true }, DEFAULT_SETTINGS, -15)).toBeNull();
