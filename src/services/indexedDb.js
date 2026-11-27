@@ -305,6 +305,41 @@ export async function putUserSettings(userId, settings) {
   return record;
 }
 
+/** Commit the profile and its durable cloud mutation together. */
+export async function putUserSettingsWithOutbox(userId, settings, payload) {
+  if (!userId || payload?.user_key !== userId) throw new Error('Neplatný účet nastavení.');
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_settings', 'sync_queue'], 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Uložení nastavení selhalo.'));
+    tx.onabort = () => reject(tx.error || new Error('Uložení nastavení bylo zrušeno.'));
+    tx.objectStore('user_settings').put({ ...settings, userId });
+    tx.objectStore('sync_queue').add({
+      userId, entity: 'attendance_profiles', action: 'UPDATE', payload,
+      createdAt: new Date().toISOString(), retries: 0
+    });
+  });
+}
+
+/** Protect pending edits even when a different tab saves during a cloud pull. */
+export async function applyServerSettingsIfNoPending(userId, settings) {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_settings', 'sync_queue'], 'readwrite');
+    let applied = false;
+    tx.oncomplete = () => resolve(applied);
+    tx.onerror = () => reject(tx.error || new Error('Načtení nastavení selhalo.'));
+    tx.onabort = () => reject(tx.error || new Error('Načtení nastavení bylo zrušeno.'));
+    const request = tx.objectStore('sync_queue').index('userId').getAll(IDBKeyRange.only(userId));
+    request.onsuccess = () => {
+      if ((request.result || []).some(item => item.entity === 'attendance_profiles')) return;
+      tx.objectStore('user_settings').put({ ...settings, userId });
+      applied = true;
+    };
+  });
+}
+
 export async function deleteUserSettings(userId) {
   return idbAction('user_settings', 'readwrite', (store) => store.delete(userId));
 }

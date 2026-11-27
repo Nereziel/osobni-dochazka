@@ -215,7 +215,7 @@ import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
-import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncActions, getUserDays } from './services/indexedDb.js';
+import { openDatabase, importUserBackupAtomic, applyServerSettingsIfNoPending, getPendingSyncActions, getUserDays } from './services/indexedDb.js';
 import { validateBackupPayload, planMissingBackupDays, buildMissingBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow, resetUserSyncCursor } from './services/sync.js';
@@ -425,9 +425,11 @@ async function applyServerProfile(serverProfile) {
   }
   const newSettings = settingsFromProfileRow(serverProfile);
   if (newSettings) {
-    settings.value = newSettings;
-    await putUserSettings(currentUser.value.userKey, newSettings);
-    applyTheme();
+    const applied = await applyServerSettingsIfNoPending(user.userKey, newSettings);
+    if (applied && currentUser.value === user) {
+      settings.value = newSettings;
+      applyTheme();
+    }
   }
 }
 
@@ -815,16 +817,27 @@ async function handleUpdateProfileName(newName) {
 }
 
 async function handleSaveSettings(newSettings) {
-  const userKey = currentUser.value?.userKey || 'user:local';
-  await saveSettings(userKey, newSettings, currentUser.value);
-  showToast('Nastavení bylo uloženo', '✓');
+  const user = currentUser.value;
+  const userKey = user?.userKey || 'user:local';
+  try {
+    await saveSettings(userKey, newSettings, user);
+    if (currentUser.value !== user) return;
+    await refreshPendingCount(userKey);
+    showToast(user ? 'Nastavení uloženo v zařízení; čeká na synchronizaci.' : 'Nastavení bylo uloženo', '✓');
+    if (user && isOnline.value) await triggerSync(false);
+  } catch (err) {
+    showToast(err.message || 'Uložení nastavení selhalo.', '⚠️');
+  }
 }
 
-function handleThemeChange(newTheme) {
-  settings.value.theme = newTheme;
-  applyTheme(newTheme);
-  const userKey = currentUser.value?.userKey || 'user:local';
-  saveSettings(userKey, settings.value, currentUser.value, true);
+async function handleThemeChange(newTheme) {
+  try {
+    const user = currentUser.value;
+    const userKey = user?.userKey || 'user:local';
+    await saveSettings(userKey, { ...settings.value, theme: newTheme }, user, true);
+  } catch (err) {
+    showToast(err.message || 'Uložení motivu selhalo.', '⚠️');
+  }
 }
 
 // Backup Handlers

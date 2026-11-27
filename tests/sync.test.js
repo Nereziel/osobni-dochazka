@@ -434,7 +434,7 @@ describe('Real Integration Tests for Sync Engine', () => {
     const count = await drainOutboxQueue(currentUser);
     expect(count).toBe(1);
     expect(rpcEndpoint).toBe('/rest/v1/rpc/update_own_settings');
-    expect(rpcBody).toEqual({ p_settings: { work_start: '07:00', work_end: '16:00' } });
+    expect(rpcBody).toEqual({ p_settings: { work_start: '07:00', work_end: '16:00', user_key: currentUser.userKey } });
     expect(removeActionSpy).toHaveBeenCalledWith(101);
   });
 

@@ -223,11 +223,14 @@ export async function drainOutboxQueue(currentUser, signal) {
         }
       } else if (item.entity === 'attendance_profiles') {
         if (item.action === 'UPDATE') {
-          await supabaseRequest('/rest/v1/rpc/update_own_settings', {
+          const result = await supabaseRequest('/rest/v1/rpc/update_own_settings', {
             method: 'POST',
-            body: JSON.stringify({ p_settings: item.payload }),
+            body: JSON.stringify({ p_settings: { ...item.payload, user_key: currentUser.userKey } }),
             ...(signal ? { signal } : {})
           }, currentUser);
+          if (result?.success !== true || (result.user_key && result.user_key !== currentUser.userKey)) {
+            throw new Error('Cloud nepotvrdil uložení nastavení.');
+          }
         }
       }
 
