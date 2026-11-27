@@ -5,14 +5,14 @@ values ('user:summary_a','summary_a','Summary A','employee',array[1,2,3,4,5],480
 insert into public.attendance_credentials(user_key,pin_password_hash)
 values ('user:summary_a',crypt('SummaryTest123!',gen_salt('bf')));
 select set_config('request.headers','{"x-forwarded-for":"198.51.100.60"}',true);
-do $
+do $$
 declare token text;
 begin
   token := public.login_attendance_user('summary_a','SummaryTest123!',false)->>'session_token';
   if token is null then raise exception 'Summary fixture login failed'; end if;
   perform set_config('request.headers',jsonb_build_object('x-attendance-session',token)::text,true);
 end;
-$;
+$$;
 
 -- Stored metrics intentionally incorrect: view must use current schedule.
 insert into public.attendance_days(user_key,date,type,start_time,end_time,worked_minutes,target_minutes,balance_minutes)
