@@ -215,8 +215,8 @@ import { useSettings } from './composables/useSettings.js';
 import { useAttendance } from './composables/useAttendance.js';
 import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 
-import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncActions } from './services/indexedDb.js';
-import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js';
+import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncActions, getUserDays } from './services/indexedDb.js';
+import { validateBackupPayload, planMissingBackupDays, buildMissingBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow, resetUserSyncCursor } from './services/sync.js';
 import { adoptReviewedCloudVersion } from './services/conflictReview.js';
@@ -846,33 +846,58 @@ function handleExportBackup() {
 }
 
 async function handleImportBackup(file) {
+  const user = currentUser.value;
+  const userKey = user?.userKey || 'user:local';
+  const isCurrent = () => currentUser.value === user;
+  if (resolvingConflict) return;
+  resolvingConflict = true;
   try {
     if (!file || file.size > 15 * 1024 * 1024) {
       throw new Error('Záloha je příliš velká (max. 15 MB).');
     }
-    // Validate every record and every setting BEFORE any local mutation.
     const payload = JSON.parse(await file.text());
     const parsed = validateBackupPayload(payload);
-    const userKey = currentUser.value?.userKey || 'user:local';
-
-    if (!confirm(`Importovat ${parsed.days.length} dnů? Shodná data se přepíšou obsahem zálohy. Ostatní existující dny zůstanou zachované.`)) return;
-
-    const queueActions = buildBackupSyncActions(
-      parsed.days,
-      parsed.settings,
-      currentUser.value,
-      settings.value
-    );
-    await importUserBackupAtomic(userKey, parsed.days, parsed.settings, queueActions);
-
-    await Promise.all([loadRecords(userKey), loadSettings(userKey)]);
-    await refreshPendingCount(userKey);
-    showToast(`Záloha sloučena: ${parsed.days.length} dnů. Ostatní záznamy zůstaly zachované.`, '✓');
-    if (currentUser.value && queueActions.length > 0) {
-      triggerSync(true);
+    if (user) {
+      await stopForegroundSync();
+      let probe;
+      try {
+        probe = await supabaseRequest('/rest/v1/rpc/restore_attendance_day_if_missing', {
+          method: 'POST', body: JSON.stringify({ p_day: null })
+        });
+      } catch {
+        throw new Error('Bezpečný cloudový import není dostupný. Zkontroluj připojení a aktualizaci databáze. Nic nebylo změněno.');
+      }
+      if (probe?.supported !== true || probe.user_key !== userKey) {
+        throw new Error('Bezpečný import vyžaduje ověřený účet a aktuální databázi.');
+      }
     }
+    if (!isCurrent()) throw new Error('Účet se změnil.');
+    const [existing, pending] = await Promise.all([getUserDays(userKey), getPendingSyncActions(userKey)]);
+    const plan = planMissingBackupDays(parsed.days, existing, pending);
+    const cloudInfo = user ? '\nCloud při synchronizaci atomicky zkontroluje, zda datum již existuje. Takové dny nepřepíše.' : '';
+    const ownerInfo = payload.user?.username && payload.user.username !== user?.username
+      ? '\nPozor: záloha je označena jiným účtem.' : '';
+    if (!plan.days.length) {
+      showToast('Záloha neobsahuje nové lokální dny. Existující záznamy a nastavení zůstaly beze změny.', '✓');
+      return;
+    }
+    if (!confirm(`Náhled importu:\nZáznamy v záloze: ${parsed.days.length}\nChybějící lokální dny: ${plan.days.length}\nPřeskočené existující nebo neodeslané dny: ${plan.skipped}\nAktuální nastavení zůstane zachované.${ownerInfo}${cloudInfo}\n\nImportovat pouze chybějící dny?`)) return;
+    if (!isCurrent()) throw new Error('Účet se změnil.');
+    const queueActions = buildMissingBackupSyncActions(plan.days, user, settings.value);
+    const count = await importUserBackupAtomic(userKey, plan.days, null, queueActions);
+    if (!isCurrent()) return;
+    await loadRecords(userKey);
+    await refreshPendingCount(userKey);
+    if (!isCurrent()) return;
+    showToast(`Import: ${count} nových lokálních dnů. ${parsed.days.length - count} přeskočeno. Existující data a nastavení zachována.`, '✓');
   } catch (err) {
     alert(err.message || 'Import zálohy selhal');
+  } finally {
+    resolvingConflict = false;
+    if (user && isCurrent()) {
+      startSyncService();
+      await triggerSync(false, { isBoot: true });
+    }
   }
 }
 
