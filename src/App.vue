@@ -99,6 +99,7 @@
           :current-user="currentUser"
           :is-admin="isAdmin"
           :sync-state="syncState"
+          :pending-count="pendingCount"
           @save-settings="handleSaveSettings"
           @update-profile-name="handleUpdateProfileName"
           @change-theme="handleThemeChange"
@@ -111,6 +112,7 @@
           @export-backup="handleExportBackup"
           @import-backup="handleImportBackup"
           @reset-local-data="handleResetLocalData"
+          :resolve-conflict="handleResolveConflict"
           @open-pwa-help="openPwaHelp"
           @toast="showToast"
         />
@@ -217,6 +219,7 @@ import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncAc
 import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
 import { settingsFromProfileRow, resetUserSyncCursor } from './services/sync.js';
+import { adoptReviewedCloudVersion } from './services/conflictReview.js';
 import { formatClock, timeToMinutes } from './utils/time.js';
 import { dayMetrics, applyQuickArrival, applyQuickDeparture, closedBalanceBeforeDate } from './utils/attendance.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
@@ -267,6 +270,7 @@ const {
 const currentView = ref('dashboard');
 const monthPickerTarget = ref('calendar');
 const pendingInviteCode = ref('');
+let resolvingConflict = false;
 
 // Modal refs
 const toastRef = ref(null);
@@ -467,6 +471,7 @@ function startSyncService() {
 }
 
 async function triggerSync(pushLocalDays = true, options = {}) {
+  if (resolvingConflict) return;
   if (!currentUser.value) {
     openLoginModal();
     return;
@@ -491,7 +496,8 @@ async function triggerSync(pushLocalDays = true, options = {}) {
     if (res?.serverProfile) {
       await applyServerProfile(res.serverProfile);
     }
-    showToast('Data byla synchronizována', '✓');
+    if (res?.status === 'conflict') showToast('Některé změny mají konflikt. Zkontroluj Nastavení → Cloud Databáze.', '⚠️');
+    else if (res?.status !== 'syncing') showToast('Data byla synchronizována', '✓');
   } catch (err) {
     showToast(err.message || 'Synchronizace selhala', '⚠️');
   }
@@ -870,9 +876,36 @@ async function handleImportBackup(file) {
   }
 }
 
-async function handleResetLocalData() {
-  if (!confirm('Opravdu vymazat veškerá lokální data docházky v tomto zařízení?')) return;
+async function handleResolveConflict(review) {
+  const user = currentUser.value;
+  const key = user?.userKey;
+  if (!key || key !== review?.userId || resolvingConflict) throw new Error('Účet se změnil nebo již probíhá řešení konfliktu.');
+  const isCurrent = () => currentUser.value === user;
+  resolvingConflict = true;
   try {
+    await stopForegroundSync();
+    if (!isCurrent()) throw new Error('Účet se změnil.');
+    await adoptReviewedCloudVersion(review, key, isCurrent);
+    if (isCurrent()) {
+      resetUserSyncCursor(key);
+      await loadRecords(key);
+      await refreshPendingCount(key);
+    }
+  } finally {
+    resolvingConflict = false;
+    if (isCurrent()) startSyncService();
+  }
+  if (isCurrent()) await triggerSync(false, { isBoot: true });
+}
+
+async function handleResetLocalData() {
+  try {
+    const key = currentUser.value?.userKey;
+    if (key && (await getPendingSyncActions(key)).length) {
+      showToast('Nejprve vyřeš neodeslané změny a konflikty. Lokální data nebyla smazána.', '⚠️');
+      return;
+    }
+    if (!confirm('Opravdu vymazat veškerá lokální data docházky v tomto zařízení?')) return;
     const res = await runResetLocalDataFlow({
       currentUser: currentUser.value,
       settingsGetter: () => settings.value,
