@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { applyQuickArrival } from '../src/utils/attendance.js';
 import { timeToMinutes } from '../src/utils/time.js';
+import { APP_VERSION, APP_BUILD_DATE } from '../src/utils/version.js';
 
 describe('Quick arrival at a selected time', () => {
   it('replaces the normal-hours action with a time picker and explicit confirmation', () => {
@@ -61,7 +62,13 @@ describe('Quick arrival at a selected time', () => {
     expect(pkg.version).toBe(manifest['.']);
     expect(lock.version).toBe(pkg.version);
     expect(lock.packages[''].version).toBe(pkg.version);
-    expect(versionSource).toContain(`'${pkg.version}'`);
-    expect(versionSource).toContain("'2026-11-18'");
+    expect(APP_VERSION).toBe(pkg.version);
+    expect(APP_BUILD_DATE).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(versionSource).toContain("import { version } from '../../package.json'");
+    expect(versionSource).toContain(': version;');
+    expect(versionSource).toContain("'neuvedeno'");
+    const viteConfig = fs.readFileSync(path.resolve('vite.config.js'), 'utf8');
+    expect(viteConfig).toContain('__APP_VERSION__: JSON.stringify(pkg.version)');
+    expect(viteConfig).toContain('__APP_BUILD_DATE__: JSON.stringify(new Date().toISOString()');
   });
 });

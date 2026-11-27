@@ -1,6 +1,6 @@
 # Supabase backup a recovery runbook
 
-Aktualizováno: 2026-11-02
+Aktualizováno: 2026-11-27
 
 Tento dokument popisuje bezpečný postup zálohy a obnovy databáze pro projekt Osobní docházka. Produkční data se nesmí ukládat do veřejného GitHub repozitáře.
 
@@ -170,16 +170,16 @@ Pokud došlo k úniku databázového hesla nebo privilegovaného Supabase klíč
 
 ## Import lokální JSON zálohy v aplikaci
 
-Volba **Import zálohy** v nastavení používá bezpečné **sloučení** (merge), nikoli
-destruktivní nahrazení všech dat. Před otevřením zapisovací transakce ověří
-strukturu souboru, data, časy a nastavení. Záznamy se shodným datem se nahradí
-obsahem zálohy; dny, které v záloze nejsou, zůstanou zachované.
+Volba **Import zálohy** v nastavení ověří celý soubor a zobrazí náhled počtu
+chybějících a přeskočených lokálních dnů. Import pouze doplňuje chybějící dny,
+nepřepisuje existující záznamy, čekající změny ani nastavení. Před zápisem
+IndexedDB znovu atomicky ověří lokální stav a frontu.
 
-Importovaná docházka, volitelná nastavení a neodeslané požadavky pro cloud
-se zapisují do jedné IndexedDB transakce. Pokud transakce selže, nemá se
-provést částečný import. U přihlášeného účtu pokračuje synchronizace a při
-konfliktu se serverem zůstane lokální změna v outboxu pro ruční vyřešení.
+U přihlášeného účtu je nutná dostupnost ověřeného RPC
+`restore_attendance_day_if_missing` z produkční SQL aktualizace.
+Cloudový import nesmí přepsat existující řádek ani tombstone; případný konflikt
+zůstane ve frontě pro ruční vyřešení. Bez dostupného RPC se import
+přihlášeného účtu odmítne bez zápisu.
 
-**Pozor:** Import nepředstavuje bodovou obnovu celé cloudové databáze ani
-neodstraňuje cloudové dny, které v JSON souboru nejsou. Pro úplnou obnovu
-serveru použij databázovou zálohu a postup výše.
+**Pozor:** JSON import není obnova celé cloudové databáze. Pro úplnou obnovu
+serveru použij ověřenou databázovou zálohu a postup výše.
