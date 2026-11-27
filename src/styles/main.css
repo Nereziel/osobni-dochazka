@@ -776,6 +776,16 @@ html[data-theme="dark"] .win-btn-subtle:hover {
   font-weight: 600;
 }
 
+.early-leave-pill.balance-deficit {
+  background: rgba(190, 75, 0, 0.12);
+  border-color: rgba(190, 75, 0, 0.35);
+  color: var(--negative-text, inherit);
+}
+
+.early-departure-hint.balance-deficit {
+  color: var(--negative, inherit);
+}
+
 .hero-metric-tiles {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

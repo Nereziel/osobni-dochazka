@@ -14,9 +14,10 @@
       <span>{{ activeShift.typeLabel }} od {{ activeShift.startTime }}</span>
       <span>Konec směny: <strong>{{ workEndTime }}</strong></span>
       <span
-        v-if="earlyLeaveText"
+        v-if="balanceLeaveText"
         class="early-leave-pill"
-      >✨ {{ earlyLeaveText }}</span>
+        :class="{ 'balance-deficit': priorBalance < 0 }"
+      >{{ balanceLeaveText }}</span>
     </div>
     <div class="shift-live-actions">
       <button
@@ -48,8 +49,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-import { shiftElapsedSeconds, pad, formatDuration } from '../../utils/time.js';
-import { calculateWorkEndTime, calculateWorkEndTimeForRecord } from '../../utils/attendance.js';
+import { shiftElapsedSeconds, pad } from '../../utils/time.js';
+import { calculateWorkEndTime, calculateWorkEndTimeForRecord, balanceDepartureHint } from '../../utils/attendance.js';
 
 const props = defineProps({
   dayRecord: {
@@ -99,12 +100,9 @@ function projectedEndTime(target) {
 
 const workEndTime = computed(() => projectedEndTime(props.dailyTarget));
 
-const earlyLeaveText = computed(() => {
-  if (!props.priorBalance || props.priorBalance <= 0) return '';
-  const reducedTarget = Math.max(0, props.dailyTarget - props.priorBalance);
-  const earlyTime = projectedEndTime(reducedTarget);
-  return `S nadpracovaným (+${formatDuration(props.priorBalance)}) už v ${earlyTime}`;
-});
+const balanceLeaveText = computed(() =>
+  balanceDepartureHint(props.dayRecord, props.settings, props.priorBalance)
+);
 
 function updateTimer() {
   if (!props.activeShift?.isActive || !props.activeShift?.startTime) {

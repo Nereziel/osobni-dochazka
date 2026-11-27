@@ -3,7 +3,7 @@
  */
 import { localDateKey, parseDateKey, isWeekendDate } from './dates.js';
 import { isPublicHoliday } from './holidays.js';
-import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime, shiftElapsedSeconds } from './time.js';
+import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime, shiftElapsedSeconds, formatDuration } from './time.js';
 import { clampNumber, cloneDeep } from './validation.js';
 
 export const DEFAULT_SETTINGS = {
@@ -336,6 +336,44 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS, t
     weekendWorked,
     totalBreaks
   };
+}
+
+/** Balance from recorded, closed days before the shift date in its own month. */
+export function closedBalanceBeforeDate(dateKey, recordsMap, settings = DEFAULT_SETTINGS) {
+  if (typeof dateKey !== 'string') return 0;
+  const prefix = dateKey.slice(0, 7) + '-';
+  const entries = recordsMap instanceof Map ? recordsMap.entries() : Object.entries(recordsMap || {});
+  let balance = 0;
+  for (const [key, day] of entries) {
+    if (!day || !key.startsWith(prefix) || key >= dateKey || day.deletedAt) continue;
+    if (allowsWork(day.type) && day.start && !day.end &&
+        !(day.type === 'doctor' && day.doctorFullDay)) continue;
+    balance += dayMetrics(day, settings).balance;
+  }
+  return balance;
+}
+
+/** A recommendation, not an attendance write. Never wrap an impossible target into the next day. */
+export function calculateBalanceDeparture(day, settings = DEFAULT_SETTINGS, priorBalance = 0) {
+  if (!day || !allowsWork(day.type) || (day.type === 'doctor' && day.doctorFullDay) ||
+      timeToMinutes(day.start) === null || !Number.isFinite(priorBalance) || priorBalance === 0) return null;
+  const target = Math.max(0, targetForDay(day, settings) - priorBalance);
+  const end = calculateWorkEndTimeForRecord(day, settings, target);
+  const metrics = dayMetrics({ ...day, end }, settings);
+  return { end: metrics.counted >= target ? end : null, target, projectedBalance: metrics.balance + priorBalance };
+}
+
+export function balanceDepartureHint(day, settings, priorBalance) {
+  const recommendation = calculateBalanceDeparture(day, settings, priorBalance);
+  if (!recommendation) return '';
+  const balance = formatDuration(priorBalance, true);
+  if (!recommendation.end) {
+    return `Měsíční saldo ${balance} · Nelze vyrovnat během jedné směny`;
+  }
+  if (recommendation.projectedBalance > 0) {
+    return `Měsíční saldo ${balance} · Nejbližší odchod: ${recommendation.end} (zbývá ${formatDuration(recommendation.projectedBalance, true)})`;
+  }
+  return `Měsíční saldo ${balance} · Odchod pro vyrovnání: ${recommendation.end}`;
 }
 
 export function yearVacationUsed(year, recordsMap) {
