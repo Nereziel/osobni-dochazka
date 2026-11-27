@@ -237,6 +237,44 @@ describe('Real Integration Tests for Sync Engine', () => {
     expect(uploadedPayload.updated_at).toBe('2026-10-25T14:00:00.000Z');
   });
 
+  it('journals rejected full-sync uploads and does not advance the cursor past pulled rows', async () => {
+    const date = '2026-11-25';
+    const localDay = { date, type: 'work', start: '08:00', end: '16:30', updatedAt: '2026-11-25T12:00:00Z' };
+    const queue = [];
+    vi.spyOn(idbService, 'getPendingSyncActions').mockImplementation(async () => [...queue]);
+    vi.spyOn(idbService, 'getUserDays').mockResolvedValue([localDay]);
+    const enqueue = vi.spyOn(idbService, 'enqueueSyncAction').mockImplementation(async (userId, entity, action, payload, meta) => {
+      queue.push({ userId, entity, action, payload, ...meta });
+      return 1;
+    });
+    vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async url => {
+      if (url.includes('attendance_profiles')) return [];
+      if (url.includes('attendance_days?')) return [{ date, updated_at: '2026-11-25T10:00:00Z', type: 'work' }];
+      return { applied: false, reason: 'server_newer', server_updated_at: '2026-11-25T14:00:00Z' };
+    });
+    const result = await performFullSync(currentUser, DEFAULT_SETTINGS);
+    expect(result.status).toBe('conflict');
+    expect(result.recordsMap.get(date)).toEqual(localDay);
+    expect(enqueue).toHaveBeenCalledWith(currentUser.userKey, 'attendance_days', 'UPSERT',
+      expect.objectContaining({ date }), { conflict: true, serverUpdatedAt: '2026-11-25T14:00:00Z' });
+    expect(getLastSuccessfulPullAt(currentUser.userKey)).toBe('2026-11-25T10:00:00Z');
+  });
+
+  it('reports pending settings and does not return a stale server profile', async () => {
+    const action = { id: 5, entity: 'attendance_profiles', action: 'UPDATE', payload: { work_start: '08:00' } };
+    vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([action]);
+    vi.spyOn(idbService, 'updateSyncAction').mockResolvedValue();
+    vi.spyOn(idbService, 'getUserDays').mockResolvedValue([]);
+    vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async url => {
+      if (url.includes('update_own_settings')) throw new Error('Temporarily unavailable');
+      if (url.includes('attendance_profiles')) return [{ user_key: currentUser.userKey, work_start: '07:00' }];
+      return [];
+    });
+    const result = await performFullSync(currentUser, DEFAULT_SETTINGS);
+    expect(result.status).toBe('pending');
+    expect(result.serverProfile).toBeNull();
+  });
+
   it('Test 6 – network failure during drainOutbox preserves queue and updates retry counter', async () => {
     const pendingItem = {
       id: 99,

@@ -343,7 +343,7 @@ export function computeNextSyncCursor(remoteRows = [], currentCursor = null, ser
  *
  * Architektura LWW a hodin klienta:
  * - Inkrementální kurzor (lastSuccessfulPullAt) je plně oddělen od hodin klienta a odvozuje se
- *   výhradně z nejvyššího `updated_at` / `server_updated_at` vráceného serverem (s 15s bezpečnostním překryvem).
+ *   výhradně z nejvyššího `updated_at` skutečně načtených řádků (s 15s bezpečnostním překryvem).
  * - Na serveru RPC `upsert_attendance_day_lww` ořezává (clampuje) příchozí `updated_at` shora na `now()` serveru
  *   (`least(incoming_updated_at, now())`), takže zařízení s hodinami posunutými do budoucnosti nemůže
  *   zablokovat budoucí změny z jiných zařízení.
@@ -351,6 +351,11 @@ export function computeNextSyncCursor(remoteRows = [], currentCursor = null, ser
  *   výrazně zpožděný do minulosti oproti poslední serverové verzi téhož dne, server při konfliktu
  *   upřednostní novější serverové razítko (`server_newer`).
  */
+function queueStatus(actions) {
+  if (actions.some(item => item.conflict)) return 'conflict';
+  return actions.length ? 'pending' : 'online';
+}
+
 export async function performFullSync(
   currentUser,
   currentSettings,
@@ -400,9 +405,9 @@ export async function performFullSync(
     const localList = await getUserDays(currentUser.userKey);
     const remaining = await getPendingSyncActions(currentUser.userKey);
     return {
-      status: remaining.some(item => item.conflict) ? 'conflict' : 'online',
+      status: queueStatus(remaining),
       recordsMap: new Map(localList.map(d => [d.date, d])),
-      serverProfile
+      serverProfile: remaining.some(item => item.entity === 'attendance_profiles') ? null : serverProfile
     };
   }
 
@@ -479,8 +484,6 @@ export async function performFullSync(
     await putUserDay(currentUser.userKey, remDay);
   }
 
-  const serverReturnedTimestamps = [];
-
   if (toUpload.length > 0) {
     for (const row of toUpload) {
       signal?.throwIfAborted();
@@ -492,9 +495,15 @@ export async function performFullSync(
         }, currentUser);
 
         signal?.throwIfAborted();
+        if (upRes?.applied === false && upRes?.reason === 'server_newer') {
+          await enqueueSyncAction(currentUser.userKey, 'attendance_days', 'UPSERT', row, {
+            conflict: true, serverUpdatedAt: upRes.server_updated_at || null
+          });
+          continue;
+        }
+        if (upRes?.applied !== true) throw new Error('Cloud nepotvrdil zápis docházky.');
         if (upRes?.server_updated_at) {
-          serverReturnedTimestamps.push(upRes.server_updated_at);
-          if (upRes.applied && mergedMap.has(row.date)) {
+          if (mergedMap.has(row.date)) {
             const mergedDay = mergedMap.get(row.date);
             if (mergedDay && mergedDay.updatedAt !== upRes.server_updated_at) {
               const normalizedDay = { ...mergedDay, updatedAt: upRes.server_updated_at };
@@ -512,15 +521,18 @@ export async function performFullSync(
   }
 
   signal?.throwIfAborted();
-  const nextCursor = computeNextSyncCursor(remoteRows, lastPull, serverReturnedTimestamps);
+  // Advance the pull cursor only using rows actually pulled. An upload may
+  // complete after a concurrent remote edit which is not in this response.
+  const nextCursor = computeNextSyncCursor(remoteRows, lastPull);
   if (nextCursor) {
     setLastSuccessfulPullAt(currentUser.userKey, nextCursor);
   }
 
   const remaining = await getPendingSyncActions(currentUser.userKey);
   return {
-    status: remaining.some(item => item.conflict) ? 'conflict' : 'online',
+    status: queueStatus(remaining),
     recordsMap: mergedMap,
-    serverProfile
+    // Do not replace the visible profile with stale server settings while a local update is queued.
+    serverProfile: remaining.some(item => item.entity === 'attendance_profiles') ? null : serverProfile
   };
 }

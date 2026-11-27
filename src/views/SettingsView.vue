@@ -786,12 +786,15 @@ const accountUsernameText = computed(() => {
 });
 
 const syncBadgeClass = computed(() => {
-  if (props.currentUser && props.syncState === 'online') return 'online';
+  if (props.currentUser && props.syncState === 'online' && !props.pendingCount) return 'online';
   return 'local';
 });
 
 const syncBadgeText = computed(() => {
   if (props.syncState === 'conflict') return 'Konflikt synchronizace – lokální změna zachována';
+  if (props.syncState === 'syncing') return 'Probíhá synchronizace';
+  if (props.syncState === 'error') return 'Synchronizace selhala';
+  if (props.syncState === 'pending' || props.pendingCount) return 'Změny čekají na odeslání';
   if (props.currentUser && props.syncState === 'online') return 'Cloud synchronizováno';
   return 'Pouze lokální úložiště';
 });
