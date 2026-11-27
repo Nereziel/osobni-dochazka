@@ -200,11 +200,6 @@ export async function onRequest(context) {
     return jsonResponse(404, { error: 'not_found', message: 'API operace není povolena.' });
   }
 
-  const requestUrl = new URL(request.url);
-  if (!validQuery(route, requestUrl)) {
-    return jsonResponse(400, { error: 'invalid_query', message: 'Nepovolené parametry požadavku.' });
-  }
-
   const supabaseUrl = (env.SUPABASE_URL || '').replace(/\/+$/, '');
   const publishableKey = env.SUPABASE_PUBLISHABLE_KEY || '';
   if (!supabaseUrl || !publishableKey) {
@@ -220,6 +215,11 @@ export async function onRequest(context) {
     return jsonResponse(401, { error: 'unauthorized', message: 'Přihlášení vypršelo nebo chybí.' }, {
       'Set-Cookie': clearSessionCookie()
     });
+  }
+
+  const requestUrl = new URL(request.url);
+  if (!validQuery(route, requestUrl)) {
+    return jsonResponse(400, { error: 'invalid_query', message: 'Nepovolené parametry požadavku.' });
   }
 
   const body = await readRequestBody(request, route);
