@@ -8,3 +8,5 @@
 \ir security_isolation.sql
 \ir security_audit_ui.sql
 \ir security_rpc_privileges.sql
+
+\ir security_backup_restore.sql

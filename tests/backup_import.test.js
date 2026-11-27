@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
-import { validateBackupPayload, buildBackupSyncActions } from '../src/utils/backup.js';
+import { validateBackupPayload, buildBackupSyncActions, planMissingBackupDays, buildMissingBackupSyncActions } from '../src/utils/backup.js';
 import { DEFAULT_SETTINGS } from '../src/utils/attendance.js';
 import { coalesceOutboxActions } from '../src/services/sync.js';
 
@@ -58,6 +58,21 @@ describe('Non-destructive, validated backup restore', () => {
       payload: { ...action.payload, updated_at: '2026-11-05T10:00:00Z' }
     })));
     expect(coalesced.map(action => action.entity)).toEqual(['attendance_profiles', 'attendance_days']);
+  });
+
+  it('skips existing dates and pending deletions or edits', () => {
+    const days = ['2026-11-02', '2026-11-03', '2026-11-04'].map(date => ({ date, type: 'work' }));
+    const plan = planMissingBackupDays(days, [days[0]], [
+      { entity: 'attendance_days', action: 'DELETE', payload: { date: days[1].date } }
+    ]);
+    expect(plan).toEqual({ days: [days[2]], skipped: 2 });
+    expect(buildMissingBackupSyncActions(plan.days, { userKey: 'user:a' })).toEqual([
+      expect.objectContaining({ action: 'IMPORT_MISSING', payload: expect.objectContaining({ date: days[2].date, user_key: 'user:a' }) })
+    ]);
+  });
+
+  it('does not import backup tombstones as ordinary attendance', () => {
+    expect(validateBackupPayload({ ...valid, days: [{ ...valid.days[0], deletedAt: '2026-11-03T00:00:00Z' }] }).days).toEqual([]);
   });
 
   it('uses one IndexedDB transaction and never clears all existing days before import', () => {

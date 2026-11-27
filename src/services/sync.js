@@ -203,13 +203,15 @@ export async function drainOutboxQueue(currentUser, signal) {
           updated_at: payload.updated_at || new Date().toISOString()
         };
 
-        const res = await supabaseRequest('/rest/v1/rpc/upsert_attendance_day_lww', {
+        const endpoint = item.action === 'IMPORT_MISSING'
+          ? 'restore_attendance_day_if_missing' : 'upsert_attendance_day_lww';
+        const res = await supabaseRequest(`/rest/v1/rpc/${endpoint}`, {
           method: 'POST',
           body: JSON.stringify({ p_day: rpcPayload }),
           ...(signal ? { signal } : {})
         }, currentUser);
 
-        if (res?.applied === false && res?.reason === 'server_newer') {
+        if (res?.applied === false && ['server_newer', 'server_exists'].includes(res?.reason)) {
           console.warn(`Konflikt dne ${payload.date}: server má novější verzi ${res.server_updated_at}; lokální změna zůstává v outboxu.`);
           item.conflict = true;
           item.serverUpdatedAt = res.server_updated_at || null;
@@ -247,6 +249,8 @@ export async function drainOutboxQueue(currentUser, signal) {
       console.warn(`Zpracování sync položky ${item.id} selhalo:`, err);
       item.retries = (item.retries || 0) + 1;
       await updateSyncAction(item);
+      // An unavailable restore endpoint must not block ordinary queued edits.
+      if (item.action === 'IMPORT_MISSING' && err?.status === 404) continue;
       break;
     }
   }

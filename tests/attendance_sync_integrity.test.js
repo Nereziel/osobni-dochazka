@@ -73,6 +73,15 @@ describe('Crash-safe attendance persistence and visible conflicts', () => {
     expect(db.removeSyncAction).not.toHaveBeenCalled();
   });
 
+  it('restores missing days only via the insert-only endpoint and preserves a cloud conflict', async () => {
+    db.getPendingSyncActions.mockResolvedValue([{ id: 11, entity: 'attendance_days', action: 'IMPORT_MISSING', payload: { date: baseDay.date, type: 'work' } }]);
+    supabaseRequest.mockResolvedValue({ applied: false, reason: 'server_exists' });
+    expect(await drainOutboxQueue(user)).toBe(0);
+    expect(supabaseRequest).toHaveBeenCalledWith('/rest/v1/rpc/restore_attendance_day_if_missing', expect.any(Object), user);
+    expect(db.removeSyncAction).not.toHaveBeenCalled();
+    expect(db.updateSyncAction).toHaveBeenCalledWith(expect.objectContaining({ id: 11, conflict: true }));
+  });
+
   it('does not discard offline writes rejected by server_newer on retry', async () => {
     const action = {
       id: 50, userId: user.userKey, entity: 'attendance_days', action: 'UPSERT',
