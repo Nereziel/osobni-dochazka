@@ -10,6 +10,7 @@ begin
   values ('user:restoretest','restoretest','Restore test','employee');
   insert into public.attendance_credentials(user_key, pin_password_hash)
   values ('user:restoretest', crypt('RestoreTest123!',gen_salt('bf')));
+  perform set_config('request.headers', '{"x-forwarded-for":"198.51.100.55"}', true);
   result := public.login_attendance_user('restoretest','RestoreTest123!',false);
   token := result->>'session_token';
   if token is null then raise exception 'Test login failed'; end if;
