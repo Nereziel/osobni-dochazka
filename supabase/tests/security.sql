@@ -10,3 +10,5 @@
 \ir security_rpc_privileges.sql
 
 \ir security_backup_restore.sql
+
+\ir security_team_summary.sql

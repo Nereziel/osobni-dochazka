@@ -13,6 +13,7 @@ V Supabase SQL Editoru spusť v tomto pořadí:
 5. `supabase/migrations/20261102_admin_audit_read.sql`
 6. `supabase/manual/20261127_rpc_least_privilege.sql`
 7. `supabase/manual/20261127_safe_backup_restore.sql`
+8. `supabase/manual/20261127_team_summary_parity.sql`
 
 Migrace aplikuj **přesně v pořadí uvedeném výše**. Několik souborů sdílí stejné datum, proto se nespoléhej na lexikální řazení názvů. CI používá stejné pořadí.
 
@@ -40,6 +41,8 @@ Po předchozích změnách aplikuj také `supabase/manual/20261127_rpc_least_pri
 
 Po aktualizaci minimálních oprávnění aplikuj také `supabase/manual/20261127_safe_backup_restore.sql`. Cloudový import vyžaduje tento RPC endpoint; do té doby aplikace import přihlášeného účtu odmítne bez změny dat. Import pouze doplňuje chybějící dny, chrání i tombstones a nepřepisuje nastavení.
 
+Následně aplikuj `supabase/manual/20261127_team_summary_parity.sql`. Týmový přehled počítá uzavřené dny podle aktuálního nastavení a českého kalendářního dne, půldenní dovolenou vykazuje jako 0,5. Nemění uložené docházkové řádky. Historické fondy záměrně neukládáme.
+
 ## Bezpečnostní testy
 
 Jednotný runner je:
@@ -56,6 +59,7 @@ Ten spouští:
 - `security_audit_ui.sql`
 - `security_rpc_privileges.sql`
 - `security_backup_restore.sql`
+- `security_team_summary.sql`
 
 Testy běží v transakcích a po skončení změny vracejí zpět.
 

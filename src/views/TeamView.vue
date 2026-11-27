@@ -260,7 +260,7 @@
                 </div>
                 <div>
                   <strong>{{ s.display_name || s.username }}</strong>
-                  <small>{{ s.total_days_recorded ?? s.recorded_days ?? 0 }} evidovaných dnů · Dovolená: {{ s.vacation_days_count ?? s.vacation_days_used ?? 0 }} d.</small>
+                  <small>{{ s.total_days_recorded ?? s.recorded_days ?? 0 }} evidovaných dnů · Dovolená: {{ s.vacation_days_used ?? s.vacation_days_count ?? 0 }} d.</small>
                 </div>
               </div>
               <div class="team-user-stats">
