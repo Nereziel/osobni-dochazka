@@ -80,6 +80,8 @@
             </label>
           </div>
 
+          <small class="muted">Nově zadané časy příchodu a odchodu se při uložení zaokrouhlí na 5 minut.</small>
+
           <!-- Přestávka na oběd -->
           <div class="break-control-card">
             <div class="break-control-header">
@@ -283,7 +285,7 @@ import {
   isScheduledWorkday
 } from '../../utils/attendance.js';
 import { cloneDeep } from '../../utils/validation.js';
-import { formatDuration, durationMinutes } from '../../utils/time.js';
+import { formatDuration, durationMinutes, roundAttendanceTimes } from '../../utils/time.js';
 
 const props = defineProps({
   settings: {
@@ -296,6 +298,7 @@ const emit = defineEmits(['save', 'delete']);
 
 const dialogRef = ref(null);
 const hasExistingRecord = ref(false);
+const originalTimes = ref({});
 
 const formData = ref({
   date: '',
@@ -389,7 +392,7 @@ const breakHintText = computed(() => {
 });
 
 const previewMetrics = computed(() => {
-  return dayMetrics(formData.value, props.settings);
+  return dayMetrics(roundAttendanceTimes(formData.value, originalTimes.value), props.settings);
 });
 
 function applyDefaultSchedule() {
@@ -411,6 +414,7 @@ function open(dayOrKey, existingRecord = null) {
     key = localDateKey(new Date());
   }
   hasExistingRecord.value = Boolean(existingRecord);
+  originalTimes.value = existingRecord ? { start: existingRecord.start || '', end: existingRecord.end || '' } : {};
 
   if (existingRecord) {
     formData.value = {
@@ -454,7 +458,7 @@ function close() {
 }
 
 function submitSave() {
-  emit('save', cloneDeep(formData.value));
+  emit('save', cloneDeep(roundAttendanceTimes(formData.value, originalTimes.value)));
   close();
 }
 

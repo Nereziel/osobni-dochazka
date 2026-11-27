@@ -559,7 +559,7 @@ async function handleDayDelete(dateKey) {
 async function executeQuickChange(mutator, message, options = {}) {
   try {
     const result = await quickToday(mutator, currentUser.value, settings.value, options);
-    showAttendanceSaveStatus(result, message);
+    showAttendanceSaveStatus(result, typeof message === 'function' ? message(result) : message);
     await refreshPendingCount(currentUser.value?.userKey || 'user:local');
   } catch {
     showToast('Rychlý zápis se nezdařil', '⚠️');
@@ -570,7 +570,7 @@ async function executeQuickChange(mutator, message, options = {}) {
 async function handleQuickArrival() {
   return executeQuickChange((d) => {
     applyQuickArrival(d, formatClock());
-  }, 'Příchod zaznamenán');
+  }, result => `Příchod v ${result.start} zaznamenán`);
 }
 
 async function handleQuickArrivalAt(time) {
@@ -580,13 +580,13 @@ async function handleQuickArrivalAt(time) {
   }
   return executeQuickChange((d) => {
     applyQuickArrival(d, time);
-  }, `Příchod v ${time} zaznamenán`);
+  }, result => `Příchod v ${result.start} zaznamenán`);
 }
 
 async function handleQuickDeparture() {
   return executeQuickChange((d, hours) => {
     applyQuickDeparture(d, formatClock(), hours.start);
-  }, 'Odchod zaznamenán', { preferOpenShift: true });
+  }, result => `Odchod v ${result.end} zaznamenán`, { preferOpenShift: true });
 }
 
 async function handleQuickDepartureAt(time) {
@@ -596,7 +596,7 @@ async function handleQuickDepartureAt(time) {
   }
   return executeQuickChange((d, hours) => {
     applyQuickDeparture(d, time, hours.start);
-  }, `Odchod v ${time} zaznamenán`, { preferOpenShift: true });
+  }, result => `Odchod v ${result.end} zaznamenán`, { preferOpenShift: true });
 }
 
 async function handleQuickVacation() {

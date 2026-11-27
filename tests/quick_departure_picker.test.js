@@ -30,7 +30,7 @@ describe('Quick departure at a selected time', () => {
     expect(app).toContain('async function handleQuickDepartureAt(time) {');
     expect(app).toContain('if (timeToMinutes(time) === null)');
     expect(app).toContain('applyQuickDeparture(d, time, hours.start);');
-    expect(app).toContain("`Odchod v ${time} zaznamenán`, { preferOpenShift: true }");
+    expect(app).toContain("`Odchod v ${result.end} zaznamenán`, { preferOpenShift: true }");
   });
 
   it('retains an existing arrival, absence interval, notes and the recorded day', () => {

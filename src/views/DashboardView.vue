@@ -255,7 +255,7 @@
                 type="submit"
                 :disabled="timeToMinutes(selectedArrivalTime) === null"
               >
-                Uložit příchod
+                Uložit příchod ({{ roundAttendanceTime(selectedArrivalTime) }})
               </button>
               <button
                 class="win-btn-subtle"
@@ -282,6 +282,7 @@
                 required
               >
             </label>
+            <small class="muted">Čas se zaokrouhlí na 5 minut.</small>
             <div class="quick-time-actions">
               <button
                 class="win-btn-accent"
@@ -444,7 +445,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { fmtDayFull, todayKey, localDateKey, isWeekendDate, fmtMonthTitle } from '../utils/dates.js';
 import { holidayName } from '../utils/holidays.js';
-import { formatDuration, formatClock, timeToMinutes } from '../utils/time.js';
+import { formatDuration, formatClock, timeToMinutes, roundAttendanceTime } from '../utils/time.js';
 import {
   dayMetrics,
   defaultHoursForDate,
