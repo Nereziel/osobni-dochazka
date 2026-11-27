@@ -24,6 +24,15 @@ describe('Real Integration Tests for Sync Engine', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     resetUserSyncCursor(currentUser.userKey);
+    // The persistence transaction is isolated from these network/merge tests.
+    vi.spyOn(idbService, 'applyRemoteDayIfUnchanged').mockImplementation(async (userId, date, _expected, remote) => {
+      if (!remote || remote.deletedAt) {
+        await idbService.deleteUserDay(userId, date);
+        return { applied: true, day: null };
+      }
+      await idbService.putUserDay(userId, remote);
+      return { applied: true, day: remote };
+    });
   });
 
   it('converts local day to Supabase row format including tombstones', () => {
@@ -273,6 +282,29 @@ describe('Real Integration Tests for Sync Engine', () => {
     const result = await performFullSync(currentUser, DEFAULT_SETTINGS);
     expect(result.status).toBe('pending');
     expect(result.serverProfile).toBeNull();
+  });
+
+  it('preserves a concurrent local edit and does not advance a deferred pull cursor', async () => {
+    const date = '2026-11-25';
+    const before = { date, type: 'work', updatedAt: '2026-11-25T10:00:00Z' };
+    const edited = { ...before, start: '08:00', updatedAt: '2026-11-25T12:00:00Z' };
+    vi.spyOn(idbService, 'getPendingSyncActions').mockResolvedValue([]);
+    vi.spyOn(idbService, 'getUserDays').mockResolvedValue([before]);
+    vi.spyOn(idbService, 'applyRemoteDayIfUnchanged').mockResolvedValue({ applied: false, day: edited });
+    vi.spyOn(supabaseService, 'supabaseRequest').mockImplementation(async url =>
+      url.includes('attendance_days?') ? [{ date, type: 'work', updated_at: '2026-11-25T11:00:00Z' }] : []);
+    const result = await performFullSync(currentUser, DEFAULT_SETTINGS);
+    expect(result.recordsMap.get(date)).toEqual(edited);
+    expect(getLastSuccessfulPullAt(currentUser.userKey)).toBeNull();
+  });
+
+  it('guards a pull transaction against pending edits, deletions and changed local snapshots', () => {
+    const date = '2026-11-25';
+    const before = { date, updatedAt: '2026-11-25T10:00:00Z' };
+    expect(idbService.canApplyRemoteDay(before, before, [], date)).toBe(true);
+    expect(idbService.canApplyRemoteDay({ ...before, note: 'new' }, before, [], date)).toBe(false);
+    expect(idbService.canApplyRemoteDay(null, null, [{ entity: 'attendance_days', action: 'DELETE', payload: { date } }], date)).toBe(false);
+    expect(idbService.canApplyRemoteDay(before, before, [{ entity: 'attendance_days', action: 'UPSERT', payload: { date } }], date)).toBe(false);
   });
 
   it('Test 6 – network failure during drainOutbox preserves queue and updates retry counter', async () => {

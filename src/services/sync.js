@@ -15,8 +15,7 @@ import {
   updateSyncAction,
   enqueueSyncAction,
   getUserDays,
-  putUserDay,
-  deleteUserDay
+  applyRemoteDayIfUnchanged
 } from './indexedDb.js';
 import { dayMetrics, normalizeSettings } from '../utils/attendance.js';
 
@@ -368,10 +367,17 @@ export async function performFullSync(
   currentSettings,
   options = { pushLocalDays: true, incremental: false, fetchProfile: true }
 ) {
-  if (!currentUser?.userKey) {
-    return { status: 'local' };
-  }
+  if (!currentUser?.userKey) return { status: 'local' };
+  const run = () => performFullSyncUnlocked(currentUser, currentSettings, options);
+  // Web Locks serializes sync across tabs of this origin, not across devices.
+  // Older browsers still have the IndexedDB transactional merge guard.
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : null;
+  if (!locks?.request) return run();
+  return locks.request(`dochazka-sync:${currentUser.userKey}`,
+    options.signal ? { signal: options.signal } : {}, run);
+}
 
+async function performFullSyncUnlocked(currentUser, currentSettings, options) {
   const signal = options.signal;
   signal?.throwIfAborted();
   await drainOutboxQueue(currentUser, signal);
@@ -435,9 +441,19 @@ export async function performFullSync(
 
   const toUpload = [];
   const mergedMap = new Map();
+  const visited = new Set();
+  let deferredMerge = false;
+
+  async function mergeRemote(date, expected, remote) {
+    const result = await applyRemoteDayIfUnchanged(currentUser.userKey, date, expected, remote);
+    if (!result.applied) deferredMerge = true;
+    if (result.day) mergedMap.set(date, result.day);
+    else mergedMap.delete(date);
+  }
 
   for (const [date, localDay] of localMap.entries()) {
     signal?.throwIfAborted();
+    visited.add(date);
     if (pendingDates.has(date)) {
       mergedMap.set(date, localDay);
       continue;
@@ -455,7 +471,7 @@ export async function performFullSync(
 
       if (rem.deletedAt) {
         if (remTime >= locTime) {
-          await deleteUserDay(currentUser.userKey, date);
+          await mergeRemote(date, localDay, null);
           continue;
         } else {
           if (options.pushLocalDays) {
@@ -468,8 +484,7 @@ export async function performFullSync(
           toUpload.push(dayRowForSupabase(localDay, currentUser.userKey, currentSettings));
           mergedMap.set(date, localDay);
         } else {
-          mergedMap.set(date, rem);
-          await putUserDay(currentUser.userKey, rem);
+          await mergeRemote(date, localDay, rem);
         }
       }
     }
@@ -478,17 +493,8 @@ export async function performFullSync(
   for (const [date, remDay] of remoteMap.entries()) {
     signal?.throwIfAborted();
     if (pendingDates.has(date)) continue;
-    if (mergedMap.has(date)) continue;
-
-    if (remDay.deletedAt) {
-      if (localMap.has(date)) {
-        await deleteUserDay(currentUser.userKey, date);
-      }
-      continue;
-    }
-
-    mergedMap.set(date, remDay);
-    await putUserDay(currentUser.userKey, remDay);
+    if (visited.has(date)) continue;
+    await mergeRemote(date, null, remDay);
   }
 
   if (toUpload.length > 0) {
@@ -514,8 +520,7 @@ export async function performFullSync(
             const mergedDay = mergedMap.get(row.date);
             if (mergedDay && mergedDay.updatedAt !== upRes.server_updated_at) {
               const normalizedDay = { ...mergedDay, updatedAt: upRes.server_updated_at };
-              mergedMap.set(row.date, normalizedDay);
-              await putUserDay(currentUser.userKey, normalizedDay);
+              await mergeRemote(row.date, mergedDay, normalizedDay);
             }
           }
         }
@@ -531,7 +536,7 @@ export async function performFullSync(
   // Advance the pull cursor only using rows actually pulled. An upload may
   // complete after a concurrent remote edit which is not in this response.
   const nextCursor = computeNextSyncCursor(remoteRows, lastPull);
-  if (nextCursor) {
+  if (!deferredMerge && nextCursor) {
     setLastSuccessfulPullAt(currentUser.userKey, nextCursor);
   }
 

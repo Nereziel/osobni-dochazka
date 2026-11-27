@@ -224,6 +224,44 @@ export function deleteUserDayWithOutbox(userId, date, payload) {
   return commitAttendanceAndOutbox(userId, 'DELETE', date, null, payload);
 }
 
+/** Decide against the current durable row, not an earlier pull snapshot. */
+export function canApplyRemoteDay(current, expected, pending, date) {
+  if (pending.some(item => item.entity === 'attendance_days' && item.payload?.date === date)) return false;
+  return JSON.stringify(current || null) === JSON.stringify(expected || null);
+}
+
+export async function applyRemoteDayIfUnchanged(userId, date, expected, remote) {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_days', 'sync_queue'], 'readwrite');
+    const store = tx.objectStore('user_days');
+    const pendingRequest = tx.objectStore('sync_queue').index('userId').getAll(IDBKeyRange.only(userId));
+    const localRequest = store.get([userId, date]);
+    let local, pending, localReady = false, pendingReady = false;
+    let outcome;
+    tx.oncomplete = () => resolve(outcome);
+    tx.onerror = () => reject(tx.error || new Error('Sloučení docházky selhalo.'));
+    tx.onabort = () => reject(tx.error || new Error('Sloučení docházky bylo zrušeno.'));
+    function apply() {
+      if (!localReady || !pendingReady) return;
+      if (!canApplyRemoteDay(local, expected, pending, date)) {
+        outcome = { applied: false, day: local || null };
+        return;
+      }
+      if (!remote || remote.deletedAt) {
+        store.delete([userId, date]);
+        outcome = { applied: true, day: null };
+      } else {
+        const day = { ...remote, userId };
+        store.put(day);
+        outcome = { applied: true, day };
+      }
+    }
+    pendingRequest.onsuccess = () => { pending = pendingRequest.result || []; pendingReady = true; apply(); };
+    localRequest.onsuccess = () => { local = localRequest.result; localReady = true; apply(); };
+  });
+}
+
 export async function clearUserDays(userId) {
   const days = await getUserDays(userId);
   return idbAction('user_days', 'readwrite', (store) => {
