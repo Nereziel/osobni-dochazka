@@ -92,6 +92,9 @@ jobs:
       - name: Apply admin audit read migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_admin_audit_read.sql
 
+      - name: Apply RPC least privilege bundle
+        run: psql -v ON_ERROR_STOP=1 -f supabase/manual/20261127_rpc_least_privilege.sql
+
       - name: Run unified database security regression suite
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security.sql
 
@@ -102,4 +105,6 @@ jobs:
           PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/migrations/20261102_security_hardening.sql
           PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/manual/20261102_security_audit_production.sql
           PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/manual/20261102_admin_audit_read_production.sql
+          PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/manual/20261127_rpc_least_privilege.sql
+          PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/manual/20261127_rpc_least_privilege.sql
           PGDATABASE=attendance_bundle_test psql -v ON_ERROR_STOP=1 -f supabase/tests/security.sql

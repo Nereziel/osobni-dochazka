@@ -11,6 +11,7 @@ V Supabase SQL Editoru spusť v tomto pořadí:
 3. `supabase/migrations/20261102_security_audit_followup.sql`
 4. `supabase/migrations/20261102_security_stepup_compat.sql`
 5. `supabase/migrations/20261102_admin_audit_read.sql`
+6. `supabase/manual/20261127_rpc_least_privilege.sql`
 
 Migrace aplikuj **přesně v pořadí uvedeném výše**. Několik souborů sdílí stejné datum, proto se nespoléhej na lexikální řazení názvů. CI používá stejné pořadí.
 
@@ -34,7 +35,7 @@ Pro read-only zobrazení bezpečnostního auditu v administraci aplikuj následn
 supabase/manual/20261102_admin_audit_read_production.sql
 ```
 
-CI oba produkční SQL soubory ověřuje samostatně na čisté databázi.
+Po předchozích změnách aplikuj také `supabase/manual/20261127_rpc_least_privilege.sql`. Soubor je opakovatelný, nemění docházková data, omezuje nepotřebná oprávnění a zachovává týmový přehled. Nejdříve ověř CI a vytvoř zálohu. CI ověřuje také přesné produkční SQL soubory.
 
 ## Bezpečnostní testy
 
@@ -50,6 +51,7 @@ Ten spouští:
 - `security_audit_followup.sql`
 - `security_isolation.sql`
 - `security_audit_ui.sql`
+- `security_rpc_privileges.sql`
 
 Testy běží v transakcích a po skončení změny vracejí zpět.
 

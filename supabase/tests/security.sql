@@ -7,3 +7,4 @@
 \ir security_audit_followup.sql
 \ir security_isolation.sql
 \ir security_audit_ui.sql
+\ir security_rpc_privileges.sql
