@@ -61,6 +61,7 @@ const pendingCount = ref(0);
 
 // Řízení synchronizace a 10s foreground pollingu + 5min ověření session
 let syncInProgress = false;
+let syncGeneration = 0;
 let pendingFollowupOptions = null;
 let pollingTimer = null;
 let sessionVerifyTimer = null;
@@ -126,11 +127,13 @@ export function useSync() {
     }
 
     try {
+      const generation = syncGeneration;
       const isValid = await onVerifySessionCallback();
+      if (generation !== syncGeneration) return false;
       if (!isValid) {
         stopPollingTimer();
         if (typeof onInvalidSessionCallback === 'function') {
-          onInvalidSessionCallback();
+          await onInvalidSessionCallback();
         }
         return false;
       }
@@ -262,11 +265,13 @@ export function useSync() {
     //                            pokud nevalidní: logout / login
     if (activeUser?.userKey) {
       if (typeof onVerifySessionCallback === 'function') {
+        const generation = syncGeneration;
         const isValid = await onVerifySessionCallback();
+        if (generation !== syncGeneration) return;
         if (!isValid) {
           stopPollingTimer();
           if (typeof onInvalidSessionCallback === 'function') {
-            onInvalidSessionCallback();
+            await onInvalidSessionCallback();
           }
           return;
         }
@@ -301,6 +306,7 @@ export function useSync() {
    * Zahájení periodického pollingu v popředí
    */
   function startForegroundSync(currentUser, currentSettings, onRecordsUpdated, options = {}) {
+    if (activeUser?.userKey !== currentUser?.userKey) syncGeneration++;
     activeUser = currentUser;
     activeSettings = currentSettings;
 
@@ -343,7 +349,11 @@ export function useSync() {
    * Zastavení periodického pollingu a úklid
    */
   function stopForegroundSync() {
+    syncGeneration++;
     stopPollingTimer();
+    syncState.value = 'local';
+    syncError.value = null;
+    pendingCount.value = 0;
     activeUser = null;
     activeSettings = null;
     onSyncCompletedCallback = null;
@@ -384,6 +394,7 @@ export function useSync() {
       return { status: 'syncing' };
     }
 
+    const generation = syncGeneration;
     syncInProgress = true;
     syncState.value = 'syncing';
     syncError.value = null;
@@ -396,11 +407,13 @@ export function useSync() {
 
     try {
       const result = await performFullSync(currentUser, resolvedSettings, syncOptions);
+      if (generation !== syncGeneration) return { status: 'cancelled' };
       syncState.value = result?.status === 'conflict' ? 'conflict' : 'online';
       if (result?.status === 'conflict') syncError.value = 'Lokální změna koliduje s novější verzí v cloudu.';
       await refreshPendingCount(currentUser.userKey);
       return result;
     } catch (err) {
+      if (generation !== syncGeneration) return { status: 'cancelled' };
       console.error('Chyba synchronizace:', err);
       syncState.value = 'error';
       syncError.value = err.message || 'Chyba synchronizace se Supabase';
@@ -409,10 +422,11 @@ export function useSync() {
     } finally {
       syncInProgress = false;
 
-      if (pendingFollowupOptions) {
+      if (generation === syncGeneration && pendingFollowupOptions) {
         const nextOptions = pendingFollowupOptions;
         pendingFollowupOptions = null;
         setTimeout(() => {
+          if (generation !== syncGeneration) return;
           sync(currentUser, getActiveSettings(), nextOptions)
             .then((res) => {
               if (typeof onSyncCompletedCallback === 'function' && res?.recordsMap) {
@@ -451,7 +465,7 @@ export function useSync() {
     if (!isValid) {
       stopForegroundSync();
       if (typeof onInvalidSessionFn === 'function') {
-        onInvalidSessionFn();
+        await onInvalidSessionFn();
       }
       return { verified: false, mode: 'invalid_session' };
     }

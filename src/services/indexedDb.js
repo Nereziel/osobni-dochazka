@@ -331,14 +331,48 @@ export async function clearUserSyncQueue(userId) {
 
 /**
  * Bezpečnostní úklid po odhlášení: odstraní lokální cloudová data konkrétního
- * účtu, aby po revokaci session nezůstala docházka čitelná v offline cache.
+ * účtu. Při automatickém vypršení zachová jen neodeslané změny pro opětovné přihlášení.
  * Lokální anonymní profil `user:local` se tímto nemaže.
  */
-export async function clearUserLocalData(userId) {
+export async function clearUserLocalData(userId, { preservePending = false } = {}) {
   if (!userId || userId === 'user:local') return;
-  await Promise.all([
-    clearUserDays(userId),
-    deleteUserSettings(userId),
-    clearUserSyncQueue(userId)
-  ]);
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_days', 'user_settings', 'sync_queue'], 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Úklid lokálních dat selhal.'));
+    tx.onabort = () => reject(tx.error || new Error('Úklid lokálních dat byl zrušen.'));
+
+    const queue = tx.objectStore('sync_queue');
+    const days = tx.objectStore('user_days');
+    const pendingRequest = queue.index('userId').getAll(IDBKeyRange.only(userId));
+    pendingRequest.onsuccess = () => {
+      const pending = pendingRequest.result || [];
+      const retained = pendingLocalData(pending, preservePending);
+      if (!preservePending) {
+        for (const item of pending) queue.delete(item.id);
+      }
+      if (!retained.settings) tx.objectStore('user_settings').delete(userId);
+      const cursorRequest = days.index('userId').openCursor(IDBKeyRange.only(userId));
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) return;
+        if (!retained.dates.has(cursor.value.date)) cursor.delete();
+        cursor.continue();
+      };
+    };
+  });
+}
+
+/** Keep only the local data needed to recover unconfirmed changes for the same account. */
+export function pendingLocalData(pending, preservePending) {
+  const dates = new Set();
+  let settings = false;
+  if (preservePending) {
+    for (const item of pending) {
+      if (item.entity === 'attendance_days' && item.payload?.date) dates.add(item.payload.date);
+      if (item.entity === 'attendance_profiles') settings = true;
+    }
+  }
+  return { dates, settings };
 }
