@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/Nereziel/osobni-dochazka/compare/v3.4.0...v3.5.0) (2026-11-27)
+
+
+### Features
+
+* zaokrouhlení příchodů a odchodů na 5 minut ([#49](https://github.com/Nereziel/osobni-dochazka/issues/49)) ([00926c5](https://github.com/Nereziel/osobni-dochazka/commit/00926c510cae1f5c70fababf721141215e9e8d11))
+
 ## [3.4.0](https://github.com/Nereziel/osobni-dochazka/compare/v3.3.0...v3.4.0) (2026-11-27)
 
 
