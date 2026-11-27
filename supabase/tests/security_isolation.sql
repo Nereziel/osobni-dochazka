@@ -140,6 +140,26 @@ BEGIN
     raise exception 'SEC-I04: admin deleted their own account';
   end if;
 
+  -- Administrative account management does not confer attendance write permission.
+  v_failed := false;
+  begin
+    perform public.upsert_attendance_day_lww(jsonb_build_object(
+      'user_key', 'user:iso_b', 'date', '2026-11-05', 'type', 'work',
+      'start_time', '08:00', 'end_time', '09:00', 'updated_at', now()
+    ));
+  exception when others then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'SEC-I06: admin wrote attendance for another account';
+  end if;
+  if not coalesce((public.upsert_attendance_day_lww(jsonb_build_object(
+    'user_key', 'user:iso_admin', 'date', '2026-11-05', 'type', 'work',
+    'start_time', '08:00', 'end_time', '09:00', 'updated_at', now()
+  ))->>'applied')::boolean, false) then
+    raise exception 'SEC-I06: admin cannot write own attendance';
+  end if;
+
   -- Resetting B's PIN with valid step-up must revoke B's existing session.
   perform public.admin_reset_user_pin('user:iso_b', 'employee-b-reset-456', 'admin-isolation-123');
   perform set_config(
