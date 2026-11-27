@@ -37,7 +37,8 @@ function makeContext(pathParts, {
   const headers = new Headers({
     Origin: 'https://dochazka.example',
     'Sec-Fetch-Site': 'same-origin',
-    'CF-Connecting-IP': '203.0.113.7'
+    'CF-Connecting-IP': '203.0.113.7',
+    'Content-Type': 'application/json'
   });
   if (cookie) headers.set('Cookie', cookie);
 
