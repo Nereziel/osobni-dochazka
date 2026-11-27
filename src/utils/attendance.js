@@ -268,6 +268,20 @@ export function dayMetrics(day, settings = DEFAULT_SETTINGS) {
   };
 }
 
+/** Incomplete work is not a confirmed deficit. Absence-only records may be valid without work times. */
+export function isIncompleteWorkday(day) {
+  if (!day || !allowsWork(day.type) || (day.type === 'doctor' && day.doctorFullDay)) return false;
+  if (!day.start && !day.end) {
+    if (day.type === 'doctor') return durationMinutes(day.doctorStart, day.doctorEnd) === 0;
+    if (day.type === 'other') return !(Number(day.otherMinutes) > 0);
+  }
+  return timeToMinutes(day.start) === null || timeToMinutes(day.end) === null;
+}
+
+export function isCompletedDay(day, dateKey, today) {
+  return Boolean(day && !day.deletedAt && dateKey <= today && !isIncompleteWorkday(day));
+}
+
 export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS, today = localDateKey(new Date())) {
   const d = monthDate instanceof Date ? monthDate : parseDateKey(monthDate);
   const year = d.getFullYear();
@@ -284,6 +298,8 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS, t
   let recorded = 0;
   let missing = 0;
   let scheduledWorkdays = 0;
+  let incomplete = 0;
+  let planned = 0;
   let weekendWorked = 0;
   let totalBreaks = 0;
 
@@ -296,23 +312,26 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS, t
       scheduledWorkdays++;
     }
 
-    const rec = recordsMap instanceof Map ? recordsMap.get(key) : recordsMap?.[key];
+    const candidate = recordsMap instanceof Map ? recordsMap.get(key) : recordsMap?.[key];
+    const rec = candidate?.deletedAt ? null : candidate;
     const dayTarget = rec ? targetForDay(rec, settings) : baseTarget;
     fund += dayTarget;
 
     if (rec) {
       const m = dayMetrics(rec, settings);
-      worked += m.worked;
-      credited += m.credited;
+      // Preserve raw recorded balance for comparison, but actual totals use only completed days.
       balance += m.balance;
-      totalBreaks += m.breakMinutes;
       recorded++;
-      if (isWeekendDate(dateObj)) {
-        weekendWorked += m.worked;
-      }
-
-      const isTodayOngoing = key === today && Boolean(rec.start && !rec.end) && allowsWork(rec.type);
-      if (!isTodayOngoing) {
+      if (key > today) {
+        planned++;
+      } else if (isIncompleteWorkday(rec)) {
+        incomplete++;
+        if (dayTarget > 0 && key < today) missing++;
+      } else {
+        worked += m.worked;
+        credited += m.credited;
+        totalBreaks += m.breakMinutes;
+        if (isWeekendDate(dateObj)) weekendWorked += m.worked;
         completedBalance += m.balance;
         completedFund += dayTarget;
         completedCounted += m.counted;
@@ -332,6 +351,8 @@ export function monthStats(monthDate, recordsMap, settings = DEFAULT_SETTINGS, t
     completedCounted,
     recorded,
     missing,
+    incomplete,
+    planned,
     scheduledWorkdays,
     weekendWorked,
     totalBreaks
@@ -345,9 +366,7 @@ export function closedBalanceBeforeDate(dateKey, recordsMap, settings = DEFAULT_
   const entries = recordsMap instanceof Map ? recordsMap.entries() : Object.entries(recordsMap || {});
   let balance = 0;
   for (const [key, day] of entries) {
-    if (!day || !key.startsWith(prefix) || key >= dateKey || day.deletedAt) continue;
-    if (allowsWork(day.type) && day.start && !day.end &&
-        !(day.type === 'doctor' && day.doctorFullDay)) continue;
+    if (!key.startsWith(prefix) || key >= dateKey || !isCompletedDay(day, key, dateKey)) continue;
     balance += dayMetrics(day, settings).balance;
   }
   return balance;
@@ -376,20 +395,20 @@ export function balanceDepartureHint(day, settings, priorBalance) {
   return `Měsíční saldo ${balance} · Odchod pro vyrovnání: ${recommendation.end}`;
 }
 
-export function yearVacationUsed(year, recordsMap) {
+export function yearVacationUsed(year, recordsMap, settings = DEFAULT_SETTINGS) {
   let used = 0;
   const prefix = `${year}-`;
   const entries = recordsMap instanceof Map ? recordsMap.entries() : Object.entries(recordsMap || {});
 
   for (const [key, day] of entries) {
-    if (!key.startsWith(prefix) || !day) continue;
+    if (!key.startsWith(prefix) || !day || day.deletedAt || targetForDay(day, settings) <= 0) continue;
     if (day.type === 'vacation') used += 1;
     else if (day.type === 'halfVacation') used += 0.5;
   }
   return used;
 }
 
-export function monthVacationDays(monthDate, recordsMap) {
+export function monthVacationDays(monthDate, recordsMap, settings = DEFAULT_SETTINGS) {
   const d = monthDate instanceof Date ? monthDate : parseDateKey(monthDate);
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -398,7 +417,7 @@ export function monthVacationDays(monthDate, recordsMap) {
 
   const entries = recordsMap instanceof Map ? recordsMap.entries() : Object.entries(recordsMap || {});
   for (const [key, day] of entries) {
-    if (!key.startsWith(prefix) || !day) continue;
+    if (!key.startsWith(prefix) || !day || day.deletedAt || targetForDay(day, settings) <= 0) continue;
     if (day.type === 'vacation') used += 1;
     else if (day.type === 'halfVacation') used += 0.5;
   }
