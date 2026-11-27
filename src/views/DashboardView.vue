@@ -240,22 +240,17 @@
             class="quick-time-picker"
             @submit.prevent="confirmArrivalTime"
           >
-            <label class="win-field">
-              <span>Čas příchodu</span>
-              <input
-                v-model="selectedArrivalTime"
-                type="time"
-                step="60"
-                required
-              >
-            </label>
+            <AttendanceTimePicker
+              v-model="selectedArrivalTime"
+              label="Čas příchodu"
+            />
             <div class="quick-time-actions">
               <button
                 class="win-btn-accent"
                 type="submit"
-                :disabled="timeToMinutes(selectedArrivalTime) === null"
+                :disabled="!isAttendanceTimeSlot(selectedArrivalTime)"
               >
-                Uložit příchod
+                Uložit příchod ({{ selectedArrivalTime }})
               </button>
               <button
                 class="win-btn-subtle"
@@ -273,22 +268,17 @@
             class="quick-time-picker"
             @submit.prevent="confirmDepartureTime"
           >
-            <label class="win-field">
-              <span>Čas odchodu</span>
-              <input
-                v-model="selectedDepartureTime"
-                type="time"
-                step="60"
-                required
-              >
-            </label>
+            <AttendanceTimePicker
+              v-model="selectedDepartureTime"
+              label="Čas odchodu"
+            />
             <div class="quick-time-actions">
               <button
                 class="win-btn-accent"
                 type="submit"
-                :disabled="timeToMinutes(selectedDepartureTime) === null"
+                :disabled="!isAttendanceTimeSlot(selectedDepartureTime)"
               >
-                Uložit odchod
+                Uložit odchod ({{ selectedDepartureTime }})
               </button>
               <button
                 class="win-btn-subtle"
@@ -444,7 +434,8 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { fmtDayFull, todayKey, localDateKey, isWeekendDate, fmtMonthTitle } from '../utils/dates.js';
 import { holidayName } from '../utils/holidays.js';
-import { formatDuration, formatClock, timeToMinutes } from '../utils/time.js';
+import { formatDuration, formatClock, timeToMinutes, roundAttendanceTime, isAttendanceTimeSlot } from '../utils/time.js';
+import AttendanceTimePicker from '../components/Attendance/AttendanceTimePicker.vue';
 import {
   dayMetrics,
   defaultHoursForDate,
@@ -499,27 +490,27 @@ const showDepartureTimePicker = ref(false);
 const selectedDepartureTime = ref('');
 
 function openArrivalTimePicker() {
-  selectedArrivalTime.value = props.todayRecord?.start || defaultHoursForDate(currentKey, props.settings).start;
+  selectedArrivalTime.value = roundAttendanceTime(props.todayRecord?.start || defaultHoursForDate(currentKey, props.settings).start);
   showDepartureTimePicker.value = false;
   showArrivalTimePicker.value = true;
 }
 
 function confirmArrivalTime() {
-  if (timeToMinutes(selectedArrivalTime.value) === null) return;
+  if (!isAttendanceTimeSlot(selectedArrivalTime.value)) return;
   emit('quick-arrival-at', selectedArrivalTime.value);
   showArrivalTimePicker.value = false;
 }
 
 function openDepartureTimePicker() {
-  selectedDepartureTime.value = props.activeShift?.isActive
-    ? nowClock.value
-    : (props.todayRecord?.end || nowClock.value);
+  selectedDepartureTime.value = roundAttendanceTime(props.activeShift?.isActive
+    ? formatClock()
+    : (props.todayRecord?.end || formatClock()));
   showArrivalTimePicker.value = false;
   showDepartureTimePicker.value = true;
 }
 
 function confirmDepartureTime() {
-  if (timeToMinutes(selectedDepartureTime.value) === null) return;
+  if (!isAttendanceTimeSlot(selectedDepartureTime.value)) return;
   emit('quick-departure-at', selectedDepartureTime.value);
   showDepartureTimePicker.value = false;
 }

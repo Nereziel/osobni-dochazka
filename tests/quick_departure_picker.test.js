@@ -15,8 +15,10 @@ describe('Quick departure at a selected time', () => {
     expect(dashboard).toContain('v-if="showDepartureTimePicker"');
     expect(dashboard).toContain('id="quick-departure-picker"');
     expect(dashboard).toContain('v-model="selectedDepartureTime"');
+    expect(dashboard).toContain('<AttendanceTimePicker');
+    expect(dashboard).toContain('label="Čas odchodu"');
     expect(dashboard).toContain('@submit.prevent="confirmDepartureTime"');
-    expect(dashboard).toContain("if (timeToMinutes(selectedDepartureTime.value) === null) return;");
+    expect(dashboard).toContain("if (!isAttendanceTimeSlot(selectedDepartureTime.value)) return;");
     expect(dashboard).toContain("emit('quick-departure-at', selectedDepartureTime.value)");
     expect(dashboard).toContain('showDepartureTimePicker.value = false;');
     expect(dashboard).toContain('showArrivalTimePicker.value = false;');
@@ -30,7 +32,7 @@ describe('Quick departure at a selected time', () => {
     expect(app).toContain('async function handleQuickDepartureAt(time) {');
     expect(app).toContain('if (timeToMinutes(time) === null)');
     expect(app).toContain('applyQuickDeparture(d, time, hours.start);');
-    expect(app).toContain("`Odchod v ${time} zaznamenán`, { preferOpenShift: true }");
+    expect(app).toContain("`Odchod v ${result.end} zaznamenán`, { preferOpenShift: true }");
   });
 
   it('retains an existing arrival, absence interval, notes and the recorded day', () => {

@@ -22,6 +22,52 @@ export function minutesToTime(min) {
   return `${pad(Math.floor(min / 60) % 24)}:${pad(min % 60)}`;
 }
 
+/** Round a wall-clock attendance input, without moving its calendar date.
+ * The last two minutes of a day use 23:55 rather than an ambiguous 00:00.
+ */
+export function roundAttendanceTime(value) {
+  const minutes = timeToMinutes(value);
+  if (minutes === null) return value;
+  return minutesToTime(Math.min(1435, Math.round(minutes / 5) * 5));
+}
+
+/** Only round newly entered or changed endpoints; preserve legacy times and notes.
+ * If rounding against an unchanged, precise endpoint would reverse a short
+ * shift into an overnight shift, use the adjacent five-minute slot instead.
+ */
+export function roundAttendanceTimes(day, previous = {}) {
+  const startChanged = day.start !== previous?.start;
+  const endChanged = day.end !== previous?.end;
+  let start = startChanged ? roundAttendanceTime(day.start) : day.start;
+  let end = endChanged ? roundAttendanceTime(day.end) : day.end;
+  const rawStart = timeToMinutes(day.start);
+  const rawEnd = timeToMinutes(day.end);
+  const roundedStart = timeToMinutes(start);
+  const roundedEnd = timeToMinutes(end);
+
+  if (rawStart !== null && rawEnd !== null && rawEnd >= rawStart &&
+      roundedEnd !== null && roundedStart !== null && roundedEnd < roundedStart) {
+    if (endChanged && roundedStart <= 1435) {
+      end = minutesToTime(Math.ceil(roundedStart / 5) * 5);
+    } else if (startChanged) {
+      start = minutesToTime(Math.floor(roundedEnd / 5) * 5);
+    } else if (endChanged) {
+      // An unchanged 23:56–23:59 arrival has no later slot on this date.
+      end = day.end;
+    }
+  }
+
+  return { ...day, start, end };
+}
+
+export const ATTENDANCE_HOURS = Object.freeze(Array.from({ length: 24 }, (_, i) => pad(i)));
+export const ATTENDANCE_MINUTES = Object.freeze(Array.from({ length: 12 }, (_, i) => pad(i * 5)));
+
+export function isAttendanceTimeSlot(time) {
+  const minutes = timeToMinutes(time);
+  return minutes !== null && minutes % 5 === 0;
+}
+
 export function durationMinutes(start, end) {
   const s = timeToMinutes(start);
   const e = timeToMinutes(end);

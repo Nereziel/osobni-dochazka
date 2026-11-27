@@ -13,9 +13,10 @@ describe('Quick arrival at a selected time', () => {
     expect(dashboard).toContain('@click="openArrivalTimePicker"');
     expect(dashboard).toContain('v-if="showArrivalTimePicker"');
     expect(dashboard).toContain('v-model="selectedArrivalTime"');
-    expect(dashboard).toContain('type="time"');
+    expect(dashboard).toContain('<AttendanceTimePicker');
+    expect(dashboard).toContain('label="Čas příchodu"');
     expect(dashboard).toContain('@submit.prevent="confirmArrivalTime"');
-    expect(dashboard).toContain("if (timeToMinutes(selectedArrivalTime.value) === null) return;");
+    expect(dashboard).toContain("if (!isAttendanceTimeSlot(selectedArrivalTime.value)) return;");
     expect(dashboard).toContain("emit('quick-arrival-at', selectedArrivalTime.value)");
     expect(dashboard).toContain('showArrivalTimePicker.value = false;');
   });

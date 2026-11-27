@@ -3,7 +3,7 @@
  */
 import { localDateKey, parseDateKey, isWeekendDate } from './dates.js';
 import { isPublicHoliday } from './holidays.js';
-import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime, shiftElapsedSeconds, formatDuration } from './time.js';
+import { durationMinutes, overlapMinutes, timeToMinutes, minutesToTime, shiftElapsedSeconds, formatDuration, roundAttendanceTime, roundAttendanceTimes } from './time.js';
 import { clampNumber, cloneDeep } from './validation.js';
 
 export const DEFAULT_SETTINGS = {
@@ -146,15 +146,16 @@ export function allowsWork(type) {
 export function applyQuickArrival(day, time) {
   if (!allowsWork(day.type)) day.type = 'work';
   if (day.type === 'doctor') day.doctorFullDay = false;
-  day.start = time;
+  day.start = roundAttendanceTime(time);
   day.end = '';
 }
 
 export function applyQuickDeparture(day, time, defaultStart) {
   if (!allowsWork(day.type)) day.type = 'work';
   if (day.type === 'doctor') day.doctorFullDay = false;
-  if (!day.start) day.start = defaultStart;
-  day.end = time;
+  const rounded = roundAttendanceTimes({ ...day, start: day.start || defaultStart, end: time }, { start: day.start });
+  day.start = rounded.start;
+  day.end = rounded.end;
 }
 
 /** Open shift on today, or yesterday for a genuine overnight shift under 24 hours. */
@@ -166,7 +167,16 @@ export function findActiveShiftRecord(recordsMap, now = new Date()) {
     if (!day || !allowsWork(day.type) || !day.start || day.end || (day.type === 'doctor' && day.doctorFullDay)) continue;
     const startMin = timeToMinutes(day.start);
     if (startMin === null) continue;
-    if (date === today && startMin > now.getHours() * 60 + now.getMinutes()) continue;
+    if (date === today && startMin > now.getHours() * 60 + now.getMinutes()) {
+      // A just-recorded arrival can round up by two minutes. Treat that open
+      // shift as active immediately without activating ordinary future plans.
+      const saved = new Date(day.updatedAt || '');
+      const savedMinute = saved.getHours() * 60 + saved.getMinutes();
+      const roundedUp = Number.isFinite(saved.getTime()) && localDateKey(saved) === date &&
+        startMin % 5 === 0 && startMin - savedMinute >= 1 && startMin - savedMinute <= 2 &&
+        startMin - (now.getHours() * 60 + now.getMinutes()) <= 3;
+      if (!roundedUp) continue;
+    }
     const elapsed = shiftElapsedSeconds(date, day.start, now);
     if (elapsed < 24 * 3600) return day;
   }

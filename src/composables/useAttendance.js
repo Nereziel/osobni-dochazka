@@ -158,9 +158,9 @@ export function useAttendance() {
   }
 
   async function quickToday(mutator, currentUser, settings, options = {}) {
-    const key = options.preferOpenShift && activeShiftRecord.value
-      ? activeShiftRecord.value.date
-      : todayKey();
+    // Use the current clock, not a UI tick which can lag at midnight.
+    const openShift = options.preferOpenShift ? findActiveShiftRecord(records.value, new Date()) : null;
+    const key = openShift?.date || todayKey();
     const existing = records.value.get(key);
     const hours = defaultHoursForDate(key, settings);
 
