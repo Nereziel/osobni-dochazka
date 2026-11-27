@@ -23,6 +23,7 @@ import {
   yearVacationUsed as calcYearVacation,
   monthVacationDays as calcMonthVacation,
   findActiveShiftRecord,
+  isCompletedDay,
   baseTargetForDate,
   defaultHoursForDate,
   TYPE_LABELS
@@ -230,7 +231,9 @@ export function useAttendance() {
     for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
       const dateObj = new Date(year, month, dayNum, 12, 0, 0, 0);
       const key = localDateKey(dateObj);
-      const rec = records.value.get(key);
+      const candidate = records.value.get(key);
+      const rec = candidate?.deletedAt ? null : candidate;
+      const isActual = isCompletedDay(rec, key, currentTodayKey.value);
       const m = rec
         ? dayMetrics(rec, settings)
         : { worked: 0, credited: 0, target: baseTargetForDate(key, settings), balance: 0, breakMinutes: 0 };
@@ -241,11 +244,11 @@ export function useAttendance() {
         rec ? (TYPE_LABELS[rec.type] || rec.type) : (holidayName(key) || (isWeekendDate(dateObj) ? 'Víkend' : '')),
         rec?.start || '',
         rec?.end || '',
-        rec ? String(m.breakMinutes) : '0',
-        formatDuration(m.worked),
-        formatDuration(m.credited),
+        isActual ? String(m.breakMinutes) : '',
+        isActual ? formatDuration(m.worked) : '',
+        isActual ? formatDuration(m.credited) : '',
         formatDuration(m.target),
-        formatDuration(m.balance, true),
+        isActual ? formatDuration(m.balance, true) : '',
         sanitizeSpreadsheetCell(rec?.note || '').replace(/"/g, '""')
       ]);
     }
@@ -294,7 +297,7 @@ export function useAttendance() {
     activeShiftRecord,
     activeShift,
     calcMonthStats: (date, settings) => calcMonthStats(date, records.value, settings, currentTodayKey.value),
-    calcYearVacation: (year) => calcYearVacation(year, records.value),
-    calcMonthVacation: (date) => calcMonthVacation(date, records.value)
+    calcYearVacation: (year, settings) => calcYearVacation(year, records.value, settings),
+    calcMonthVacation: (date, settings) => calcMonthVacation(date, records.value, settings)
   };
 }

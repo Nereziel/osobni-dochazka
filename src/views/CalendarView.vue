@@ -254,12 +254,7 @@ const emit = defineEmits(['change-month', 'open-month-picker', 'fill-missing', '
 
 const monthTitle = computed(() => fmtMonthTitle(props.currentMonth));
 
-const effectiveBalance = computed(() => {
-  if (typeof props.stats.completedBalance === 'number' && props.stats.completedBalance !== props.stats.balance) {
-    return props.stats.completedBalance;
-  }
-  return props.stats.balance;
-});
+const effectiveBalance = computed(() => props.stats.completedBalance ?? props.stats.balance);
 
 function prevMonth() {
   emit('change-month', addMonths(props.currentMonth, -1));

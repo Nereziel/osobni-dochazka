@@ -318,8 +318,8 @@ const activeShiftMetrics = computed(() => activeShiftRecord.value
   : { target: 0, credited: 0 });
 const calendarStats = computed(() => calcMonthStats(calendarMonth.value, settings.value));
 const timesheetStats = computed(() => calcMonthStats(timesheetMonth.value, settings.value));
-const yearVacationCount = computed(() => calcYearVacation(timesheetMonth.value.getFullYear()));
-const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value));
+const yearVacationCount = computed(() => calcYearVacation(timesheetMonth.value.getFullYear(), settings.value));
+const monthVacationCount = computed(() => calcMonthVacation(timesheetMonth.value, settings.value));
 
 // Ochrana proti držení F5 / spamování reloadu a nadměrnému čerpání limitu Supabase
 const RELOAD_KEY_COOLDOWN_MS = 4000;
