@@ -122,5 +122,8 @@ jobs:
       - name: Apply RPC least privilege bundle
         run: psql -v ON_ERROR_STOP=1 -f supabase/manual/20261127_rpc_least_privilege.sql
 
+      - name: Apply safe backup restore bundle
+        run: psql -v ON_ERROR_STOP=1 -f supabase/manual/20261127_safe_backup_restore.sql
+
       - name: Run database security regression suite
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/security.sql

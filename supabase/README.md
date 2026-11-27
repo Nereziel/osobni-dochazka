@@ -12,6 +12,7 @@ V Supabase SQL Editoru spusť v tomto pořadí:
 4. `supabase/migrations/20261102_security_stepup_compat.sql`
 5. `supabase/migrations/20261102_admin_audit_read.sql`
 6. `supabase/manual/20261127_rpc_least_privilege.sql`
+7. `supabase/manual/20261127_safe_backup_restore.sql`
 
 Migrace aplikuj **přesně v pořadí uvedeném výše**. Několik souborů sdílí stejné datum, proto se nespoléhej na lexikální řazení názvů. CI používá stejné pořadí.
 
@@ -37,6 +38,8 @@ supabase/manual/20261102_admin_audit_read_production.sql
 
 Po předchozích změnách aplikuj také `supabase/manual/20261127_rpc_least_privilege.sql`. Soubor je opakovatelný, nemění docházková data, omezuje nepotřebná oprávnění a zachovává týmový přehled. Nejdříve ověř CI a vytvoř zálohu. CI ověřuje také přesné produkční SQL soubory.
 
+Po aktualizaci minimálních oprávnění aplikuj také `supabase/manual/20261127_safe_backup_restore.sql`. Cloudový import vyžaduje tento RPC endpoint; do té doby aplikace import přihlášeného účtu odmítne bez změny dat. Import pouze doplňuje chybějící dny, chrání i tombstones a nepřepisuje nastavení.
+
 ## Bezpečnostní testy
 
 Jednotný runner je:
@@ -52,6 +55,7 @@ Ten spouští:
 - `security_isolation.sql`
 - `security_audit_ui.sql`
 - `security_rpc_privileges.sql`
+- `security_backup_restore.sql`
 
 Testy běží v transakcích a po skončení změny vracejí zpět.
 

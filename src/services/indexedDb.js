@@ -236,37 +236,57 @@ export async function clearUserDays(userId) {
  * the backup are left untouched; every imported cloud change gets an outbox item
  * in the same transaction, so an interrupted restore can be retried safely.
  */
+export function selectMissingBackupDays(days, existing, pending) {
+  const protectedDates = new Set(existing.map(day => day.date));
+  for (const item of pending) {
+    if (item.entity === 'attendance_days' && item.payload?.date) protectedDates.add(item.payload.date);
+  }
+  return days.filter(day => !protectedDates.has(day.date));
+}
+
 export async function importUserBackupAtomic(userId, days, settings = null, queueActions = []) {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(['user_days', 'user_settings', 'sync_queue'], 'readwrite');
-    tx.oncomplete = () => resolve(days.length);
+    let imported = 0;
+    tx.oncomplete = () => resolve(imported);
     tx.onerror = () => reject(tx.error || new Error('Import zálohy selhal.'));
     tx.onabort = () => reject(tx.error || new Error('Import zálohy byl vrácen zpět.'));
-
-    try {
-      const daysStore = tx.objectStore('user_days');
-      for (const day of days) {
-        daysStore.put({ ...day, userId });
+    const daysStore = tx.objectStore('user_days');
+    const queueStore = tx.objectStore('sync_queue');
+    const localRequest = daysStore.index('userId').getAll(IDBKeyRange.only(userId));
+    const queueRequest = queueStore.index('userId').getAll(IDBKeyRange.only(userId));
+    let local;
+    let pending;
+    function commitWhenReady() {
+      if (!local || !pending) return;
+      try {
+        const missing = selectMissingBackupDays(days, local, pending);
+        const accepted = new Set(missing.map(day => day.date));
+        for (const day of missing) daysStore.add({ ...day, userId });
+        imported = missing.length;
+        // The restore UI never replaces settings. Retain the optional argument
+        // only for initializing an otherwise empty local account.
+        if (settings && userId === 'user:local') {
+          const store = tx.objectStore('user_settings');
+          const request = store.get(userId);
+          request.onsuccess = () => { if (!request.result) store.add({ ...settings, userId }); };
+        }
+        for (const action of queueActions) {
+          if (action.entity !== 'attendance_days' || action.action !== 'IMPORT_MISSING' ||
+              !accepted.has(action.payload?.date)) continue;
+          queueStore.add({
+            userId, entity: action.entity, action: action.action, payload: action.payload,
+            createdAt: new Date().toISOString(), retries: 0
+          });
+        }
+      } catch (err) {
+        tx.abort();
+        reject(err);
       }
-      if (settings) {
-        tx.objectStore('user_settings').put({ ...settings, userId });
-      }
-      const queueStore = tx.objectStore('sync_queue');
-      for (const action of queueActions) {
-        queueStore.add({
-          userId,
-          entity: action.entity,
-          action: action.action,
-          payload: action.payload,
-          createdAt: new Date().toISOString(),
-          retries: 0
-        });
-      }
-    } catch (err) {
-      tx.abort();
-      reject(err);
     }
+    localRequest.onsuccess = () => { local = localRequest.result || []; commitWhenReady(); };
+    queueRequest.onsuccess = () => { pending = queueRequest.result || []; commitWhenReady(); };
   });
 }
 

@@ -2,6 +2,8 @@ import { DEFAULT_SETTINGS, TYPE_LABELS, normalizeSettings } from './attendance.j
 import { isValidDateKey, isValidTimeString } from './validation.js';
 import { dayRowForSupabase, profileRowFromSettings } from '../services/sync.js';
 
+import { selectMissingBackupDays } from '../services/indexedDb.js';
+
 const MAX_BACKUP_DAYS = 5000;
 const NUMERIC_SETTINGS = {
   dailyTargetMinutes: 1440,
@@ -105,7 +107,8 @@ export function validateBackupPayload(payload) {
     const day = normalizeBackupDay(raw, index, now);
     if (seen.has(day.date)) throw new Error(`Duplicitní den v záloze: ${day.date}.`);
     seen.add(day.date);
-    days.push(day);
+    // A backup tombstone is not an instruction to resurrect or delete a day.
+    if (!raw.deletedAt) days.push(day);
   }
   const settings = normalizeBackupSettings(payload.settings);
   return { days, settings };
@@ -131,4 +134,19 @@ export function buildBackupSyncActions(days, importedSettings, user, existingSet
     });
   }
   return items;
+}
+
+/** Existing and pending dates are never overwritten, including queued deletions. */
+export function planMissingBackupDays(days, existing, pending) {
+  const missing = selectMissingBackupDays(days, existing, pending);
+  return { days: missing, skipped: days.length - missing.length };
+}
+
+export function buildMissingBackupSyncActions(days, user, settings = DEFAULT_SETTINGS) {
+  if (!user?.userKey) return [];
+  return days.map(day => ({
+    entity: 'attendance_days',
+    action: 'IMPORT_MISSING',
+    payload: dayRowForSupabase(day, user.userKey, settings)
+  }));
 }
