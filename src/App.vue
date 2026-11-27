@@ -216,7 +216,7 @@ import { useSync, setBootSyncTimestamp } from './composables/useSync.js';
 import { openDatabase, importUserBackupAtomic, putUserSettings, getPendingSyncActions } from './services/indexedDb.js';
 import { validateBackupPayload, buildBackupSyncActions } from './utils/backup.js';
 import { supabaseRequest } from './services/supabase.js';
-import { settingsFromProfileRow } from './services/sync.js';
+import { settingsFromProfileRow, resetUserSyncCursor } from './services/sync.js';
 import { formatClock, timeToMinutes } from './utils/time.js';
 import { dayMetrics, applyQuickArrival, applyQuickDeparture, closedBalanceBeforeDate } from './utils/attendance.js';
 import { todayKey, startOfMonth } from './utils/dates.js';
@@ -429,19 +429,32 @@ async function handleSyncUpdate(recordsMap, serverProfile) {
   if (serverProfile) await applyServerProfile(serverProfile);
 }
 
-function performLocalLogout() {
-  if (currentUser.value?.userKey) {
-    setBootSyncTimestamp(currentUser.value.userKey, 0);
+async function performLocalLogout(options = {}) {
+  const priorKey = currentUser.value?.userKey;
+  if (priorKey) {
+    setBootSyncTimestamp(priorKey, 0);
+    resetUserSyncCursor(priorKey);
   }
-  stopForegroundSync();
-  logout();
-  const userKey = 'user:local';
-  loadSettings(userKey);
-  loadRecords(userKey);
+  const syncStopped = stopForegroundSync();
+  const logoutPromise = logout({ ...options, beforeCleanup: syncStopped });
+  records.value = new Map();
+  currentView.value = 'dashboard';
+  // Clear the visible account immediately; restore anonymous data only after cleanup.
+  try {
+    await loadSettings(null);
+    await logoutPromise;
+  } finally {
+    await Promise.all([loadSettings('user:local'), loadRecords('user:local')]);
+    await refreshPendingCount('user:local');
+  }
 }
-function handleInvalidSession() {
-  performLocalLogout();
-  showToast('Relace vypršela nebo byla odvolána. Přihlaste se prosím znovu.', '⚠️');
+async function handleInvalidSession() {
+  try {
+    await performLocalLogout({ preservePending: true, revoke: false });
+    showToast('Relace vypršela. Neodeslané změny zůstaly pro opětovné přihlášení.', '⚠️');
+  } catch {
+    showToast('Úklid lokálních dat selhal. Znovu se přihlaste ke stejnému účtu.', '⚠️');
+  }
   openLoginModal();
 }
 
@@ -466,7 +479,9 @@ async function triggerSync(pushLocalDays = true, options = {}) {
   }
 
   try {
-    const res = await sync(currentUser.value, () => settings.value, { pushLocalDays });
+    const syncingUser = currentUser.value;
+    const res = await sync(syncingUser, () => settings.value, { pushLocalDays });
+    if (currentUser.value?.userKey !== syncingUser.userKey || res?.status === 'cancelled') return;
     const finishedAt = Date.now();
     lastManualSyncAt = finishedAt;
     setBootSyncTimestamp(currentUser.value.userKey, finishedAt);
@@ -772,7 +787,7 @@ async function handleLogout() {
       ? `Pozor: ${pending.length} neodeslaných nebo konfliktních změn by se při odhlášení odstranilo z tohoto zařízení. Nejdřív je synchronizuj nebo exportuj zálohu. Opravdu přesto smazat a odhlásit?`
       : 'Opravdu se odhlásit z tohoto zařízení?';
     if (!confirm(warning)) return;
-    performLocalLogout();
+    await performLocalLogout();
     showToast('Uživatel odhlášen', 'ℹ️');
   } catch {
     showToast('Nepodařilo se ověřit neodeslané změny; odhlášení nebylo provedeno.', '⚠️');

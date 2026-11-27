@@ -40,6 +40,7 @@ function loadInitialUser() {
 }
 
 const currentUser = ref(loadInitialUser());
+let logoutTask = null;
 
 export function useAuth() {
   const isAuthenticated = computed(() => Boolean(currentUser.value?.userKey));
@@ -90,6 +91,7 @@ export function useAuth() {
   }
 
   async function login(usernameInput, pinInput, rememberMe = false) {
+    if (logoutTask) await logoutTask;
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!pinInput) throw new Error('Zadej svůj PIN nebo heslo.');
@@ -120,6 +122,7 @@ export function useAuth() {
   }
 
   async function register(usernameInput, displayNameInput, pinInput, pinConfirmInput, inviteCodeInput) {
+    if (logoutTask) await logoutTask;
     const cleanUser = usernameInput.trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
     if (!cleanUser) throw new Error('Zadej platné uživatelské jméno.');
     if (!displayNameInput.trim()) throw new Error('Zadej celé jméno na výkaz.');
@@ -210,69 +213,69 @@ export function useAuth() {
     return cleanName;
   }
 
-  async function logout() {
+  async function logout({ preservePending = false, revoke = true, beforeCleanup = null } = {}) {
+    if (logoutTask) return logoutTask;
     const priorUser = currentUser.value;
     saveUserSession(null);
 
-    if (priorUser?.userKey) {
-      try {
-        await clearUserLocalData(priorUser.userKey);
-      } catch (err) {
-        console.warn('Vymazání lokálních dat účtu při odhlášení selhalo:', err?.message || err);
+    if (!priorUser?.userKey) return;
+    logoutTask = (async () => {
+      if (beforeCleanup) await beforeCleanup;
+      // Finish revocation before allowing a new login to replace the browser cookie.
+      if (revoke) {
+        try {
+          await supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
+            method: 'POST',
+            body: JSON.stringify({ p_all_devices: false })
+          });
+        } catch {
+          console.warn('Odvolání serverové relace se nepodařilo.');
+        }
       }
-
-      supabaseRequest('/rest/v1/rpc/logout_attendance_session', {
-        method: 'POST',
-        body: JSON.stringify({ p_all_devices: false })
-      }).catch((err) => {
-        console.warn('Odvolání serverové session na pozadí selhalo (best-effort):', err?.message || err);
-      });
+      if (preservePending) {
+        await clearUserLocalData(priorUser.userKey, { preservePending: true });
+      } else {
+        await clearUserLocalData(priorUser.userKey);
+      }
+    })();
+    try {
+      await logoutTask;
+    } finally {
+      logoutTask = null;
     }
   }
 
   async function verifySession() {
-    if (!currentUser.value?.userKey) return true;
+    const verifiedUser = currentUser.value;
+    if (!verifiedUser?.userKey) return true;
 
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      return true;
-    }
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
 
     try {
       const res = await supabaseRequest('/rest/v1/rpc/verify_attendance_session', {
         method: 'POST'
       });
 
-      if (res?.success === false) {
-        console.warn('Session není platná:', res.message || res.error);
-        await logout();
-        return false;
-      }
+      // A delayed verification must not update or invalidate another session.
+      if (currentUser.value !== verifiedUser) return true;
+      if (res?.success === false && ['missing_session', 'invalid_session'].includes(res.error)) return false;
+      if (res?.success === true && res.user_key !== verifiedUser.userKey) return false;
 
-      if (res?.role && currentUser.value) {
-        currentUser.value = {
-          ...currentUser.value,
+      if (res?.success === true && res.role) {
+        saveUserSession({
+          ...verifiedUser,
           role: res.role,
-          displayName: res.display_name || currentUser.value.displayName
-        };
-        saveUserSession(currentUser.value, isRememberedSession());
+          displayName: res.display_name || verifiedUser.displayName
+        }, isRememberedSession());
       }
       return true;
     } catch (err) {
-      const isNetworkError =
-        (typeof navigator !== 'undefined' && navigator.onLine === false) ||
-        !err.status ||
-        err.name === 'TypeError' ||
-        err.message?.includes('fetch') ||
-        err.message?.includes('Network');
-
-      if (isNetworkError) {
-        console.info('Ověření session odloženo (aplikace je offline nebo síť není dostupná).');
-        return true;
-      }
-
-      console.warn('Session expirovala nebo byla na serveru zrušena:', err.message);
-      await logout();
-      return false;
+      if (currentUser.value !== verifiedUser) return true;
+      // 401 is the explicit missing-session response from our API boundary.
+      // Transport errors, 429, 403 origin errors and 5xx are not revocation.
+      if (err?.status === 401) return false;
+      console.info('Ověření relace odloženo (služba není dostupná).');
+      return true;
     }
   }
 
