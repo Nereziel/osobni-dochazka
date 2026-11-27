@@ -469,6 +469,15 @@
             </div>
           </div>
 
+          <SyncConflictPanel
+            v-if="currentUser"
+            :key="currentUser.userKey"
+            :user-id="currentUser.userKey"
+            :pending-count="pendingCount"
+            @resolved="$emit('conflict-resolved')"
+            @toast="(...args) => $emit('toast', ...args)"
+          />
+
           <div class="cloud-tools-buttons">
             <button
               class="win-btn-standard"
@@ -607,6 +616,7 @@ import { ref, computed, watch, toRaw, nextTick } from 'vue';
 import { minutesToTime, timeToMinutes, calculateNetScheduleMinutes } from '../utils/time.js';
 import { clampNumber, cloneDeep } from '../utils/validation.js';
 import { APP_VERSION, APP_BUILD_DATE } from '../utils/version.js';
+import SyncConflictPanel from '../components/Attendance/SyncConflictPanel.vue';
 
 const props = defineProps({
   settings: {
@@ -624,6 +634,10 @@ const props = defineProps({
   syncState: {
     type: String,
     default: 'local'
+  },
+  pendingCount: {
+    type: Number,
+    default: 0
   }
 });
 
@@ -640,6 +654,7 @@ const emit = defineEmits([
   'export-backup',
   'import-backup',
   'reset-local-data',
+  'conflict-resolved',
   'open-pwa-help',
   'toast'
 ]);

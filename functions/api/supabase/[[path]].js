@@ -47,7 +47,7 @@ const RPC_ARGUMENTS = new Map([
 
 const READ_QUERY = new Map([
   ['attendance_profiles', { user_key: /^eq\.user:[a-z0-9._-]+$/i, select: /^\*$/, order: /^created_at\.asc$/ }],
-  ['attendance_days', { user_key: /^eq\.user:[a-z0-9._-]+$/i, select: /^\*$/, order: /^date\.asc$/, updated_at: /^gte\.\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/ }],
+  ['attendance_days', { date: /^eq\.\d{4}-\d{2}-\d{2}$/, user_key: /^eq\.user:[a-z0-9._-]+$/i, select: /^\*$/, order: /^date\.asc$/, updated_at: /^gte\.\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/ }],
   ['v_monthly_attendance_summary', { month: /^eq\.\d{4}-(?:0[1-9]|1[0-2])$/ }]
 ]);
 

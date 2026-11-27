@@ -99,6 +99,7 @@
           :current-user="currentUser"
           :is-admin="isAdmin"
           :sync-state="syncState"
+          :pending-count="pendingCount"
           @save-settings="handleSaveSettings"
           @update-profile-name="handleUpdateProfileName"
           @change-theme="handleThemeChange"
@@ -111,6 +112,7 @@
           @export-backup="handleExportBackup"
           @import-backup="handleImportBackup"
           @reset-local-data="handleResetLocalData"
+          @conflict-resolved="handleConflictResolved"
           @open-pwa-help="openPwaHelp"
           @toast="showToast"
         />
@@ -491,7 +493,8 @@ async function triggerSync(pushLocalDays = true, options = {}) {
     if (res?.serverProfile) {
       await applyServerProfile(res.serverProfile);
     }
-    showToast('Data byla synchronizována', '✓');
+    if (res?.status === 'conflict') showToast('Některé změny mají konflikt. Zkontroluj Nastavení → Cloud Databáze.', '⚠️');
+    else if (res?.status !== 'syncing') showToast('Data byla synchronizována', '✓');
   } catch (err) {
     showToast(err.message || 'Synchronizace selhala', '⚠️');
   }
@@ -870,9 +873,23 @@ async function handleImportBackup(file) {
   }
 }
 
+async function handleConflictResolved() {
+  const key = currentUser.value?.userKey;
+  if (!key) return;
+  resetUserSyncCursor(key);
+  await loadRecords(key);
+  await refreshPendingCount(key);
+  if (currentUser.value?.userKey === key) await triggerSync(false, { isBoot: true });
+}
+
 async function handleResetLocalData() {
-  if (!confirm('Opravdu vymazat veškerá lokální data docházky v tomto zařízení?')) return;
   try {
+    const key = currentUser.value?.userKey;
+    if (key && (await getPendingSyncActions(key)).length) {
+      showToast('Nejprve vyřeš neodeslané změny a konflikty. Lokální data nebyla smazána.', '⚠️');
+      return;
+    }
+    if (!confirm('Opravdu vymazat veškerá lokální data docházky v tomto zařízení?')) return;
     const res = await runResetLocalDataFlow({
       currentUser: currentUser.value,
       settingsGetter: () => settings.value,

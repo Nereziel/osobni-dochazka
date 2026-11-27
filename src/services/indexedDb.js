@@ -376,3 +376,41 @@ export function pendingLocalData(pending, preservePending) {
   }
   return { dates, settings };
 }
+
+
+// Snapshot only the selected date and account. Reject changes made after review.
+export function conflictQueueSnapshot(actions, userId, date) {
+  return JSON.stringify(actions.filter(item => item.userId === userId &&
+    item.entity === 'attendance_days' && item.payload?.date === date)
+    .sort((a, b) => a.id - b.id));
+}
+
+/** Adopt a reviewed server version without touching another day or account. */
+export async function acceptConflictServerVersion(userId, date, expectedQueue, expectedLocal, serverDay) {
+  if (!userId || !serverDay || serverDay.date !== date) throw new Error('Neplatná cloudová verze.');
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['user_days', 'sync_queue'], 'readwrite');
+    let accepted = false;
+    tx.oncomplete = () => resolve(accepted);
+    tx.onerror = () => reject(tx.error || new Error('Převzetí cloudové verze selhalo.'));
+    tx.onabort = () => reject(tx.error || new Error('Převzetí cloudové verze bylo přerušeno.'));
+    const queue = tx.objectStore('sync_queue');
+    const days = tx.objectStore('user_days');
+    const pending = queue.index('userId').getAll(IDBKeyRange.only(userId));
+    pending.onsuccess = () => {
+      const actions = pending.result || [];
+      const snapshot = conflictQueueSnapshot(actions, userId, date);
+      const selected = JSON.parse(snapshot);
+      if (snapshot !== expectedQueue || !selected.some(item => item.conflict)) return;
+      const local = days.get([userId, date]);
+      local.onsuccess = () => {
+        if (JSON.stringify(local.result || null) !== expectedLocal) return;
+        if (serverDay.deletedAt) days.delete([userId, date]);
+        else days.put({ ...serverDay, userId });
+        for (const item of selected) queue.delete(item.id);
+        accepted = true;
+      };
+    };
+  });
+}
